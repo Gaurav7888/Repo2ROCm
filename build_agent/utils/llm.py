@@ -115,7 +115,10 @@ def _call_amd_claude(model, messages, temperature, max_tokens):
     return content, usage
 
 
-def get_llm_response(model: str, messages, temperature=0.0, n=1, max_tokens=4096):
+def get_llm_response(model: str, messages, temperature=0.0, n=1, max_tokens=4096, system_prompt=None):
+    if system_prompt:
+        messages = [{"role": "system", "content": system_prompt}] + list(messages)
+
     max_retry = 5
     count = 0
     while count < max_retry:

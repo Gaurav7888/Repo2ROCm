@@ -21,6 +21,16 @@ console = Console(width=140, force_terminal=True)
 # ── File logging state ──
 _log_file = None
 _log_path = None
+_verbose = False
+
+
+def set_verbose(enabled=True):
+    global _verbose
+    _verbose = enabled
+
+
+def is_verbose():
+    return _verbose
 
 
 def init_file_log(output_dir):
