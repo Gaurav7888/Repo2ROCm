@@ -1,0 +1,1125 @@
+paper_name,code_url
+Perception Encoder: The Best Visual Embeddings Are Not at The Output of The Network,https://github.com/facebookresearch/perception_models
+"Gated Attention for Large Language Models: Non-linearity, Sparsity, and Attention-Sink-Free",https://github.com/qiuzh20/gated_attention
+Large Language Diffusion Models,https://ml-gsai.github.io/LLaDA-demo/
+Efficient Part-level 3D Object Generation Via Dual Volume Packing,https://research.nvidia.com/labs/dir/partpacker/
+Show-o2: Improved Native Unified Multimodal Models,https://github.com/showlab/Show-o
+MoBA: Mixture of Block Attention for Long-Context LLMs,https://github.com/MoonshotAI/MoBA
+Composing Global Solutions to Reasoning Tasks Via Algebraic Objects in Neural Nets,https://github.com/facebookresearch/luckmatters/tree/yuandong3/ssl/real-dataset
+Scalable Best-of-N Selection for Large Language Models Via Self-Certainty,https://github.com/backprop07/Self-Certainty
+PrefixKV: Adaptive Prefix KV Cache Is What Vision Instruction-Following Models Need for Efficient Generation,https://github.com/THU-MIG/PrefixKV
+Compute-Optimal Scaling for Value-Based Deep RL,https://value-scaling.github.io/
+"Knowledge Insulating Vision-Language-Action Models: Train Fast, Run Fast, Generalize Better",https://pi.website/research/knowledge_insulation
+YOLOv12: Attention-Centric Real-Time Object Detectors,https://github.com/sunsmarterjie/yolov12
+Tiled Flash Linear Attention: More Efficient Linear RNN and XLSTM Kernels,https://github.com/NX-AI/mlstm_kernels
+FlashBias: Fast Computation of Attention with Bias,https://github.com/thuml/FlashBias
+FastVID: Dynamic Density Pruning for Fast Video Large Language Models,https://github.com/LunarShen/FastVID
+Sampling 3D Molecular Conformers with Diffusion Transformers,https://github.com/ML4MolSim/dit_mc
+Diffusion Beats Autoregressive in Data-Constrained Settings,https://diffusion-scaling.github.io
+Multi-Agent Collaboration Via Evolving Orchestration,https://github.com/OpenBMB/ChatDev/tree/puppeteer
+A-Mem: Agentic Memory for LLM Agents,https://anonymous.4open.science/r/AgenticMemory-76B4
+VividFace: A Robost and High-Fidelity Video Face Swapping Framework,https://hao-shao.com/projects/vividface.html
+FlexWorld: Progressively Expanding 3D Scenes for Flexible-View Exploration,https://github.com/ML-GSAI/FlexWorld
+Forging Time Series with Language: A Large Language Model Approach to Synthetic Data Generation,https://github.com/IBM/fms-dgt/tree/main/fms_dgt/public/databuilders/time_series
+FEAT: Free Energy Estimators with Adaptive Transport,https://github.com/jiajunhe98/FEAT
+Mulberry: Empowering MLLM with O1-like Reasoning and Reflection Via Collective Monte Carlo Tree Search,https://github.com/HJYao00/Mulberry
+RAD: Training An End-to-End Driving Policy Via Large-Scale 3DGS-based Reinforcement Learning,https://github.com/hustvl/RAD
+KGGen: Extracting Knowledge Graphs from Plain Text with Language Models,https://github.com/stair-lab/kg-gen/
+DecompNet: Enhancing Time Series Forecasting Models with Implicit Decomposition,https://github.com/luodhhh/DecompNet
+Decoder-Hybrid-Decoder Architecture for Efficient Reasoning with Long Generation,https://github.com/microsoft/ArchScale
+Exploring Diffusion Transformer Designs Via Grafting,https://grafting.stanford.edu
+R1-ShareVL: Incentivizing Reasoning Capabilities of Multimodal Large Language Models Via Share-GRPO,https://github.com/HJYao00/R1-ShareVL
+Meta CLIP 2: A Worldwide Scaling Recipe,https://github.com/facebookresearch/MetaCLIP
+BLEUBERI: BLEU Is A Surprisingly Effective Reward for Instruction Following,https://github.com/lilakk/BLEUBERI
+Latent Policy Barrier: Learning Robust Visuomotor Policies By Staying In-Distribution,https://latentpolicybarrier.github.io
+Thinkless: LLM Learns When to Think,https://github.com/VainF/Thinkless
+Scaling Speculative Decoding with Lookahead Reasoning,https://github.com/hao-ai-lab/LookaheadReasoning
+Efficiently Scaling LLM Reasoning Programs with Certaindex,https://github.com/hao-ai-lab/Dynasor.git
+Self-Adapting Language Models,https://jyopari.github.io/posts/seal
+Reward Reasoning Models,https://huggingface.co/Reward-Reasoning
+Anchored Diffusion Language Model,https://anchored-diffusion-llm.github.io/
+QSVD: Efficient Low-rank Approximation for Unified Query-Key-Value Weight Compression in Low-Precision Vision-Language Models,https://github.com/SAI-Lab-NYU/QSVD
+Fin3R: Fine-tuning Feed-forward 3D Reconstruction Models Via Monocular Knowledge Distillation,http://visual-ai.github.io/fin3r
+RLVR-World: Training World Models with Reinforcement Learning,https://thuml.github.io/RLVR-World
+Magical: Medical Lay Language Generation Via Semantic Invariance and Layperson-tailored Adaptation,https://github.com/tianlwang/Magical.git
+Vgent: Graph-based Retrieval-Reasoning-Augmented Generation For Long Video Understanding,https://xiaoqian-shen.github.io/Vgent
+Scaling RL to Long Videos,https://github.com/NVlabs/Long-RL
+OWL: Optimized Workforce Learning for General Multi-Agent Assistance in Real-World Task Automation,https://anonymous.4open.science/r/annonymous-owl/
+RAST: Reasoning Activation in LLMs Via Small-model Transfer,https://ozyyshr.github.io/RAST/
+Beyond Attention or Similarity: Maximizing Conditional Diversity for Token Pruning in MLLMs,https://github.com/Theia-4869/CDPruner
+Spot The Fake: Large Multimodal Model-Based Synthetic Image Detection with Artifact Explanation,https://github.com/opendatalab/FakeVLM
+MR. Video: MapReduce As An Effective Principle for Long Video Understanding,https://github.com/ziqipang/MR-Video
+Trajectory Bellman Residual Minimization: A Simple Value-Based Method for LLM Reasoning,https://github.com/rlx-lab/TBRM
+GUI-Actor: Coordinate-Free Visual Grounding for GUI Agents,https://aka.ms/GUI-Actor
+LaViDa: A Large Diffusion Model for Vision-Language Understanding,https://github.com/jacklishufan/LaViDa
+Act Only When It Pays: Efficient Reinforcement Learning for LLM Reasoning Via Selective Rollouts,https://github.com/Infini-AI-Lab/GRESO/
+Faster Video Diffusion with Trainable Sparse Attention,https://github.com/hao-ai-lab/FastVideo
+Red-Teaming Text-to-Image Systems By Rule-based Preference Modeling,https://github.com/caosip/RPG-RT
+SeerAttention: Self-distilled Attention Gating for Efficient Long-context Prefilling,https://github.com/microsoft/SeerAttention
+WebThinker: Empowering Large Reasoning Models with Deep Research Capability,https://github.com/RUC-NLPIR/WebThinker
+SAFE: Multitask Failure Detection for Vision-Language-Action Models,https://vla-safe.github.io/
+Continuous Concepts Removal in Text-to-image Diffusion Models,https://github.com/wssun/CCRT
+Test3R: Learning to Reconstruct 3D at Test Time,https://github.com/nopQAQ/Test3R
+SwS: Self-aware Weakness-driven Problem Synthesis in Reinforcement Learning for LLM Reasoning,https://anonymous.4open.science/r/SwS-E6F5/
+SQL-R1: Training Natural Language to SQL Reasoning Model By Reinforcement Learning,https://github.com/IDEA-FinAI/SQL-R1
+Interpretable Next-token Prediction Via The Generalized Induction Head,https://github.com/ejkim47/generalized-induction-head
+"First SFT, Second RL, Third UPT: Continual Improving Multi-Modal LLM Reasoning Via Unsupervised Post-Training",https://github.com/waltonfuture/MM-UPT
+HumanoidGen: Data Generation for Bimanual Dexterous Manipulation Via LLM Reasoning,https://openhumanoidgen.github.io
+DRIFT: Dynamic Rule-Based Defense with Injection Isolation for Securing LLM Agents,https://github.com/SaFoLab-WISC/DRIFT
+VCM: Vision Concept Modeling with Adaptive Vision Token Compression Via Instruction Fine-Tuning,https://github.com/RainBowLuoCS/VCM
+PLSTM: Parallelizable Linear Source Transition Mark Networks,https://github.com/ml-jku/plstm_experiments
+Radial Attention: $\mathcal O(n \log N)$ Sparse Attention for Long Video Generation,https://github.com/mit-han-lab/radial-attention
+UltraHR-100K: Enhancing UHR Image Synthesis with A Large-Scale High-Quality Dataset,https://github.com/NJU-PCALab/UltraHR-100k
+UI-Genie: A Self-Improving Approach for Iteratively Boosting MLLM-based Mobile GUI Agents,https://github.com/Euphoria16/UI-Genie
+BiggerGait: Unlocking Gait Recognition with Layer-wise Representations from Large Vision Models,https://github.com/ShiqiYu/OpenGait/
+Routing Mamba: Scaling State Space Models with Mixture-of-Experts Projection,https://github.com/zhanzheng8585/Routing-Mamba
+MiniMax-Remover: Taming Bad Noise Helps Video Object Removal,https://minimax-remover.github.io**
+Web-Shepherd: Advancing PRMs for Reinforcing Web Agents,https://github.com/kyle8581/Web-Shepherd
+CPPO: Accelerating The Training of Group Relative Policy Optimization-Based Reasoning Models,https://github.com/lzhxmu/CPPO
+DynaAct: Large Language Model Reasoning with Dynamic Action Spaces,https://github.com/zhaoxlpku/DynaAct
+"Latent Zoning Network: A Unified Principle for Generative Modeling, Representation Learning, and Classification",https://github.com/microsoft/latent-zoning-networks
+On Reasoning Strength Planning in Large Reasoning Models,https://anonymous.4open.science/r/LRM-plans-CoT-7E04
+A Smooth Sea Never Made A Skilled SAILOR: Robust Imitation Via Learning to Search,https://github.com/arnavkj1995/SAILOR
+QuadricFormer: Scene As Superquadrics for 3D Semantic Occupancy Prediction,https://github.com/zuosc19/QuadricFormer
+SD-VLM: Spatial Measuring and Understanding with Depth-Encoded Vision-Language Models,https://github.com/cpystan/SD-VLM
+Think or Not? Selective Reasoning Via Reinforcement Learning for Vision-Language Models,https://github.com/kokolerk/TON
+UniTraj: Learning A Universal Trajectory Foundation Model from Billion-Scale Worldwide Traces,https://github.com/Yasoz/UniTraj
+OPHR: Mastering Volatility Trading with Multi-Agent Deep Reinforcement Learning,https://github.com/Edwicn/OPHR-MasteringVolatilityTradingwithMultiAgentDeepReinforcementLearning
+GuardReasoner-VL: Safeguarding VLMs Via Reinforced Reasoning,https://github.com/yueliu1999/GuardReasoner-VL
+ContextAgent: Context-Aware Proactive LLM Agents with Open-world Sensory Perceptions,https://github.com/openaiotlab/ContextAgent
+SeRL: Self-play Reinforcement Learning for Large Language Models with Limited Data,https://github.com/wantbook-book/SeRL
+BioReason: Incentivizing Multimodal Biological Reasoning Within A DNA-LLM Model,https://github.com/bowang-lab/BioReason
+Reasoning Beyond Points: A Visual Introspective Approach for Few-Shot 3D Segmentation,https://github.com/changshuowang/VIP-Seg
+STARFlow: Scaling Latent Normalizing Flows for High-resolution Image Synthesis,https://github.com/apple/ml-starflow
+Reinforcement Learning for Reasoning in Large Language Models with One Training Example,https://github.com/ypwang61/One-Shot-RLVR
+PhySense: Sensor Placement Optimization for Accurate Physics Sensing,https://github.com/thuml/PhySense
+Less Is More: Unlocking Specialization of Time Series Foundation Models Via Structured Pruning,https://github.com/SJTU-DMTai/Prune-then-Finetune
+OASIS: One-Shot Federated Graph Learning Via Wasserstein Assisted Knowledge Integration,https://anonymous.4open.science/r/OASIS-NeurIPS25
+Multi-order Orchestrated Curriculum Distillation for Model-Heterogeneous Federated Graph Learning,https://anonymous.4open.science/r/TRUST-NeurIPS2025
+MOTION: Multi-Sculpt Evolutionary Coarsening for Federated Continual Graph Learning,https://anonymous.4open.science/r/MOTION
+FP4 All The Way: Fully Quantized Training of Large Language Models,https://github.com/Anonymous1252022/fp4-all-the-way
+OpenOmni: Advancing Open-Source Omnimodal Large Language Models with Progressive Multimodal Alignment and Real-time Emotional Speech Synthesis,https://github.com/RainBowLuoCS/OpenOmni
+FedWMSAM: Fast and Flat Federated Learning Via Weighted Momentum and Sharpness-Aware Minimization,https://github.com/Li-Tian-Le/NeurlPS_FedWMSAM
+PANDA: Towards Generalist Video Anomaly Detection Via Agentic AI Engineer,https://github.com/showlab/PANDA
+Walking The Tightrope: Autonomous Disentangling Beneficial and Detrimental Drifts in Non-Stationary Custom-Tuning,https://github.com/XiaoyuYoung/CPO
+ESCA: Contextualizing Embodied Agents Via Scene-Graph Generation,https://github.com/video-fm/LASER
+OmniVCus: Feedforward Subject-driven Video Customization with Multimodal Control Conditions,https://caiyuanhao1998.github.io/project/OmniVCus/
+OmniCast: A Masked Latent Diffusion Model for Weather Forecasting Across Time Scales,https://github.com/tung-nd/omnicast
+ConfTuner: Training Large Language Models to Express Their Confidence Verbally,https://github.com/liushiliushi/ConfTuner
+LoRATv2: Enabling Low-Cost Temporal Modeling in One-Stream Trackers,https://github.com/LitingLin/LoRATv2
+Adversarial Graph Fusion for Incomplete Multi-view Semi-supervised Learning with Tensorial Imputation,https://github.com/ZhangqiJiang07/AGF_TI
+Adjoint Schrödinger Bridge Sampler,https://github.com/facebookresearch/adjoint_samplers
+Janus-Pro-R1: Advancing Collaborative Visual Comprehension and Generation Via Reinforcement Learning,https://janus-pro-r1.github.io
+MacOSWorld: A Multilingual Interactive Benchmark for GUI Agents,https://macos-world.github.io
+Machine Unlearning in 3D Generation: A Perspective-Coherent Acceleration Framework,https://github.com/sxxsxw/Fast-3D-Unlearn-with-Skip-acceleration
+PARCO: Parallel AutoRegressive Models for Multi-Agent Combinatorial Optimization,https://github.com/ai4co/parco
+Token Bottleneck: One Token to Remember Dynamics,https://github.com/naver-ai/tobo
+SensorLM: Learning The Language of Wearable Sensors,https://github.com/Google-Health/consumer-health-research/tree/main/sensorlm
+Boosting Knowledge Utilization in Multimodal Large Language Models Via Adaptive Logits Fusion and Attention Reallocation,https://github.com/Lackel/ALFAR
+CORE: Collaborative Optimization with Reinforcement Learning and Evolutionary Algorithm for Floorplanning,https://github.com/yeshenpy/CORE
+OmniSegmentor: A Flexible Multi-Modal Learning Framework for Semantic Segmentation,https://github.com/VCIP-RGBD/DFormer
+Zip2zip: Inference-Time Adaptive Tokenization Via Online Compression,https://github.com/epfl-dlab/zip2zip
+Thoughts Are All Over The Place: On The Underthinking of Long Reasoning Models,https://github.com/wangyuenlp/underthinking
+TaDiCodec: Text-aware Diffusion Speech Tokenizer for Speech Language Modeling,https://tadicodec.github.io/
+Metis: A Foundation Speech Generation Model with Masked Generative Pre-training,https://metis-demo.github.io/
+Scaling Laws for Robust Comparison of Open Foundation Language-Vision Models and Datasets,https://github.com/LAION-AI/scaling-laws-for-comparison
+Parallel Scaling Law for Language Models,https://github.com/QwenLM/ParScale
+ChemOrch: Empowering LLMs with Chemical Intelligence Via Groundbreaking Synthetic Instructions,https://anonymous.4open.science/r/ChemOrch-854A
+SimpleStrat: Diversifying Language Model Generation with Stratification,https://github.com/jwong8314/simplestrat
+Curly Flow Matching for Learning Non-gradient Field Dynamics,https://github.com/kpetrovicc/curly-flow-matching.git
+ReasonFlux-PRM: Trajectory-Aware PRMs for Long Chain-of-Thought Reasoning in LLMs,https://github.com/Gen-Verse/ReasonFlux
+Learning When to Think: Shaping Adaptive Reasoning in R1-Style Models Via Multi-Stage RL,https://github.com/ScienceOne-AI/AutoThink
+Efficient Training-Free Online Routing for High-Volume Multi-LLM Serving,https://github.com/fzwark/PORT
+EgoBridge: Domain Adaptation for Generalizable Imitation from Egocentric Human Data,https://ego-bridge.github.io/
+RAT: Bridging RNN Efficiency and Attention Accuracy Via Chunk-based Sequence Modeling,https://github.com/CLAIRE-Labo/RAT
+Image Editing As Programs with Diffusion Models,https://github.com/YujiaHu1109/IEAP
+Unveiling Chain of Step Reasoning for Vision-Language Models with Fine-grained Rewards,https://github.com/baaivision/CoS
+Activity Pruning for Efficient Spiking Neural Networks,https://github.com/putshua/Activity-Pruning-SNN
+LaM-SLidE: Latent Space Modeling of Spatial Dynamical Systems Via Linked Entities,https://github.com/ml-jku/LaM-SLidE
+Spiking Meets Attention: Efficient Remote Sensing Image Super-Resolution with Attention Spiking Neural Networks,https://github.com/XY-boy/SpikeSR
+Geometry Aware Operator Transformer As An Efficient and Accurate Neural Surrogate for PDEs on Arbitrary Domains,https://camlab-ethz.github.io/GAOT
+Group-Level Data Selection for Efficient Pretraining,https://github.com/facebookresearch/Group-MATES
+TreeSynth: Synthesizing Diverse Data from Scratch Via Tree-Guided Subspace Partitioning,https://github.com/cpa2001/TreeSynth
+LoMix: Learnable Weighted Multi-Scale Logits Mixing for Medical Image Segmentation,https://github.com/SLDGroup/LoMix
+Touch in The Wild: Learning Fine-Grained Manipulation with A Portable Visuo-Tactile Gripper,https://binghao-huang.github.io/touch_in_the_wild/
+Right Question Is Already Half The Answer: Fully Unsupervised LLM Reasoning Incentivization,https://github.com/QingyangZhang/EMPO
+HYPERION: Fine-Grained Hypersphere Alignment for Robust Federated Graph Learning,https://anonymous.4open.science/r/Hyperion-NeurIPS/
+DesignX: Human-Competitive Algorithm Designer for Black-Box Optimization,https://github.com/MetaEvo/DesignX
+AnimateQR: Bridging Aesthetics and Functionality in Dynamic QR Code Generation,https://github.com/mulns/AnimateQR
+Generative Graph Pattern Machine,https://github.com/Zehong-Wang/G2PM
+Consistent Paths Lead to Truth: Self-Rewarding Reinforcement Learning for LLM Reasoning,https://github.com/sastpg/CoVo
+On The Edge of Memorization in Diffusion Models,https://github.com/DruvPai/diffusion_mem_gen
+$Q\sharp$: Provably Optimal Distributional RL for LLM Post-Training,https://github.com/jinpz/q_sharp
+L-MTP: Leap Multi-Token Prediction Beyond Adjacent Context for Large Language Models,https://github.com/Xiaohao-Liu/L-MTP
+Continual Multimodal Contrastive Learning,https://github.com/Xiaohao-Liu/CMCL
+Vision Foundation Models As Effective Visual Tokenizers for Autoregressive Generation,https://github.com/CVMI-Lab/VFMTok
+STAR: Efficient Preference-based Reinforcement Learning Via Dual Regularization,https://sites.google.com/view/pbrl-star
+Towards Reliable Identification of Diffusion-based Image Manipulations,https://alex-costanzino.github.io/radar/
+Predictable Scale (Part II) — Farseer: A Refined Scaling Law in LLMs,https://github.com/Farseer-Scaling-Law/Farseer
+PointMapPolicy: Structured Point Cloud Processing for Multi-Modal Imitation Learning,https://point-map.github.io/Point-Map/
+MERIT: Multilingual Semantic Retrieval with Interleaved Multi-Condition Query,https://merit-2025.github.io
+Virtual Fitting Room: Generating Arbitrarily Long Videos of Virtual Try-On from A Single Image,https://immortalco.github.io/VirtualFittingRoom/
+TS-RAG: Retrieval-Augmented Generation Based Time Series Foundation Models Are Stronger Zero-Shot Forecaster,https://github.com/UConn-DSIS/TS-RAG
+NAUTILUS: A Large Multimodal Model for Underwater Scene Understanding,https://github.com/H-EmbodVis/NAUTILUS
+Pixel-Perfect Depth with Semantics-Prompted Diffusion Transformers,https://pixel-perfect-depth.github.io/
+P-Law: Predicting Quantitative Scaling Law with Entropy Guidance in Large Recommendation Models,https://github.com/USTC-StarTeam/P-Law
+Intermediate Domain Alignment and Morphology Analogy for Patent-Product Image Retrieval,https://loslorien.github.io/idama-project/
+UltraLED: Learning to See Everything in Ultra-High Dynamic Range Scenes,https://srameo.github.io/projects/ultraled
+Learning Conformational Ensembles of Proteins Based on Backbone Geometry,https://github.com/graeter-group/bbflow
+Point3R: Streaming 3D Reconstruction with Explicit Spatial Pointer Memory,https://github.com/YkiWu/Point3R
+LaRes: Evolutionary Reinforcement Learning with LLM-based Adaptive Reward Search,https://github.com/yeshenpy/LaRes
+LeVo: High-Quality Song Generation with Multi-Preference Alignment,https://levo-demo.github.io
+Causality-Induced Positional Encoding for Transformer-Based Representation Learning of Non-Sequential Features,https://github.com/Catchxu/CAPE
+A Pre-training Framework for Relational Data with Information-theoretic Principles,https://github.com/quang-truong/task-vector-estimation
+Polyline Path Masked Attention for Vision Transformer,https://github.com/zhongchenzhao/PPMA
+TADA: Improved Diffusion Sampling with Training-free Augmented DynAmics,https://github.com/apple/ml-tada
+IGD: Token Decisiveness Modeling Via Information Gain in LLMs for Personalized Recommendation,https://github.com/ZJLin2oo1/IGD
+AngleRoCL: Angle-Robust Concept Learning for Physically View-Invariant Adversarial Patches,https://github.com/tsingqguo/anglerocl
+Detoxifying Large Language Models Via Autoregressive Reward Guided Representation Editing,https://anonymous.4open.science/r/ARGRE-6291
+"Trajectory Balance with Asynchrony: Decoupling Exploration and Learning for Fast, Scalable LLM Post-Training",https://github.com/bbartoldson/TBA
+EchoShot: Multi-Shot Portrait Video Generation,https://johnneywang.github.io/EchoShot-webpage
+COLA: Towards Efficient Multi-Objective Reinforcement Learning with Conflict Objective Regularization in Latent Space,https://github.com/yeshenpy/COLA
+AdaSPEC: Selective Knowledge Distillation for Efficient Speculative Decoders,https://github.com/yuezhouhu/adaspec
+TokenSqueeze: Performance-Preserving Compression for Reasoning LLMs,https://github.com/zhangyx1122/TokenSqueeze
+Feature-Based Instance Neighbor Discovery: Advanced Stable Test-Time Adaptation in Dynamic World,https://github.com/Peanut-255/FIND
+KungfuBot: Physics-Based Humanoid Whole-Body Control for Learning Highly-Dynamic Skills,https://kungfubot.github.io
+GauSAM: Contour‑Guided 2D Gaussian Fields for Multi‑Scale Medical Image Segmentation with Segment Anything,https://github.com/Quinten-Wu504/GauSAM
+Don’t Trade Off Safety: Diffusion Regularization for Constrained Offline RL,https://github.com/JamesJunyuGuo/DRCORL
+FutureSightDrive: Thinking Visually with Spatio-Temporal CoT for Autonomous Driving,https://github.com/MIV-XJTU/FSDrive
+MMaDA: Multimodal Large Diffusion Language Models,https://github.com/Gen-Verse/MMaDA
+Learning to Integrate Diffusion ODEs By Averaging The Derivatives,https://github.com/poppuppy/secant_expectation
+VideoHallu: Evaluating and Mitigating Multi-modal Hallucinations on Synthetic Video Understanding,https://github.com/zli12321/VideoHallu.git
+SEMPO: Lightweight Foundation Models for Time Series Forecasting,https://github.com/mala-lab/SEMPO
+ShortListing Model: A Streamlined Simplex Diffusion for Discrete Variable Generation,https://github.com/GenSI-THUAIR/SLM
+4KAgent: Agentic Any Image to 4K Super-Resolution,https://4kagent.github.io
+Fast Solvers for Discrete Diffusion Models: Theory and Applications of High-Order Algorithms,https://github.com/yuchen-zhu-zyc/DiscreteFastSolver
+Rao-Blackwell Gradient Estimators for Equivariant Denoising Diffusion,https://github.com/vinhsuhi/Orbit-Diffusion.git
+BridgeVLA: Input-Output Alignment for Efficient 3D Manipulation Learning with Vision-Language Models,https://bridgevla.github.io/
+FedGPS: Statistical Rectification Against Data Heterogeneity in Federated Learning,https://github.com/CUHK-AIM-Group/FedGPS
+Force Prompting: Video Generation Models Can Learn And Generalize Physics-based Control Signals,https://sites.google.com/view/force-prompting-neurips2025
+DETree: DEtecting Human-AI Collaborative Texts Via Tree-Structured Hierarchical Representation Learning,https://github.com/heyongxin233/DETree
+VRAG-RL: Empower Vision-Perception-Based RAG for Visually Rich Information Understanding Via Iterative Reasoning with Reinforcement Learning,https://github.com/Alibaba-NLP/VRAG
+Practical and Effective Code Watermarking for Large Language Models,https://github.com/TimeLovercc/code-watermark
+Transformer Copilot: Learning from The Mistake Log in LLM Fine-tuning,https://github.com/jiaruzouu/TransformerCopilot
+SageAttention3: Microscaling FP4 Attention for Inference and An Exploration of 8-Bit Training,https://github.com/thu-ml/SageAttention
+Agentic RL Scaling Law: Spontaneous Code Execution for Mathematical Problem Solving,https://github.com/yyht/openrlhf_async_pipline
+Accelerating RL for LLM Reasoning with Optimal Advantage Regression,https://github.com/ZhaolinGao/A-PO
+Mitigating Overthinking in Large Reasoning Models Via Manifold Steering,https://github.com/Aries-iai/Manifold_Steering
+Reasoning Path Compression: Compressing Generation Trajectories for Efficient LLM Reasoning,https://github.com/jiwonsong-dev/ReasoningPathCompression
+Time-Evolving Dynamical System for Learning Latent Representations of Mouse Visual Neural Activity,https://github.com/Grasshlw/Time-Evolving-Visual-Dynamical-System
+TempSamp-R1: Effective Temporal Sampling with Reinforcement Fine-Tuning for Video LLMs,https://github.com/HVision-NKU/TempSamp-R1
+FreqPolicy: Frequency Autoregressive Visuomotor Policy with Continuous Tokens,https://github.com/4DVLab/Freqpolicy
+TransferTraj: A Vehicle Trajectory Learning Model for Region and Task Transferability,https://github.com/wtl52656/TransferTraj
+PLMTrajRec: A Scalable and Generalizable Trajectory Recovery Method with Pre-trained Language Models,https://github.com/wtl52656/PLMTrajRec
+Debate or Vote: Which Yields Better Decisions in Multi-Agent Large Language Models?,https://github.com/deeplearning-wisc/debate-or-vote
+Can Large Language Models Master Complex Card Games?,https://github.com/THUDM/LLM4CardGame
+A Unified Reasoning Framework for Holistic Zero-Shot Video Anomaly Analysis,https://rathgrith.github.io/Unified_Frame_VAA/
+Understanding and Mitigating Numerical Sources of Nondeterminism in LLM Inference,https://github.com/nanomaoli/llm_reproducibility
+A Gradient Guidance Perspective on Stepwise Preference Optimization for Diffusion Models,https://github.com/JoshuaTTJ/GradSPO
+Learning to Instruct for Visual Instruction Tuning,https://github.com/Feng-Hong/L2T
+DGSolver: Diffusion Generalist Solver with Universal Posterior Sampling for Image Restoration,https://github.com/MiliLab/DGSolver
+Mol-LLaMA: Towards General Understanding of Molecules in Large Molecular Language Model,https://mol-llama.github.io/
+Delving Into Large Language Models for Effective Time-Series Anomaly Detection,https://github.com/junwoopark92/LLM-TSAD
+Neural-Driven Image Editing,https://loongx1.github.io
+Brain-tuning Improves Generalizability and Efficiency of Brain Alignment in Speech Models,https://github.com/bridge-ai-neuro/multi-brain-tuning
+CSGO: Content-Style Composition in Text-to-Image Generation,https://github.com/instantX-research/CSGO
+Hierachical Balance Packing: Towards Efficient Supervised Fine-tuning for Long-Context LLM,https://github.com/ModelTC/HBP
+U-CAN: Unsupervised Point Cloud Denoising with Consistency-Aware Noise2Noise Matching,https://gloriasze.github.io/U-CAN/
+VORTA: Efficient Video Diffusion Via Routing Sparse Attention,https://github.com/wenhao728/VORTA
+TC-Light: Temporally Coherent Generative Rendering for Realistic World Transfer,https://dekuliutesla.github.io/tclight/
+Dual Data Alignment Makes AI-Generated Image Detector Easier Generalizable,https://github.com/roy-ch/Dual-Data-Alignment
+Theoretically Grounded Framework for LLM Watermarking: A Distribution-Adaptive Approach,https://github.com/yepengliu/DAWA
+Towards Resilient Safety-driven Unlearning for Diffusion Models Against Downstream Fine-tuning,https://github.com/AntigoneRandy/ResAlign
+Revisiting End-to-End Learning with Slide-level Supervision in Computational Pathology,https://github.com/DearCaat/E2E-WSI-ABMILX
+How to Build A Consistency Model: Learning Flow Maps Via Self-distillation,https://github.com/nmboffi/flow-maps
+Real-World Reinforcement Learning of Active Perception Behaviors,https://penn-pal-lab.github.io/aawr/
+Overcoming Challenges of Long-Horizon Prediction in Driving World Models,https://lmb-freiburg.github.io/orbis.github.io/
+GeoSVR: Taming Sparse Voxels for Geometrically Accurate Surface Reconstruction,https://github.com/Fictionarry/GeoSVR
+Program Synthesis Via Test-Time Transduction,https://github.com/klee972/SYNTRA
+Solving Inverse Problems with FLAIR,https://inverseflair.github.io/
+EA3D: Online Open-World 3D Object Extraction from Streaming Videos,https://github.com/VDIGPKU/EA3D
+Quartet: Native FP4 Training Can Be Optimal for Large Language Models,https://github.com/IST-DASLab/Quartet
+Teaching Language Models to Reason with Tools,https://github.com/ChengpengLi1003/CoRT
+ThinkSound: Chain-of-Thought Reasoning in Multimodal LLMs for Audio Generation and Editing,https://ThinkSound-Project.github.io
+Neural Emulator Superiority: When Machine Learning for PDEs Surpasses Its Training Data,https://tum-pbs.github.io/emulator-superiority
+Efficient Utility-Preserving Machine Unlearning with Implicit Gradient Surgery,https://github.com/anseryuer/EUPMU-Efficient-Utility-Preserving-Machine-Unlearning
+Sparse Autoencoders Learn Monosemantic Features in Vision-Language Models,https://github.com/ExplainableML/sae-for-vlm
+PC-Net: Weakly Supervised Compositional Moment Retrieval Via Proposal-Centric Network,https://github.com/mingyao1120/PC-Net
+Linear Differential Vision Transformer: Learning Visual Contrasts Via Pairwise Differentials,https://github.com/LeapLabTHU/LinearDiff
+Look Before You Leap: A GUI-Critic-R1 Model for Pre-Operative Error Diagnosis in GUI Automation,https://github.com/X-PLUG/MobileAgent/tree/main/GUI-Critic-R1
+DyG-Mamba: Continuous State Space Modeling on Dynamic Graphs,https://github.com/Clearloveyuan/DyG-Mamba
+Incentivizing LLMs to Self-Verify Their Answers,https://github.com/mansicer/self-verification
+Proxy Target: Bridging The Gap Between Discrete Spiking Neural Networks and Continuous Control,https://github.com/xuzijie32/Proxy-Target
+Towards Unsupervised Open-Set Graph Domain Adaptation Via Dual Reprogramming,https://github.com/cszhangzhen/GraphRTA
+SANSA: Unleashing The Hidden Semantics in SAM2 for Few-Shot Segmentation,https://github.com/ClaudiaCuttano/SANSA
+RadZero: Similarity-Based Cross-Attention for Explainable Vision-Language Alignment in Chest X-ray with Zero-Shot Multi-Task Capability,https://github.com/deepnoid-ai/RadZero
+The Promise of RL for Autoregressive Image Editing,https://github.com/mair-lab/EARL
+Semi-supervised Graph Anomaly Detection Via Robust Homophily Learning,https://github.com/mala-lab/RHO
+GRE Suite: Geo-localization Inference Via Fine-Tuned Vision-Language Models and Enhanced Reasoning Chains,https://anonymous.4open.science/r/GRE-74C0
+Bifrost-1: Bridging Multimodal LLMs and Diffusion Models with Patch-level CLIP Latents,https://bifrost-1.github.io
+Domain-RAG: Retrieval-Guided Compositional Image Generation for Cross-Domain Few-Shot Object Detection,https://github.com/LiYu0524/Domain-RAG
+"A Token Is Worth Over 1,000 Tokens: Efficient Knowledge Distillation Through Low-Rank Clone",https://github.com/CURRENTF/LowRankClone
+Covariances for Free: Exploiting Mean Distributions for Training-free Federated Learning,https://github.com/dipamgoswami/FedCOF
+Towards Robust Parameter-Efficient Fine-Tuning for Federated Learning,https://github.com/FangXiuwen/RFedLR
+Breakthrough Sensor-Limited Single View: Towards Implicit Temporal Dynamics for Time Series Domain Adaptation,https://github.com/mingyangliu1024/EDEN
+WISA: World Simulator Assistant for Physics-aware Text-to-video Generation,https://wisav1.github.io/WISA/
+Learning to Insert for Constructive Neural Vehicle Routing Solver,https://github.com/CIAM-Group/L2C_Insert
+DEFT: Decompositional Efficient Fine-Tuning for Text-to-Image Models,https://github.com/MAXNORM8650/DEFT
+The Surprising Effectiveness of Negative Reinforcement in LLM Reasoning,https://github.com/TianHongZXY/RLVR-Decomposed`
+Neural Fractional Attention Differential Equations,https://github.com/cuiwjTech/NeurIPS2025_FADE
+SplitFlow: Flow Decomposition for Inversion-Free Text-to-Image Editing,https://github.com/Harvard-AI-and-Robotics-Lab/SplitFlow
+Un$^2$CLIP: Improving CLIP’s Visual Detail Capturing Ability Via Inverting UnCLIP,https://github.com/LiYinqi/un2CLIP
+MOSDT: Self-Distillation-Based Decision Transformer for Multi-Agent Offline Safe Reinforcement Learning,https://github.com/Lucian1115/MOSDT.git
+GraphTOP: Graph Topology-Oriented Prompting for Graph Neural Networks,https://github.com/xbfu/GraphTOP
+CoVoMix2: Advancing Zero-Shot Dialogue Generation with Fully Non-Autoregressive Flow Matching,https://www.microsoft.com/en-us/research/project/covomix/covomix2
+ConTextTab: A Semantics-Aware Tabular In-Context Learner,https://github.com/SAP-samples/contexttab
+Synthesize Privacy-Preserving High-Resolution Images Via Private Textual Intermediaries,https://github.com/MarkGodrick/SPTI
+Toward Relative Positional Encoding in Spiking Transformers,https://github.com/microsoft/SeqSNN
+Adaptive Defense Against Harmful Fine-Tuning for Large Language Models Via Bayesian Data Scheduler,https://github.com/Egg-Hu/Bayesian-Data-Scheduler
+VA-GS: Enhancing The Geometric Representation of Gaussian Splatting Via View Alignment,https://github.com/LeoQLi/VA-GS
+Panacea: Mitigating Harmful Fine-tuning for Large Language Models Via Post-fine-tuning Perturbation,https://github.com/w-yibo/Panacea
+Fast Training of Large Kernel Models with Delayed Projections,https://github.com/EigenPro/EigenPro
+Afterburner: Reinforcement Learning Facilitates Self-Improving Code Efficiency Optimization,https://github.com/Elfsong/Afterburner
+A Unified Solution to Video Fusion: From Multi-Frame Learning to Benchmarking,https://vfbench.github.io
+What Can RL Bring to VLA Generalization? An Empirical Study,https://rlvla.github.io
+Zooming from Context to Cue: Hierarchical Preference Optimization for Multi-Image MLLMs,https://github.com/LXDxmu/CcDPO
+LangSplatV2: High-dimensional 3D Language Gaussian Splatting with 450+ FPS,https://langsplat-v2.github.io
+DictPFL: Efficient and Private Federated Learning on Encrypted Gradients,https://github.com/UCF-ML-Research/DictPFL
+Domain-Specific Pruning of Large Mixture-of-Experts Models with Few-shot Demonstrations,https://github.com/RUCAIBox/EASYEP
+MaterialRefGS: Reflective Gaussian Splatting with Multi-view Consistent Material Inference,https://wen-yuan-zhang.github.io/MaterialRefGS
+LLM-Explorer: A Plug-in Reinforcement Learning Policy Exploration Enhancement Driven By Large Language Models,https://github.com/tsinghua-fib-lab/LLM-Explorer
+UFO: A Unified Approach to Fine-grained Visual Perception Via Open-ended Language Interface,https://github.com/nnnth/UFO
+"Seeing Sound, Hearing Sight: Uncovering Modality Bias and Conflict of AI Models in Sound Localization",https://github.com/CuriseJia/SSHS
+Panoptic Captioning: An Equivalence Bridge for Image and Text,https://visual-ai.github.io/pancap/
+Accelerating Multimodal Large Language Models Via Dynamic Visual-Token Exit and The Empirical Findings,https://anonymous.4open.science/r/AnonymousDyVTE-26AB/
+Model Editing for Vision Transformers,https://github.com/shanghxy/Model-editing-for-vision-transformers
+Provable Ordering and Continuity in Vision-Language Pretraining for Generalizable Embodied Agents,https://actol-pretrain.github.io/
+Hyperbolic Dataset Distillation,https://github.com/Guang000/HDD
+Guided Diffusion Sampling on Function Spaces with Applications to PDEs,https://github.com/neuraloperator/FunDPS
+R$^2$ec: Towards Large Recommender Models with Reasoning,https://github.com/YRYangang/RRec
+VGGT-SLAM: Dense RGB SLAM Optimized on The SL(4) Manifold,https://github.com/MIT-SPARK/VGGT-SLAM
+CellCLIP – Learning Perturbation Effects in Cell Painting Via Text-Guided Contrastive Learning,https://github.com/suinleelab/CellCLIP
+Enhancing Training Data Attribution with Representational Optimization,https://github.com/sunnweiwei/AirRep
+Instance-Level Composed Image Retrieval,https://vrg.fel.cvut.cz/icir/
+A Dynamic Learning Strategy for Dempster-Shafer Theory with Applications in Classification and Enhancement,https://anonymous.4open.science/r/Third-ED16
+Repo2Run: Automated Building Executable Environment for Code Repository at Scale,https://github.com/bytedance/Repo2Run
+Tensor Product Attention Is All You Need,https://github.com/tensorgi/TPA
+ChunkKV: Semantic-Preserving KV Cache Compression for Efficient Long-Context LLM Inference,https://github.com/NVIDIA/kvpress
+Transstratal Adversarial Attack: Compromising Multi-Layered Defenses in Text-to-Image Models,https://github.com/Bluedask/TAA-T2I
+Learning and Planning Multi-Agent Tasks Via An MoE-based World Model,https://github.com/zhaozijie2022/m3w-marl
+VTON-VLLM: Aligning Virtual Try-On Models with Human Preferences,https://github.com/HiDream-ai/VTON-VLLM/
+Time-R1: Post-Training Large Vision Language Model for Temporal Video Grounding,https://xuboshen.github.io/Time-R1/
+$\texttt{G1}$: Teaching LLMs to Reason on Graphs with Reinforcement Learning,https://github.com/PKU-ML/G1
+$\text{S}^2$Q-VDiT: Accurate Quantized Video Diffusion Transformer with Salient Data and Sparse Token Distillation,https://github.com/wlfeng0509/s2q-vdit
+Gradient Alignment in Physics-informed Neural Networks: A Second-Order Optimization Perspective,https://github.com/PredictiveIntelligenceLab/jaxpi/tree/pirate
+Don’t Be Lazy: CompleteP Enables Compute-efficient Deep Transformers,https://github.com/EleutherAI/nanoGPT-mup/tree/completep
+NeuSymEA: Neuro-symbolic Entity Alignment Via Variational Inference,https://github.com/chensyCN/NeuSymEA-NeurIPS25
+SimWorld: An Open-ended Simulator for Agents in Physical and Social Worlds,http://simworld.org/
+Generalizable Reasoning Through Compositional Energy Minimization,https://alexoarga.github.io/compositional_reasoning/
+Improving Retrieval-Augmented Generation Through Multi-Agent Reinforcement Learning,https://github.com/chenyiqun/MMOA-RAG
+Scaling Language-centric Omnimodal Representation Learning,https://github.com/LCO-Embedding/LCO-Embedding
+Multi-agent KTO: Enhancing Strategic Interactions of Large Language Model in Language Game,https://reneeye.github.io/MaKTO.html
+AOR: Anatomical Ontology-Guided Reasoning for Medical Large Multimodal Model in Chest X-Ray Interpretation,https://github.com/Liqq1/AOR
+Neptune-X: Active X-to-Maritime Generation for Universal Maritime Object Detection,https://github.com/gy65896/Neptune-X
+REArtGS: Reconstructing and Generating Articulated Objects Via 3D Gaussian Splatting with Geometric and Motion Constraints,https://sites.google.com/view/reartgs/home
+Rethinking Fair Federated Learning from Parameter and Client View,https://github.com/guankaiqi/FedPW
+Motion4D: Learning 3D-Consistent Motion and Semantics for 4D Scene Understanding,https://hrzhou2.github.io/motion4d-web/
+Unified Transferability Metrics for Time Series Foundation Models,https://anonymous.4open.science/r/TEMPLATE-A0AA/
+Compressed and Smooth Latent Space for Text Diffusion Modeling,https://github.com/MeshchaninovViacheslav/cosmos
+Detecting High-Stakes Interactions with Activation Probes,https://github.com/arrrlex/models-under-pressure
+Non-Line-of-Sight 3D Reconstruction with Radar,https://waves.seas.upenn.edu/projects/holoradar
+Time-o1: Time-Series Forecasting Needs Transformed Label Alignment,https://github.com/Master-PLC/Time-o1
+Inverse Methods for Missing Data Imputation,https://github.com/FMLYD/kpi.git
+Towards Robust Zero-Shot Reinforcement Learning,https://github.com/Whiterrrrr/BREEZE
+EgoDTM: Towards 3D-Aware Egocentric Video-Language Pretraining,https://anonymous.4open.science/r/EgoDTM
+Entropic Time Schedulers for Generative Diffusion Models,https://github.com/DejanStancevic/Entropic-Time-Schedulers-for-Generative-Diffusion-Models
+Transformers for Mixed-type Event Sequences,https://github.com/czi-ai/FlexTPP
+Attractive Metadata Attack: Inducing LLM Agents to Invoke Malicious Tools,https://github.com/SEAIC-M/AMA
+FlashMo: Geometric Interpolants and Frequency-Aware Sparsity for Scalable Efficient Motion Generation,https://steve-zeyu-zhang.github.io/FlashMo
+PLANA3R: Zero-shot Metric Planar 3D Reconstruction Via Feed-forward Planar Splatting,https://lck666666.github.io/plana3r/
+Personalized Subgraph Federated Learning with Differentiable Auxiliary Projections,https://github.com/JhuoW/FedAux
+STree: Speculative Tree Decoding for Hybrid State Space Models,https://github.com/wyc1997/stree
+SynBrain: Enhancing Visual-to-fMRI Synthesis Via Probabilistic Representation Learning,https://github.com/MichaelMaiii/SynBrain
+Towards Unified and Lossless Latent Space for 3D Molecular Latent Diffusion Modeling,https://github.com/lyc0930/UAE-3D/
+StelLA: Subspace Learning in Low-rank Adaptation Using Stiefel Manifold,https://github.com/SonyResearch/stella
+"RepLDM: Reprogramming Pretrained Latent Diffusion Models for High-Quality, High-Efficiency, High-Resolution Image Generation",https://github.com/kmittle/RepLDM
+GuideFlow3D: Optimization-Guided Rectified Flow For Appearance Transfer,https://sayands.github.io/guideflow3d
+GTR-Loc: Geospatial Text Regularization Assisted Outdoor LiDAR Localization,https://github.com/PSYZ1234/GTR-Loc
+KVCOMM: Online Cross-context KV-cache Communication for Efficient LLM-based Multi-agent Systems,https://github.com/FastMAS/KVCOMM
+Continual Knowledge Adaptation for Reinforcement Learning,https://github.com/Fhujinwu/CKA-RL
+Projection-Manifold Regularized Latent Diffusion for Robust General Image Fusion,https://github.com/Leiii-Cao/PDFuse
+HOI-Dyn: Learning Interaction Dynamics for Human-Object Motion Diffusion,https://wulin97.github.io/hoi-dyn
+Multi-step Visual Reasoning with Visual Tokens Scaling and Verification,https://vts-v.github.io/
+Rectified Point Flow: Generic Point Cloud Pose Estimation,https://rectified-pointflow.github.io/
+Order-Level Attention Similarity Across Language Models: A Latent Commonality,https://github.com/jinglin-liang/OLAS
+Abstain Mask Retain Core: Time Series Prediction By Adaptive Masking Loss with Representation Consistency,https://github.com/MazelTovy/AMRC
+Fast and Fluent Diffusion Language Models Via Convolutional Decoding and Rejective Fine-tuning,https://github.com/ybseo-ac/Conv
+Who You Are Matters: Bridging Interests and Social Roles Via LLM-Enhanced Logic Recommendation,https://github.com/Code2Q/TagCF
+UniMRSeg: Unified Modality-Relax Segmentation Via Hierarchical Self-Supervised Compensation,https://github.com/Xiaoqi-Zhao-DLUT/UniMRSeg
+Online Optimization for Offline Safe Reinforcement Learning,https://github.com/yassineCh/O3SRL
+Towards Irreversible Attack: Fooling Scene Text Recognition Via Multi-Population Coevolution Search,https://github.com/Lee-Jingyu/MPCS
+MobileUse: A Hierarchical Reflection-Driven GUI Agent for Autonomous Mobile Operation,https://github.com/MadeAgents/mobile-use
+Modeling Cell Dynamics and Interactions with Unbalanced Mean Field Schrödinger Bridge,https://github.com/zhenyiizhang/CytoBridge-NeurIPS
+SongBloom: Coherent Song Generation Via Interleaved Autoregressive Sketching and Diffusion Refinement,https://cypress-yang.github.io/SongBloom_demo
+Predictive Preference Learning from Human Interventions,https://metadriverse.github.io/ppl
+Fast-in-Slow: A Dual-System VLA Model Unifying Fast Manipulation Within Slow Reasoning,https://fast-in-slow.github.io
+Consistent Sampling and Simulation: Molecular Dynamics with Energy-Based Diffusion Models,https://github.com/noegroup/ScoreMD
+Demystifying Reasoning Dynamics with Mutual Information: Thinking Tokens Are Information Peaks in LLM Reasoning,https://github.com/ChnQ/MI-Peaks
+Less Is More: An Attention-free Sequence Prediction Modeling for Offline Embodied Learning,https://wei-nijuan.github.io/DecisionHiFormer/
+Visual Diversity and Region-aware Prompt Learning for Zero-shot HOI Detection,https://github.com/mlvlab/VDRP
+Merging on The Fly Without Retraining: A Sequential Approach to Scalable Continual Model Merging,https://github.com/tanganke/opcm
+On Geometry-Enhanced Parameter-Efficient Fine-Tuning for 3D Scene Segmentation,https://github.com/LiyaoTang/GEM
+TOMCAT: Test-time Comprehensive Knowledge Accumulation for Compositional Zero-Shot Learning,https://github.com/xud-yan/TOMCAT
+3DOT: Texture Transfer for 3DGS Objects from A Single Reference Image,https://massyzs.github.io/3DOT_web/
+Depth-Supervised Fusion Network for Seamless-Free Image Stitching,https://github.com/DLUT-YRH/DSFN
+RAD: Towards Trustworthy Retrieval-Augmented Multi-modal Clinical Diagnosis,https://github.com/tdlhl/RAD
+DIPO: Dual-State Images Controlled Articulated Object Generation Powered By Diverse Data,https://github.com/RQ-Wu/DIPO
+Hallucination at A Glance: Controlled Visual Edits and Fine-Grained Multimodal Learning,https://github.com/Relaxed-System-Lab/hallu_med
+ParamMute: Suppressing Knowledge-Critical FFNs for Faithful Retrieval-Augmented Generation,https://github.com/OpenBMB/ParamMute
+DepthVanish: Optimizing Adversarial Interval Structures for Stereo-Depth-Invisible Patches,https://github.com/WiWiN42/DepthVanish
+Joint Relational Database Generation Via Graph-Conditional Diffusion Models,https://github.com/ketatam/rdb-diffusion
+Towards Implicit Aggregation: Robust Image Representation for Place Recognition in The Transformer Era,https://github.com/lu-feng/image
+SSR: Enhancing Depth Perception in Vision-Language Models Via Rationale-Guided Spatial Reasoning,https://yliu-cs.github.io/SSR
+RePIC: Reinforced Post-Training for Personalizing Multi-Modal Language Models,https://github.com/oyt9306/RePIC
+"Variational Regularized Unbalanced Optimal Transport: Single Network, Least Action",https://github.com/ZerooVector/VarRUOT
+Multi-Scale Finetuning for Encoder-based Time Series Foundation Models,https://github.com/zqiao11/MSFT
+$\mathcal{X}^2$-DFD: A Framework for E$\mathcal{X}$plainable and E$\mathcal{X}$tendable Deepfake Detection,https://github.com/chenyize111/X2DFD
+How Particle System Theory Enhances Hypergraph Message Passing,https://github.com/Xuan-Elfin/HAMP
+Embodied Cognition Augmented End2End Autonomous Driving,https://github.com/AIR-DISCOVER/E-cubed-AD
+HetSyn: Versatile Timescale Integration in Spiking Neural Networks Via Heterogeneous Synapses,https://github.com/dzcgood/HetSyn
+PAID: Pairwise Angular-Invariant Decomposition for Continual Test-Time Adaptation,https://github.com/wangkunyu241/PAID
+LIMOPro: Reasoning Refinement for Efficient and Effective Test-time Scaling,https://github.com/GAIR-NLP/LIMOPro
+VideoREPA: Learning Physics for Video Generation Through Relational Alignment with Foundation Models,https://videorepa.github.io/
+Towards Reliable LLM-based Robots Planning Via Combined Uncertainty Estimation,https://github.com/Firesuiry/CURE
+Diffusion Adaptive Text Embedding for Text-to-Image Diffusion Models,https://github.com/aailab-kaist/DATE
+Training-Free Safe Text Embedding Guidance for Text-to-Image Diffusion Models,https://github.com/aailab-kaist/STG
+Hybrid Re-matching for Continual Learning with Parameter-Efficient Tuning,https://github.com/wei-cheng777/HRM-PET
+Non-stationary Equivariant Graph Neural Networks for Physical Dynamics Simulation,https://github.com/MaojiWEN/NS-EGNN
+Fine-grained List-wise Alignment for Generative Medication Recommendation,https://github.com/cxfann/Flame
+GeoLink: Empowering Remote Sensing Foundation Model with OpenStreetMap Data,https://github.com/bailubin/GeoLink_NeurIPS2025
+Unbiased Prototype Consistency Learning for Multi-Modal and Multi-Task Object Re-Identification,https://github.com/ZhouZhongao/UPCL
+DKDR: Dynamic Knowledge Distillation for Reliability in Federated Learning,https://github.com/YueyangYuan/DKDR
+Improving Model Representation and Reducing KV Cache Via Skip Connections with First Value Heads,https://github.com/Zhoutong-Wu/SkipV1Former
+A Signed Graph Approach to Understanding and Mitigating Oversmoothing,https://github.com/kokolerk/sbp
+MiniF2F-Lean Revisited: Reviewing Limitations and Charting A Path Forward,https://github.com/roozbeh-yz/miniF2F_v2
+APOLLO: Automated LLM and Lean Collaboration for Advanced Formal Reasoning,https://github.com/aziksh-ospanov/APOLLO
+Rethinking Neural Combinatorial Optimization for Vehicle Routing Problems with Different Constraint Tightness Degrees,https://github.com/CIAM-Group/Rethinking_Constraint_Tightness
+OLinear: A Linear Model for Time Series Forecasting in Orthogonally Transformed Domain,https://github.com/jackyue1994/OLinear
+S$^2$M-Former: Spiking Symmetric Mixing Branchformer for Brain Auditory Attention Detection,https://github.com/JackieWang9811/S2M-Former
+Balancing Multimodal Training Through Game-Theoretic Regularization,https://github.com/kkontras/MCR
+SparseMVC: Probing Cross-view Sparsity Variations for Multi-view Clustering,https://github.com/cleste-pome/SparseMVC
+NTKMTL: Mitigating Task Imbalance in Multi-Task Learning from Neural Tangent Kernel Perspective,https://github.com/jianke0604/NTKMTL
+Model-Guided Dual-Role Alignment for High-Fidelity Open-Domain Video-to-Audio Generation,https://github.com/pantheon5100/mgaudio
+OpenMMEgo: Enhancing Egocentric Understanding for LMMs with Open Weights and Data,https://github.com/BeingBeyond/OpenMMEgo
+ForceVLA: Enhancing VLA Models with A Force-aware MoE for Contact-rich Manipulation,https://sites.google.com/view/forcevla2025/
+ChA-MAEViT: Unifying Channel-Aware Masked Autoencoders and Multi-Channel Vision Transformers for Improved Cross-Channel Learning,https://github.com/chaudatascience/cha_mae_vit
+LiveStar: Live Streaming Assistant for Real-World Online Video Understanding,https://github.com/yzy-bupt/LiveStar
+Compositional Neural Network Verification Via Assume-Guarantee Reasoning,https://github.com/dynaroars/neuralsat
+Generating and Checking DNN Verification Proofs,https://github.com/dynaroars/APTPchecker
+CPO: Condition Preference Optimization for Controllable Image Generation,https://zonglinl.github.io/CPO_page
+Event-Driven Dynamic Scene Depth Completion,https://yanzq95.github.io/projectpage/EventDC/index.html
+AdaMSS: Adaptive Multi-Subspace Approach for Parameter-Efficient Fine-Tuning,https://github.com/jzheng20/AdaMSS
+Spiking Neural Networks Need High-Frequency Information,https://github.com/bic-L/MaxFormer
+ReinFlow: Fine-tuning Flow Matching Policy with Online Reinforcement Learning,https://reinflow.github.io/
+Representation Entanglement for Generation: Training Diffusion Transformers Is Much Easier Than You Think,https://github.com/Martinser/REG
+Mixture of Noise for Pre-Trained Model-Based Class-Incremental Learning,https://github.com/ASCIIJK/MiN-NeurIPS2025
+RoomEditor: High-Fidelity Furniture Synthesis with Parameter-Sharing U-Net,https://github.com/stonecutter-21/roomeditor
+CReFT-CAD: Boosting Orthographic Projection Reasoning for CAD Via Reinforcement Fine-Tuning,https://github.com/KeNiu042/CReFT-CAD
+MSTAR: Box-free Multi-query Scene Text Retrieval with Attention Recycling,https://github.com/yingift/MSTAR
+Injecting Frame-Event Complementary Fusion Into Diffusion for Optical Flow in Challenging Scenes,https://github.com/Haonan-Wang-aurora/Diff-ABFlow
+Adversarial Locomotion and Motion Imitation for Humanoid Policy Learning,https://almi-humanoid.github.io
+Open-World Drone Active Tracking with Goal-Centered Rewards,https://github.com/SHWplus/DAT_Benchmark
+BADiff: Bandwidth Adaptive Diffusion Model,https://github.com/xzhang9308/BADiff
+Learning Grouped Lattice Vector Quantizers for Low-Bit LLM Compression,https://github.com/xzhang9308/GLVQ
+Sequential Multi-Agent Dynamic Algorithm Configuration,https://github.com/lamda-bbo/seq-madac
+Composition and Alignment of Diffusion Models Using Constrained Learning,https://github.com/shervinkhalafi/constrained_comp_align
+Failure Prediction at Runtime for Generative Robot Policies,https://tum-lsy.github.io/fiper_website
+AlphaDecay: Module-wise Weight Decay for Heavy-Tailed Balancing in LLMs,https://github.com/hed-ucas/AlphaDecay
+Test-Time Adaptation of Vision-Language Models for Open-Vocabulary Semantic Segmentation,https://github.com/dosowiechi/MLMP
+Rethinking Nighttime Image Deraining Via Learnable Color Space Transformation,https://github.com/guanqiyuan/CST-Net
+AgentAuditor: Human-level Safety and Security Evaluation for LLM Agents,https://github.com/Astarojth/AgentAuditor
+Preference Optimization By Estimating The Ratio of The Data Distribution,https://github.com/aailab-kaist/BPO
+Open-Vocabulary Part Segmentation Via Progressive and Boundary-Aware Strategy,https://github.com/TJU-IDVLab/PBAPS
+BrainOmni: A Brain Foundation Model for Unified EEG and MEG Signals,https://github.com/OpenTSLab/BrainOmni
+UniSite: The First Cross-Structure Dataset and Learning Framework for End-to-End Ligand Binding Site Detection,https://github.com/quanlin-wu/unisite
+MonoLift: Learning 3D Manipulation Policies from Monocular RGB Via Distillation,https://robotasy.github.io/MonoLift/
+Optimize Any Topology: A Foundation Model for Shape- and Resolution-Free Structural Topology Optimization,https://github.com/ahnobari/OptimizeAnyTopology
+Improving Generalization of Neural Combinatorial Optimization for Vehicle Routing Problems Via Test-Time Projection Learning,https://github.com/CIAM-Group/TTPL
+HPSERec: A Hierarchical Partitioning and Stepwise Enhancement Framework for Long-tailed Sequential Recommendation,https://anonymous.4open.science/r/HPSERec-2404
+DINGO: Constrained Inference for Diffusion LLMs,https://github.com/uiuc-focal-lab/DINGO
+Taught Well Learned Ill: Towards Distillation-conditional Backdoor Attack,https://github.com/WhitolfChen/SCAR
+HybridNorm: Towards Stable and Efficient Transformer Training Via Hybrid Normalization,https://github.com/BryceZhuo/HybridNorm
+SRA-CL: Semantic Retrieval Augmented Contrastive Learning for Sequential Recommendation,https://github.com/ziqiangcui/SRA-CL
+Optimized Minimal 3D Gaussian Splatting,https://maincold2.github.io/omg/
+On Efficiency-Effectiveness Trade-off of Diffusion-based Recommenders,https://github.com/maowenyu-11/TA-Rec
+EvolvedGRPO: Unlocking Reasoning in LVLMs Via Progressive Instruction Evolution,https://github.com/SHENZHEBEI/EvolvedGRPO
+A Frustratingly Simple Yet Highly Effective Attack Baseline: Over 90% Success Rate Against The Strong Black-box Models of GPT-4.5/4o/o1,https://huggingface.co/datasets/MBZUAI-LLM/M-Attack_AdvSamples
+Conditional Representation Learning for Customized Tasks,https://github.com/XLearning-SCU/2025-NeurIPS-CRL
+AVCD: Mitigating Hallucinations in Audio-Visual Large Language Models Through Contrastive Decoding,https://github.com/kaistmm/AVCD
+Mixture-of-Experts Meets In-Context Reinforcement Learning,https://github.com/NJU-RL/T2MIR
+FairNet: Dynamic Fairness Correction Without Performance Loss Via Contrastive Conditional LoRA,https://github.com/SongqiZhou/FairNet
+Balanced Token Pruning: Accelerating Vision Language Models Beyond Local Optimization,https://github.com/EmbodiedCity/NeurIPS2025-Balanced-Token-Pruning
+SpecReason: Fast and Accurate Inference-Time Compute Via Speculative Reasoning,https://anonymous.4open.science/r/specreason/
+Learning to Better Search with Language Models Via Guided Reinforced Self-Training,https://github.com/snu-mllab/guided-rest
+A Fair Federated Learning Method for Handling Client Participation Probability Inconsistencies in Heterogeneous Environments,https://github.com/Siyuan01/PHP-FL-main
+LUNA: Efficient and Topology-Agnostic Foundation Model for EEG Signal Analysis,https://github.com/pulp-bio/biofoundation
+MDNS: Masked Diffusion Neural Sampler Via Stochastic Optimal Control,https://github.com/yuchen-zhu-zyc/MDNS
+FRN: Fractal-Based Recursive Spectral Reconstruction Network,https://github.com/mongko007/frn
+Learning Pattern-Specific Experts for Time Series Forecasting Under Patch-level Distribution Shift,https://github.com/syrGitHub/TFPS
+Advancing Compositional Awareness in CLIP with Efficient Fine-Tuning,https://clic-compositional-clip.github.io
+FlowCut: Rethinking Redundancy Via Information Flow for Efficient Vision-Language Models,https://github.com/TungChintao/FlowCut
+Hierarchical Demonstration Order Optimization for Many-shot In-Context Learning,https://github.com/YinhanHe123/HIDO/
+SemCoT: Accelerating Chain-of-Thought Reasoning Through Semantically-Aligned Implicit Tokens,https://github.com/YinhanHe123/SemCoT/
+RankSEG-RMA: An Efficient Segmentation Algorithm Via Reciprocal Moment Approximation,https://github.com/ZixunWang/RankSEG-RMA
+MixSignGraph: A Sign Sequence Is Worth Mixed Graphs of Nodes,https://github.com/gswycf/SignLanguage
+SEEA-R1: Tree-Structured Reinforcement Fine-Tuning for Self-Evolving Embodied Agents,https://seea-r1.github.io/
+ScSplit: Bringing Severity Cognizance to Image Decomposition in Fluorescence Microscopy,https://github.com/juglab/scSplit/
+TRIDENT: Tri-Modal Molecular Representation Learning with Taxonomic Annotations and Local Correspondence,https://github.com/uta-smile/TRIDENT
+Stochastic Forward-Forward Learning Through Representational Dimensionality Compression,https://github.com/ZhichaoZhu/StochasticForwardForward
+"Train with Perturbation, Infer After Merging: A Two-Stage Framework for Continual Learning",https://github.com/qhmiao/P-M-for-Continual-Learning
+Embodied Crowd Counting,https://github.com/longrunling/ECC?
+Limited Preference Data? Learning Better Reward Model with Latent Space Synthesis,https://github.com/deeplearning-wisc/lens
+Train on Pins and Test on Obstacles for Rectilinear Steiner Minimum Tree,https://github.com/Thinklab-SJTU/EDA-AI/
+FedMGP: Personalized Federated Learning with Multi-Group Text-Visual Prompts,https://github.com/weihao-bo/FedMGP.git
+T-SHIRT: Token-Selective Hierarchical Data Selection for Instruction Tuning,https://github.com/Dynamite321/T-SHIRT
+Guard Me If You Know Me: Protecting Specific Face-Identity from Deepfakes,https://github.com/KQL11/VIPGuard
+Unveiling The Spatial-temporal Effective Receptive Fields of Spiking Neural Networks,https://github.com/EricZhang1412/Spatial-temporal-ERF
+CodeMerge: Codebook-Guided Model Merging for Robust Test-Time Adaptation in Autonomous Driving,https://github.com/UQHTy/CodeMerge
+Self-Evolving Pseudo-Rehearsal for Catastrophic Forgetting with Task Similarity in LLMs,https://github.com/JerryWangJun/LLM_CL_SERS/
+GeoLLaVA-8K: Scaling Remote-Sensing Multimodal Large Language Models to 8K Resolution,https://github.com/MiliLab/GeoLLaVA-8K
+RoMA: Scaling Up Mamba-based Foundation Models for Remote Sensing,https://github.com/MiliLab/RoMA
+OmniResponse: Online Multimodal Conversational Response Generation in Dyadic Interactions,https://omniresponse.github.io/
+RoboScape: Physics-informed Embodied World Model,https://github.com/tsinghua-fib-lab/RoboScape
+Partition-Then-Adapt: Combating Prediction Bias for Reliable Multi-Modal Test-Time Adaptation,https://github.com/MPI-Lab/PTA
+UniRelight: Learning Joint Decomposition and Synthesis for Video Relighting,https://research.nvidia.com/labs/toronto-ai/UniRelight/
+Temporal Logic-Based Multi-Vehicle Backdoor Attacks Against Offline RL Agents in End-to-end Autonomous Driving,https://sites.google.com/view/tlbackdoor/home
+Tensor Decomposition Networks for Accelerating Machine Learning Force Field Computations,https://github.com/divelab/AIRS/tree/main/OpenMol/TDN
+FlyLoRA: Boosting Task Decoupling and Parameter Efficiency Via Implicit Rank-Wise Mixture-of-Experts,https://github.com/gfyddha/FlyLoRA
+Anti-Aliased 2D Gaussian Splatting,https://github.com/maeyounes/AA-2DGS
+"GPLQ: A General, Practical, and Lightning QAT Method for Vision Transformers",https://github.com/wujx2001/GPLQ
+Human-assisted Robotic Policy Refinement Via Action Preference Optimization,https://github.com/GeWu-Lab/Action-Preference-Optimization
+MetaDefense: Defending Fine-tuning Based Jailbreak Attack Before and During Generation,https://github.com/ws-jiang/MetaDefense
+Recognition Through Reasoning: Reinforcing Image Geo-localization with Large Vision-Language Models,https://github.com/lingli1996/GLOBE
+RoMa: A Robust Model Watermarking Scheme for Protecting IP in Diffusion Models,https://github.com/xiekks/RoMa
+Towards General Modality Translation with Contrastive and Predictive Latent Diffusion Bridge,https://sites.google.com/view/lddbm/home
+Test-Time Adaptive Object Detection with Foundation Model,https://github.com/gaoyingjay/ttaod_foundation
+Can Dependencies Induced By LLM-Agent Workflows Be Trusted?,https://github.com/tmllab/2025_NeurIPS_SeqCV
+A Theoretical Study on Bridging Internal Probability and Self-Consistency for LLM Reasoning,https://wnjxyk.github.io/RPC
+Multi-dataset Joint Pre-training of Emotional EEG Enables Generalizable Affective Computing,https://github.com/ncclab-sustech/mdJPT_nips2025
+Omnidirectional 3D Scene Reconstruction from Single Image,https://omni3d-neurips.github.io
+BlurDM: A Blur Diffusion Model for Image Deblurring,https://github.com/Jin-Ting-He/BlurDM
+3D Interaction Geometric Pre-training for Molecular Relational Learning,https://github.com/Namkyeong/3DMRL
+Text-to-Decision Agent: Offline Meta-Reinforcement Learning from Natural Language Supervision,https://github.com/NJU-RL/T2DA
+Audio Super-Resolution with Latent Bridge Models,https://AudioLBM.github.io/
+AANet: Virtual Screening Under Structural Uncertainty Via Alignment and Aggregation,https://github.com/Wiley-Z/AANet
+From Forecasting to Planning: Policy World Model for Collaborative State-Action Prediction,https://github.com/6550Zhao/Policy-World-Model
+SpecEdge: Scalable Edge-Assisted Serving Framework for Interactive LLMs,https://github.com/kaist-ina/specedge
+Learning to Control Free-Form Soft Swimmers,https://github.com/changyu-hu/FreeFlow
+How Different from The Past? Spatio-Temporal Time Series Forecasting with Self-Supervised Deviation Learning,https://github.com/Jimmy-7664/ST-SSDL
+A Single-Loop First-Order Algorithm for Linearly Constrained Bilevel Optimization,https://github.com/ShenGroup/SFLCB
+SoPo: Text-to-Motion Generation Using Semi-Online Preference Optimization,https://xiaofeng-tan.github.io/projects/SoPo/
+Seeing The Wind from A Falling Leaf,https://chaoren2357.github.io/seeingthewind/
+InstanceAssemble: Layout-Aware Image Generation Via Instance Assembling Attention,https://github.com/FireRedTeam/InstanceAssemble
+MaintainCoder: Maintainable Code Generation Under Dynamic Requirements,https://github.com/IAAR-Shanghai/MaintainCoder
+PID-controlled Langevin Dynamics for Faster Sampling on Generative Models,https://github.com/tsinghua-fib-lab/PIDLD
+One-Step Diffusion-Based Image Compression with Semantic Distillation,https://onedc-codec.github.io/
+Flatten Graphs As Sequences: Transformers Are Scalable Graph Generators,https://github.com/BorgwardtLab/AutoGraph
+DCA: Graph-Guided Deep Embedding Clustering for Brain Atlases,https://github.com/ncclab-sustech/DCA
+Missing Data Imputation By Reducing Mutual Information with Rectified Flows,https://github.com/yujhml/MIRI-Imputation
+CSPCL: Category Semantic Prior Contrastive Learning for Deformable DETR-Based Prohibited Item Detectors,https://github.com/Limingyuan001/CSPCL
+Efficient Speech Language Modeling Via Energy Distance in Continuous Latent Space,https://github.com/ictnlp/SLED-TTS
+One for All: Universal Topological Primitive Transfer for Graph Structure Learning,https://anonymous.4open.science/r/UGSKT-C10E/
+Synthetic Series-Symbol Data Generation for Time Series Foundation Models,https://github.com/wwhenxuan/SymTime
+Dependency Matters: Enhancing LLM Reasoning with Explicit Knowledge Grounding,https://github.com/cure-lab/GRiD
+Concept-Guided Interpretability Via Neural Chunking,https://github.com/swu32/Chunk-Interpretability_
+GRIFFIN: Effective Token Alignment for Faster Speculative Decoding,https://github.com/hsj576/GRIFFIN
+Robust Explanations of Graph Neural Networks Via Graph Curvatures,https://github.com/yazhengliu/Robust_explanation_curvature
+TimeEmb: A Lightweight Static-Dynamic Disentanglement Framework for Time Series Forecasting,https://github.com/showmeon/TimeEmb
+NeuroPath: Neurobiology-Inspired Path Tracking and Reflection for Semantically Coherent Retrieval,https://github.com/KennyCaty/NeuroPath
+Data-Free Model Extraction for Black-box Recommender Systems Via Graph Convolutions,https://github.com/Vencent-Won/DBGRME.git
+FACE: A General Framework for Mapping Collaborative Filtering Embeddings Into LLM Tokens,https://github.com/YixinRoll/FACE
+SALMONN-omni: A Standalone Speech LLM Without Codec Injection for Full-duplex Conversation,https://github.com/bytedance/SALMONN
+VaMP: Variational Multi-Modal Prompt Learning for Vision-Language Models,https://visual-ai.github.io/vamp
+SEAL: Semantic-Aware Hierarchical Learning for Generalized Category Discovery,https://visual-ai.github.io/seal/
+Luminance-Aware Statistical Quantization: Unsupervised Hierarchical Learning for Illumination Enhancement,https://github.com/XYLGroup/LASQ
+Towards Realistic Earth-Observation Constellation Scheduling: Benchmark and Methodology,https://github.com/buaa-colalab/AEOSBench
+FAST: Foreground‑aware Diffusion with Accelerated Sampling Trajectory for Segmentation‑oriented Anomaly Synthesis,https://github.com/Chhro123/fast-foreground-aware-anomaly-synthesis
+Towards Visualization-of-Thought Jailbreak Attack Against Large Visual Language Models,https://github.com/Hongqiong12/VoTA
+DexGarmentLab: Dexterous Garment Manipulation Environment with Generalizable Policy,https://wayrise.github.io/DexGarmentLab/
+Belief-Calibrated Multi-Agent Consensus Seeking for Complex NLP Tasks,https://github.com/dengwentao99/BCCS
+PolarQuant: Leveraging Polar Transformation for Key Cache Quantization and Decoding Acceleration,https://github.com/ericshwu/PolarQuant
+FedQS: Optimizing Gradient and Model Aggregation for Semi-Asynchronous Federated Learning,https://github.com/bkjod/FedQS_
+VT-FSL: Bridging Vision and Text with LLMs for Few-Shot Learning,https://github.com/peacelwh/VT-FSL
+Target Speaker Extraction Through Comparing Noisy Positive and Negative Audio Enrollments,https://github.com/xu-shitong/TSE-through-Positive-Negative-Enroll
+Continuous Thought Machines,https://pub.sakana.ai/ctm/
+‌Navigating The MIL Trade-Off: Flexible Pooling for Whole Slide Image Classification,https://github.com/jafarinia/maxsoft
+SparseDiT: Token Sparsification for Efficient Diffusion Transformer,https://github.com/changsn/SparseDiT
+The Indra Representation Hypothesis,https://github.com/Jianglin954/Indra
+Glocal Information Bottleneck for Time Series Imputation,https://github.com/Muyiiiii/NeurIPS-25-Glocal-IB
+LightFair: Towards An Efficient Alternative for Fair T2I Diffusion Via Debiasing Pre-trained Text Encoders,https://github.com/boyuh/LightFair
+GEM: Empowering MLLM for Grounded ECG Understanding with Time Series and Images,https://github.com/lanxiang1017/GEM
+ZEBRA: Towards Zero-Shot Cross-Subject Generalization for Universal Brain Visual Decoding,https://github.com/xmed-lab/ZEBRA
+Process Vs. Outcome Reward: Which Is Better for Agentic RAG Reinforcement Learning,https://github.com/Applied-Machine-Learning-Lab/ReasonRAG
+Diffusion Transformers As Open-World Spatiotemporal Foundation Models,https://github.com/tsinghua-fib-lab/UrbanDiT
+PseuZO: Pseudo-Zeroth-Order Algorithm for Training Deep Neural Networks,https://github.com/YangBigMn/PseuZO
+When One Moment Isn’t Enough: Multi-Moment Retrieval with Cross-Moment Interactions,https://github.com/Zhuo-Cao/QV-M2
+Dynamic and Chemical Constraints to Enhance The Molecular Masked Graph Autoencoders,https://github.com/forever-ly/DyCC
+Enhancing The Maximum Effective Window for Long-Term Time Series Forecasting,https://github.com/forever-ly/PIH
+Making Classic GNNs Strong Baselines Across Varying Homophily: A Smoothness–Generalization Perspective,https://github.com/galogm/IGNN
+SALoM: Structure Aware Temporal Graph Networks with Long-Short Memory Updater,https://github.com/wave5418/SALoM
+Anchor-based Maximum Discrepancy for Relative Similarity Testing,https://github.com/zhijianzhouml/AMD
+Auditing Meta-Cognitive Hallucinations in Reasoning Large Language Models,https://github.com/Winnie-Lian/AHa_Meta_Cognitive
+Q-Insight: Understanding Image Quality Via Visual Reinforcement Learning,https://github.com/bytedance/Q-Insight
+Beyond Higher Rank: Token-wise Input-Output Projections for Efficient Low-Rank Adaptation,https://github.com/Leopold1423/toplora-neurips25
+Counterfactual Reasoning for Steerable Pluralistic Value Alignment of Large Language Models,https://github.com/microsoft/COUPLE
+HAODiff: Human-Aware One-Step Diffusion Via Dual-Prompt Guidance,https://github.com/gobunu/HAODiff
+Shallow Flow Matching for Coarse-to-Fine Text-to-Speech Synthesis,https://ydqmkkx.github.io/SFMDemo/
+SMARTraj$^2$: A Stable Multi-City Adaptive Method for Multi-View Spatio-Temporal Trajectory Representation Learning,https://github.com/GestaltCogTeam/SMARTraj
+Gains: Fine-grained Federated Domain Adaptation in Open Set,https://github.com/Zhong-Zhengyi/Gains
+Inference-time Alignment in Continuous Space,https://github.com/yuanyige/sea
+Co-Reinforcement Learning for Unified Multimodal Understanding and Generation,https://github.com/mm-vl/ULM-R1
+DOVE: Efficient One-Step Diffusion Model for Real-World Video Super-Resolution,https://github.com/zhengchen1999/DOVE
+Brain Network Science Modelling of Sparse Neural Networks Enables Transformers and LLMs to Perform As Fully Connected,https://github.com/biomedical-cybernetics/Cannistraci-Hebb-training
+GeoRemover: Removing Objects and Their Causal Visual Artifacts,https://buxiangzhiren.github.io/GeoRemover
+Doubly Robust Alignment for Large Language Models,https://github.com/DRPO4LLM/DRPO4LLM
+ADPretrain: Advancing Industrial Anomaly Detection Via Anomaly Representation Pretraining,https://github.com/xcyao00/ADPretrain
+Accelerating Parallel Diffusion Model Serving with Residual Compression,https://github.com/Cobalt-27/CompactFusion
+Multivariate Time Series Anomaly Detection with Idempotent Reconstruction,https://github.com/ProEcho1/Idempotent-Generation-for-Anomaly-Detection-IGAD
+Integrating Drug Substructures and Longitudinal Electronic Health Records for Personalized Drug Recommendation,https://anonymous.4open.science/r/DrugRecommendation-5173
+OpenWorldSAM: Extending SAM2 for Universal Image Segmentation with Language Prompts,https://github.com/GinnyXiao/OpenWorldSAM
+BlurGuard: A Simple Approach for Robustifying Image Protection Against AI-Powered Editing,https://github.com/jsu-kim/BlurGuard
+Bridging The Gap to Real-world Language-grounded Visual Concept Learning,https://github.com/whieya/Language-grounded-VCL
+Disentangled Representation Learning Via Modular Compositional Bias,https://github.com/whieya/Compositional-DRL
+HyperMARL: Adaptive Hypernetworks for Multi-Agent RL,https://github.com/KaleabTessera/HyperMARL
+DAAC: Discrepancy-Aware Adaptive Contrastive Learning for Medical Time Series,https://github.com/CUHKSZ-MED-BioE/DAAC
+Efficiently Maintaining The Multilingual Capacity of MCLIP in Downstream Cross-Modal Retrieval Tasks,https://github.com/tiggers23/TaPCL-CiPCL
+OmniTry: Virtual Try-On Anything Without Masks,https://omnitry.github.io/
+PipeFusion: Patch-level Pipeline Parallelism for Diffusion Transformers Inference,https://github.com/xdit-project/xDiT
+Learning Multi-Source and Robust Representations for Continual Learning,https://github.com/CL-Coder236/LMSRR
+TARFVAE: Efficient One-Step Generative Time Series Forecasting Via TARFLOW Based VAE,https://github.com/Gavine77/TARFVAE
+From Cradle to Cane: A Two-Pass Framework for High-Fidelity Lifespan Face Aging,https://github.com/byliutao/Cradle2Cane
+OSCAR: One-Step Diffusion Codec Across Multiple Bit-rates,https://github.com/jp-guo/OSCAR/
+Mint: A Simple Test-Time Adaptation of Vision-Language Models Against Common Corruptions,https://github.com/baowenxuan/Mint
+Multi-Modal View Enhanced Large Vision Models for Long-Term Time Series Forecasting,https://github.com/D2I-Group/dmmv
+VLA-Cache: Efficient Vision-Language-Action Manipulation Via Adaptive Token Caching,https://vla-cache.github.io
+Understanding and Improving Adversarial Robustness of Neural Probabilistic Circuits,https://github.com/uiuctml/RNPC
+Graphs Help Graphs: Multi-Agent Graph Socialized Learning,https://github.com/Jillian555/GHG
+WMCopier: Forging Invisible Watermarks on Arbitrary Images,https://github.com/holdrain/WMCopier
+Exploiting Task Relationships in Continual Learning Via Transferability-Aware Task Embeddings,https://github.com/viki760/H-embedding-Guided-Hypernet
+ComRank: Ranking Loss for Multi-Label Complementary Label Learning,https://github.com/JellyJamZhu/ComRank
+GPAS: Accelerating Convergence of LLM Pretraining Via Gradient-Preserving Activation Scaling,https://github.com/dandingsky/GPAS
+Short-length Adversarial Training Helps LLMs Defend Long-length Jailbreak Attacks: Theoretical and Empirical Evidence,https://github.com/fshp971/adv-icl
+One Stone with Two Birds: A Null-Text-Null Frequency-Aware Diffusion Models for Text-Guided Image Inpainting,https://github.com/htyjers/NTN-Diff
+Keep It on A Leash: Controllable Pseudo-label Generation Towards Realistic Long-Tailed Semi-Supervised Learning,https://github.com/yaxinhou/CPG
+Enhancing Temporal Understanding in Video-LLMs Through Stacked Temporal Attention in Vision Encoders,https://alirasekh.github.io/STAVEQ2/
+Angular Constraint Embedding Via SpherePair Loss for Constrained Clustering,https://github.com/spherepaircc/SpherePairCC/tree/main
+"For Better or for Worse, Transformers Seek Patterns for Memorization",https://github.com/mdrpanwar/memorization-patterns
+Evolutionary Multi-View Classification Via Eliminating Individual Fitness Bias,https://github.com/LiShuailzn/Neurips-2025-EFB-EMVC
+Shape It Up! Restoring LLM Safety During Finetuning,https://github.com/poloclub/star-dss
+FRBNet: Revisiting Low-Light Vision Through Frequency-Domain Radial Basis Network,https://github.com/Sing-Forevet/FRBNet
+Learning Crossmodal Interaction Patterns Via Attributed Bipartite Graphs for Single-Cell Omics,https://github.com/wangxiaotang0906/Bi2Former
+Dense Metric Depth Estimation Via Event-based Differential Focus Volume Prompting,https://github.com/liboyu02/EDFV/
+"Fuse2Match: Training-Free Fusion of Flow, Diffusion, and Contrastive Models for Zero-Shot Semantic Matching",https://github.com/panda7777777/fuse2match
+HopaDIFF: Holistic-Partial Aware Fourier Conditioned Diffusion for Referring Human Action Segmentation in Multi-Person Scenarios,https://github.com/KPeng9510/HopaDIFF
+Physics-Driven Spatiotemporal Modeling for AI-Generated Video Detection,https://github.com/ZSHsh98/NSG-VD
+WeatherPrompt: Multi-modality Representation Learning for All-Weather Drone Visual Geo-Localization,https://github.com/Jahawn-Wen/WeatherPrompt
+Watermarking Autoregressive Image Generation,https://github.com/facebookresearch/wmar
+Advanced Sign Language Video Generation with Compressed and Quantized Multi-Condition Tokenization,https://github.com/umnooob/signvip/
+Data Efficient Adaptation in Large Language Models Via Continuous Low-Rank Fine-Tuning,https://github.com/Applied-Machine-Learning-Lab/DEAL
+Jury-and-Judge Chain-of-Thought for Uncovering Toxic Data in 3D Visual Grounding,https://github.com/Hermione-HKX/Refer_Judge
+Chiron-o1: Igniting Multimodal Large Language Models Towards Generalizable Medical Reasoning Via Mentor-Intern Collaborative Search,https://github.com/Yankai96/Chiron-o1
+Data Selection Matters: Towards Robust Instruction Tuning of Large Multimodal Models,https://github.com/xyang583/ARDS
+Rethinking Residual Distribution in Locate-then-Edit Model Editing,https://github.com/xpq-tech/BLUE
+Jacobian-Based Interpretation of Nonlinear Neural Encoding Model,https://github.com/Gaitxh/JNE
+Training-Free Constrained Generation With Stable Diffusion Models,https://github.com/RAISELab-atUVA/Constrained-Stable-Diffusion
+SPACE: SPike-Aware Consistency Enhancement for Test-Time Adaptation in Spiking Neural Networks,https://github.com/ethanxyluo/SPACE
+COME: Adding Scene-Centric Forecasting Control to Occupancy World Model,https://github.com/synsin0/COME
+Self-Supervised Selective-Guided Diffusion Model for Old-Photo Face Restoration,https://github.com/PRIS-CV/SSDiff
+Deno-IF: Unsupervised Noisy Visible and Infrared Image Fusion Method,https://github.com/hanna-xu/Deno-IF
+ThermalGen: Style-Disentangled Flow-Based Generative Models for RGB-to-Thermal Image Translation,http://xjh19971.github.io/ThermalGen
+Dual Prototype-Enhanced Contrastive Framework for Class-Imbalanced Graph Domain Adaptation,https://github.com/maxin88scu/ImGDA
+AREAL: A Large-Scale Asynchronous Reinforcement Learning System for Language Reasoning,https://github.com/inclusionAI/AReaL/
+Venus-MAXWELL: Efficient Learning of Protein-Mutation Stability Landscapes Using Protein Language Models,https://github.com/ai4protein/Venus-MAXWELL
+HyGen: Efficient LLM Serving Via Elastic Online-Offline Request Co-location,https://github.com/UIUC-MLSys/HyGen
+Counterfactual Implicit Feedback Modeling,https://github.com/zhouchuanCN/NeurIPS25-Counter-IF
+Direct3D-S2: Gigascale 3D Generation Made Easy with Spatial Sparse Attention,https://www.neural4d.com/research-page/direct3d-s2
+Accurate and Efficient Low-Rank Model Merging in Core Space,https://github.com/apanariello4/core-space-merging
+StateSpaceDiffuser: Bringing Long Context to Diffusion World Models,https://insait-institute.github.io/StateSpaceDiffuser/
+Long-Tailed Recognition Via Information-Preservable Two-Stage Learning,https://github.com/fudong03/BNS_IPDPP
+Breaking The Compression Ceiling: Data-Free Pipeline for Ultra-Efficient Delta Compression,https://github.com/xiaohuiwang000/UltraDelta
+Handling Label Noise Via Instance-Level Difficulty Modeling and Dynamic Optimization,https://github.com/iTheresaApocalypse/IDO
+CCS: Controllable and Constrained Sampling with Diffusion Models Via Initial Noise Perturbation,https://github.com/efzero/diffusioncontroller
+Stealthy Yet Effective: Distribution-Preserving Backdoor Attacks on Graph Classification,https://github.com/TheCoderOfs/DPSBA
+SPARKE: Scalable Prompt-Aware Diversity and Novelty Guidance in Diffusion Models Via RKE Score,https://mjalali.github.io/SPARKE/
+Dimension-Reduction Attack! Video Generative Models Are Experts on Controllable Image Synthesis,https://dra-ctrl-2025.github.io/DRA-Ctrl/
+HairFree: Compositional 2D Head Prior for Text-Driven 360° Bald Texture Synthesis,https://hairfree.is.tue.mpg.de/
+DCI: Dual-Conditional Inversion for Boosting Diffusion-Based Image Editing,https://github.com/Lzxhh/Dual-Conditional-Inversion
+FedRTS: Federated Robust Pruning Via Combinatorial Thompson Sampling,https://github.com/Little0o0/FedRTS
+StruDiCO: Structured Denoising Diffusion with Gradient-free Inference-stage Boosting for Memory and Time Efficient Combinatorial Optimization,https://github.com/yuuuuwang/StruDiCO
+MIRAGE: Assessing Hallucination in Multimodal Reasoning Chains of MLLM,https://bit.ly/25mirage
+Bidirectional Representations Augmented Autoregressive Biological Sequence Generation: Application in De Novo Peptide Sequencing,https://github.com/BEAM-Labs/denovo
+MINGLE: Mixture of Null-Space Gated Low-Rank Experts for Test-Time Continual Model Merging,https://github.com/zihuanqiu/MINGLE
+C-NAV: Towards Self-Evolving Continual Object Navigation in Open World,https://bigtree765.github.io/C-Nav-project
+Adaptive Stochastic Coefficients for Accelerating Diffusion Sampling,https://github.com/WLU-wry02/AdaSDE
+Neural B-frame Video Compression with Bi-directional Reference Harmonization,https://github.com/kwai/NVC
+Learnable Burst-Encodable Time-of-Flight Imaging for High-Fidelity Long-Distance Depth Sensing,https://github.com/ComputationalPerceptionLab/BE-ToF
+Learning Dense Hand Contact Estimation from Imbalanced Data,https://github.com/dqj5182/HACO_RELEASE
+Dual Alignment Framework for Few-shot Learning with Inter-Set and Intra-Set Shifts,https://github.com/siyang-jiang/DUAL
+"Harmony in Divergence: Towards Fast, Accurate, and Memory-efficient Zeroth-order LLM Fine-tuning",https://github.com/Skilteee/DiZO
+OWMM-Agent: Open World Mobile Manipulation With Multi-modal Agentic Data Synthesis,https://hhyhrhy.github.io/owmm-agent-project
+Private Training Large-scale Models with Efficient DP-SGD,https://github.com/kaustpradalab/flashdp
+MobileODE: An Extra Lightweight Network,https://github.com/cashily/MobileODE
+Correlated Low-Rank Adaptation for ConvNets,https://github.com/VISION-SJTU/CoLoRA
+Retrieval Is Not Enough: Enhancing RAG Through Test-Time Critique and Optimization,https://github.com/upup-wei/RAG-ReasonAlignment
+StyleGuard: Preventing Text-to-Image-Model-based Style Mimicry Attacks By Style Perturbations,https://github.com/PolyLiYJ/StyleGuard
+PIVNO: Particle Image Velocimetry Neural Operator,https://github.com/ZXS-Labs/PIVNO
+EditInfinity: Image Editing with Binary-Quantized Generative Models,https://github.com/yx-chen-ust/EditInfinity
+HBLLM: Wavelet-Enhanced High-Fidelity 1-Bit Quantization for LLMs,https://github.com/Yeyke/HBLLM
+Beyond Accuracy: Dissecting Mathematical Reasoning for LLMs Under Reinforcement Learning,https://sparkle-reasoning.github.io/
+Steering When Necessary: Flexible Steering Large Language Models with Backtracking,https://github.com/gjw185/FASB
+PRIMT: Preference-based Reinforcement Learning with Multimodal Feedback and Trajectory Synthesis from Foundation Models,https://primt25.github.io/
+Improving Diffusion-based Inverse Algorithms Under Few-Step Constraint Via Linear Extrapolation,https://github.com/weigerzan/LLE_inverse_problem
+DOVTrack: Data-Efficient Open-Vocabulary Tracking,https://github.com/zekunqian/DOVTrack
+OSKAR: Omnimodal Self-supervised Knowledge Abstraction and Representation,https://multimodal-oskar.github.io
+ProtInvTree: Deliberate Protein Inverse Folding with Reward-guided Tree Search,https://github.com/A4Bio/ProteinInvBench/
+KaRF: Weakly-Supervised Kolmogorov-Arnold Networks-based Radiance Fields for Local Color Editing,https://github.com/PaiDii/KARF.git
+Spectral Compressive Imaging Via Chromaticity-Intensity Decomposition,https://github.com/xiaodongwo/CIDNet
+$\text{G}^2\text{M}$: A Generalized Gaussian Mirror Method to Boost Feature Selection Power,https://github.com/skyve2012/G2M
+MoORE: SVD-based Model MoE-ization for Conflict- and Oblivion-Resistant Multi-Task Adaptation,https://github.com/DaShenZi721/MoORE
+REN: Fast and Efficient Region Encodings from Patch-Based Image Encoders,https://github.com/savya08/ren
+Accident Anticipation Via Temporal Occurrence Prediction,https://happytianhao.github.io/TOP/
+GoRA: Gradient-driven Adaptive Low Rank Adaptation,https://github.com/hhnqqq/MyTransformers
+RiverMamba: A State Space Model for Global River Discharge and Flood Forecasting,https://hakamshams.github.io/RiverMamba
+Evaluating Robustness of Monocular Depth Estimation with Procedural Scene Perturbations,https://github.com/princeton-vl/proc-depth-eval
+ToxicTextCLIP: Text-Based Poisoning and Backdoor Attacks on CLIP Pre-training,https://github.com/xinyaocse/ToxicTextCLIP/
+"Act to See, See to Act: Diffusion-Driven Perception-Action Interplay for Adaptive Policies",https://jingwang18.github.io/dp-ag.github.io/
+"Perturb A Model, Not An Image: Towards Robust Privacy Protection Via Anti-Personalized Diffusion Models",https://github.com/KU-VGI/APDM
+Synthesizing Performance Constraints for Evaluating and Improving Code Efficiency,https://github.com/elmerjfudd/wedge
+Breaking The Discretization Barrier of Continuous Physics Simulation Learning,https://github.com/Sunxkissed/CoPS
+Learning Without Augmenting: Unsupervised Time Series Representation Learning Via Frame Projections,https://github.com/eth-siplab/Learning-with-FrameProjections
+Quantifying Distributional Invariance in Causal Subgraph for IRM-Free Graph Generalization,https://github.com/anders1123/IDG
+Overcoming Long Context Limitations of State Space Models Via Context Dependent Sparse Attention,https://github.com/DeepGraphLearning/HAX
+Color Conditional Generation with Sliced Wasserstein Guidance,https://github.com/alobashev/sw-guidance
+SNEAKDOOR: Stealthy Backdoor Attacks Against Distribution Matching-based Dataset Condensation,https://github.com/XJTU-AI-Lab/SneakDoor
+Q-Palette: Fractional-Bit Quantizers Toward Optimal Bit Allocation for Efficient LLM Deployment,https://github.com/snu-mllab/Q-Palette
+Unleashing Foundation Vision Models: Adaptive Transfer for Diverse Data-Limited Scientific Domains,https://github.com/qklee-lz/CLAdapter
+Analogy-based Multi-Turn Jailbreak Against Large Language Models,https://anonymous.4open.science/r/AMA-E1C4
+Towards General Continuous Memory for Vision-Language Models,https://github.com/WenyiWU0111/CoMEM
+From Pixels to Views: Learning Angular-Aware and Physics-Consistent Representations for Light Field Microscopy,https://github.com/hefengcs/XLFM-Former
+Uncertainty-Informed Meta Pseudo Labeling for Surrogate Modeling with Limited Labeled Data,https://github.com/small-dumpling/UMPL
+Role-aware Multi-agent Reinforcement Learning for Coordinated Emergency Traffic Control,https://anonymous.4open.science/r/RMTC-5E28
+Neural Atlas Graphs for Dynamic Scene Decomposition and Editing,https://princeton-computational-imaging.github.io/nag/
+The Emergence of Abstract Thought in Large Language Models Beyond Any Language,https://anonymous.4open.science/status/S-C393
+Measure-Theoretic Anti-Causal Representation Learning,https://github.com/ArmanBehnam/ACIA
+EnzyControl: Adding Functional and Substrate-Specific Control for Enzyme Backbone Generation,https://github.com/Vecteur-libre/EnzyControl
+Preference-driven Knowledge Distillation for Few-shot Node Classification,https://github.com/GEEX-Weixing/PKD
+Neural MJD: Neural Non-Stationary Merton Jump Diffusion for Time Series Prediction,https://github.com/DSL-Lab/neural-MJD
+NaDRO: Leveraging Dual-Reward Strategies for LLMs Training on Noisy Data,https://anonymous.4open.science/r/NaDRO-D34D
+Decentralized Dynamic Cooperation of Personalized Models for Federated Continual Learning,https://github.com/ydn3229/DCFCL
+L2RSI: Cross-view LiDAR-based Place Recognition for Large-scale Urban Scenes Via Remote Sensing Imagery,https://shizw695.github.io/L2RSI/
+"Track, Inpaint, Resplat: Subject-driven 3D and 4D Generation with Progressive Texture Infilling",https://zsh2000.github.io/track-inpaint-resplat.github.io/
+MVSMamba: Multi-View Stereo with State Space Model,https://github.com/JianfeiJ/MVSMamba
+"NestedFP: High-Performance, Memory-Efficient Dual-Precision Floating Point Support for LLMs",https://github.com/SNU-ARC/NestedFP
+Defining and Discovering Hyper-meta-paths for Heterogeneous Hypergraphs,https://github.com/zhengziyu77/HHNN
+Investigating and Mitigating Catastrophic Forgetting in Medical Knowledge Injection Through Internal Knowledge Augmentation Learning,https://github.com/THUMLP/InternAL
+You Can Trust Your Clustering Model: A Parameter-free Self-Boosting Plug-in for Deep Clustering,https://github.com/l-h-y168/DCBoost
+ROOT: Rethinking Offline Optimization As Distributional Translation Via Probabilistic Bridge,https://github.com/cuong-dm/ROOT
+Angular Steering: Behavior Control Via Rotation in Activation Space,https://github.com/lone17/angular-steering/
+Beyond Oracle: Verifier-Supervision for Instruction Hierarchy in Reasoning and Instruction-Tuned LLMs,https://github.com/cycraft-corp/BeyondOracle
+OSTAR: Optimized Statistical Text-classifier with Adversarial Resistance,https://github.com/BUPT-SN/OSTAR
+Space Group Equivariant Crystal Diffusion,https://github.com/rees-c/sgequidiff
+Towards Interpretability Without Sacrifice: Faithful Dense Layer Decomposition with Mixture of Decoders,https://github.com/james-oldfield/MxD
+RHYTHM: Reasoning with Hierarchical Temporal Tokenization for Human Mobility,https://github.com/he-h/rhythm
+EfficientNav: Towards On-Device Object-Goal Navigation with Navigation Map Caching and Retrieval,https://github.com/PKU-SEC-Lab/EfficientNav
+MATCH: Multi-faceted Adaptive Topo-Consistency for Semi-Supervised Histopathology Segmentation,https://github.com/Melon-Xu/MATCH
+UniLumos: Fast and Unified Image and Video Relighting with Physics-Plausible Feedback,https://github.com/alibaba-damo-academy/Lumos-Custom
+Versatile Transferable Unlearnable Example Generator,https://github.com/zhli-cs/VTG
+EDELINE: Enhancing Memory in Diffusion-based World Models Via Linear-Time Sequence Modeling,https://github.com/LJH-coding/EDELINE
+AttentionPredictor: Temporal Patterns Matter for KV Cache Compression,https://github.com/MIRALab-USTC/LLM-AttentionPredictor
+Towards Accurate Time Series Forecasting Via Implicit Decoding,https://github.com/rakuyorain/Implicit-Forecaster
+Towards Robust Pseudo-Label Learning in Semantic Segmentation: An Encoding Perspective,https://github.com/Woof6/ECOCSeg
+Towards Unsupervised Domain Bridging Via Image Degradation in Semantic Segmentation,https://github.com/Woof6/DiDA
+Association-Focused Path Aggregation for Graph Fraud Detection,https://github.com/horrible-dong/GPA
+GPSToken: Gaussian Parameterized Spatially-adaptive Tokenization for Image Representation and Generation,https://github.com/xtudbxk/GPSToken
+Not All Data Are Good Labels: On The Self-supervised Labeling for Time Series Forecasting,https://github.com/SuDIS-ZJU/SCAM
+Generating Multi-Table Time Series EHR from Latent Space with Minimal Preprocessing,https://github.com/eunbyeol-cho/RawMed
+Compiler-R1: Towards Agentic Compiler Auto-tuning with Reinforcement Learning,https://github.com/Panhaolin2001/Compiler-R1
+Preserving LLM Capabilities Through Calibration Data Curation: From Analysis to Optimization,https://github.com/BokwaiHo/COLA.git
+TRAP: Targeted Redirecting of Agentic Preferences,https://github.com/uiuc-focal-lab/TRAP
+Knowledge Distillation Detection for Open-weights Models,https://github.com/shqii1j/distillation_detection
+Learning to Cluster Neuronal Function,https://github.com/Nisone2000/DECEMber
+Learning Shared Representations from Unpaired Data,https://shaham-lab.github.io/SUE_page
+Test-Time Spectrum-Aware Latent Steering for Zero-Shot Generalization in Vision-Language Models,https://github.com/kdafnis/STS
+Rethinking Scale-Aware Temporal Encoding for Event-based Object Detection,https://github.com/BIT-Vision/SATE
+BMW: Bidirectionally Memory Bank ReWriting for Unsupervised Person Re-Identification,https://github.com/liu-xb/BMW
+TRoVe: Discovering Error-Inducing Static Feature Biases in Temporal Vision-Language Models,https://github.com/Stanford-AIMI/TRoVe
+ALMGuard: Safety Shortcuts and Where to Find Them As Guardrails for Audio–Language Models,https://github.com/WeifeiJin/ALMGuard
+S’MoRE: Structural Mixture of Residual Experts for Parameter-Efficient LLM Fine-tuning,https://github.com/ZimpleX/SMoRE-LLM
+X-Mahalanobis: Transformer Feature Mixing for Reliable OOD Detection,https://github.com/SEUML/X-Maha
+MTL-KD: Multi-Task Learning Via Knowledge Distillation for Generalizable Neural Vehicle Routing Solver,https://github.com/CIAM-Group/MTLKD
+PPMStereo: Pick-and-Play Memory Construction for Consistent Dynamic Stereo Matching,https://github.com/cocowy1/PPMStereo
+Self Iterative Label Refinement Via Robust Unlabeled Learning,https://github.com/HikaruAsano/self-iterative-label-refinement
+Focus-Then-Reuse: Fast Adaptation in Visual Perturbation Environments,https://github.com/LAMDA-RL/FTR
+Solving Partial Differential Equations Via Radon Neural Operator,https://github.com/wenbin-lu/Radon-Neural-Operator
+LayerNavigator: Finding Promising Intervention Layers for Efficient Activation Steering in Large Language Models,https://github.com/Bryson-Arrot/LayerNavigator
+Two‑Stage Learning of Stabilizing Neural Controllers Via Zubov Sampling and Iterative Domain Expansion,https://github.com/Verified-Intelligence/Two-Stage_Neural_Controller_Training
+ReDi: Rectified Discrete Flow,https://github.com/Ugness/ReDi_discrete
+Precise Diffusion Inversion: Towards Novel Samples and Few-Step Models,https://github.com/panda7777777/PreciseInv
+Fading to Grow: Growing Preference Ratios Via Preference Fading Discrete Diffusion for Recommendation,https://anonymous.4open.science/r/PreferGrow_Commit-2259/
+Uncertainty-Based Smooth Policy Regularisation for Reinforcement Learning with Few Demonstrations,https://github.com/YujieZhu7/SPReD
+FedRAM: Federated Reweighting and Aggregation for Multi-Task Learning,https://github.com/wwffvv/FedRAM
+Dual-Stage Value-Guided Inference with Margin-Based Reward Adjustment for Fast and Faithful VLM Captioning,https://github.com/ankan8145/ViMaR
+DNA-DetectLLM: Unveiling AI-Generated Text Via A DNA-Inspired Mutation-Repair Paradigm,https://github.com/Xiaoweizhu57/DNA-DetectLLM
+Flash Invariant Point Attention,https://github.com/flagshippioneering/flash_ipa
+POCO: Scalable Neural Forecasting Through Population Conditioning,https://github.com/yuvenduan/POCO
+Text to Sketch Generation with Multi-Styles,https://github.com/CMACH508/M3S
+SubTrack++ : Gradient Subspace Tracking for Scalable LLM Training,https://github.com/criticalml-uw/SubTrack
+On Inductive Biases That Enable Generalization in Diffusion Transformers,https://github.com/DiT-Generalization/DiT-Generalization
+ReMindRAG: Low-Cost LLM-Guided Knowledge Graph Traversal for Efficient RAG,https://github.com/kilgrims/ReMindRAG
+Diffusing DeBias: Synthetic Bias Amplification for Model Debiasing,https://github.com/Malga-Vision/DiffusingDeBias
+Grasp2Grasp: Vision-Based Dexterous Grasp Translation Via Schrödinger Bridges,https://grasp2grasp.github.io/
+Hierarchical Frequency Tagging Probe (HFTP): A Unified Approach to Investigate Syntactic Structure Representations in Large Language Models and The Human Brain,https://github.com/LilTiger/HFTP
+TrajAgent: An LLM-Agent Framework for Trajectory Modeling Via Large-and-Small Model Collaboration,https://github.com/tsinghua-fib-lab/TrajAgent
+AlignedGen: Aligning Style Across Generated Images,https://github.com/Jiexuanz/AlignedGen
+SteerConf: Steering LLMs for Confidence Elicitation,https://github.com/scottjiao/SteerConf
+Advancing Machine-Generated Text Detection from An Easy to Hard Supervision Perspective,https://github.com/tmlr-group/Easy2Hard
+Efficient Multimodal Dataset Distillation Via Generative Models,https://github.com/ichbill/EDGE
+MIND: Material Interface Generation from UDFs for Non-Manifold Surface Reconstruction,https://github.com/jjjkkyz/MIND
+RAGRouter: Learning to Route Queries to Multiple Retrieval-Augmented Language Models,https://github.com/OwwO99/RAGRouter
+Sim-LLM: Optimizing LLM Inference at The Edge Through Inter-Task KV Reuse,https://github.com/CGCL-codes/SimLLM
+Quantum Visual Fields with Neural Amplitude Encoding,https://4dqv.mpi-inf.mpg.de/QVF/
+Consistent Story Generation: Unlocking The Potential of Zigzag Sampling,https://github.com/Mingxiao-Li/Asymmetry-Zigzag-StoryDiffusion
+Multimodal Negative Learning,https://github.com/BaoquanGong/Multimodal-Negative-Learning.git
+GUARDIAN: Safeguarding LLM Multi-Agent Collaborations with Temporal Graph Modeling,https://github.com/JialongZhou666/GUARDIAN
+Buffer Layers for Test-Time Adaptation,https://github.com/hyeongyu-kim/Buffer_TTA
+3D-GSRD: 3D Molecular Graph Auto-Encoder with Selective Re-mask Decoding,https://github.com/WuChang0124/3D-GSRD
+Ditch The Denoiser: Emergence of Noise Robustness in Self-Supervised Learning from Data Curriculum,https://github.com/wenquanlu/noisy_dinov2
+Uni-MuMER: Unified Multi-Task Fine-Tuning of Vision-Language Model for Handwritten Mathematical Expression Recognition,https://github.com/BFlameSwift/Uni-MuMER
+Loquetier: A Virtualized Multi-LoRA Framework for Unified LLM Fine-tuning and Serving,https://github.com/NJUDeepEngine/Loquetier
+LLM Meets Diffusion: A Hybrid Framework for Crystal Material Generation,https://github.com/kdmsit/crysllmgen
+SpiderSolver: A Geometry-Aware Transformer for Solving PDEs on Complex Geometries,https://github.com/Kai-Qi/SpiderSolver
+RAG4GFM: Bridging Knowledge Gaps in Graph Foundation Models Through Graph Retrieval Augmented Generation,https://github.com/Matrixmax/RAG4GFM
+TSENOR: Highly-Efficient Algorithm for Finding Transposable N:M Sparse Masks,https://github.com/mazumder-lab/TSENOR
+GraSS: Scalable Data Attribution with Gradient Sparsification and Sparse Projection,https://github.com/TRAIS-Lab/GraSS
+"Scalable, Explainable and Provably Robust Anomaly Detection with One-Step Flow Matching",https://github.com/ZhongLIFR/TCCM-NIPS
+TopoPoint: Enhance Topology Reasoning Via Endpoint Detection in Autonomous Driving,https://github.com/Franpin/TopoPoint
+Drag-and-Drop LLMs: Zero-Shot Prompt-to-Weights,https://jerryliang24.github.io/DnD
+"ATLAS: Autoformalizing Theorems Through Lifting, Augmentation, and Synthesis of Data",https://github.com/XiaoyangLiu-sjtu/ATLAS
+Option-aware Temporally Abstracted Value for Offline Goal-Conditioned Reinforcement Learning,https://github.com/ota-v/ota-v
+Tortoise and Hare Guidance: Accelerating Diffusion Model Inference with Multirate Integration,https://github.com/yhlee-add/THG
+Self-supervised Learning of Echocardiographic Video Representations Via Online Cluster Distillation,https://github.com/mdivyanshu97/DISCOVR
+Revealing Multimodal Causality with Large Language Models,https://github.com/JinLi-i/MLLM-CD
+MS-BART: Unified Modeling of Mass Spectra and Molecules for Structure Elucidation,https://github.com/OpenDFM/MS-BART
+Activation-Informed Merging of Large Language Models,https://github.com/ahnobari/ActivationInformedMerging
+Knowledge Starts with Practice: Knowledge-Aware Exercise Generative Recommendation with Adaptive Multi-Agent Cooperation,https://github.com/dsz532/exeGen
+Learning Differential Pyramid Representation for Tone Mapping,https://xxxxxxdprnet.github.io/DPRNet/
+QiMeng-MuPa: Mutual-Supervised Learning for Sequential-to-Parallel Code Translation,https://github.com/kcxain/mupa
+Uncertainty-Calibrated Prediction of Randomly-Timed Biomarker Trajectories with Conformal Bands,https://github.com/vatass/ConformalBiomarkerTrajectories
+DeepASA: An Object-Oriented Multi-Purpose Network for Auditory Scene Analysis,https://huggingface.co/spaces/donghoney22/DeepASA
+Influence Guided Context Selection for Effective Retrieval-Augmented Generation,https://github.com/SJTU-DMTai/RAG-CSM
+Counterfactual Reasoning: An Analysis of In-context Emergence,https://github.com/mrtzmllr/iccr*
+Fast Constrained Sampling in Pre-trained Diffusion Models,https://github.com/cvlab-stonybrook/fast-constrained-sampling
+Improving Data Efficiency for LLM Reinforcement Fine-tuning Through Difficulty-targeted Online Data Selection and Rollout Replay,https://github.com/ASTRAL-Group/data-efficient-llm-rl/
+Unlocker: Disentangle The Deadlock of Learning Between Label-noisy and Long-tailed Data,https://anonymous.4open.science/r/neurips-2025-anonymous-1015/
+Efficient Last-Iterate Convergence in Solving Extensive-Form Games,https://github.com/menglinjian/NeurIPS-2025-RTCFR
+Last-Iterate Convergence of Smooth Regret Matching$^+$ Variants in Learning Nash Equilibria,https://github.com/menglinjian/NeurIPS-2025-SOGRM
+CausalPFN: Amortized Causal Effect Estimation Via In-Context Learning,https://github.com/vdblm/CausalPFN/
+Analog Foundation Models,https://github.com/IBM/analog-foundation-models
+Object Concepts Emerge from Motion,https://github.com/yulemao/Object_Concepts_Emerge_from_Motion
+Fourier Token Merging: Understanding and Capitalizing Frequency Domain for Efficient Image Generation,https://github.com/Fred1031/Fourier-Token-Merging
+Continuous Simplicial Neural Networks,https://github.com/ArefEinizade2/COSIMO
+ChromFound: Towards A Universal Foundation Model for Single-Cell Chromatin Accessibiltiy Data,https://github.com/JohnsonKlose/ChromFound
+Zero-Shot Trajectory Planning for Signal Temporal Logic Tasks,https://cps-sjtu.github.io/Zero-Shot-STL/
+REDOUBT: Duo Safety Validation for Autonomous Vehicle Motion Planning,https://github.com/sgNicola/Redoubt
+An Evidence-Based Post-Hoc Adjustment Framework for Anomaly Detection Under Data Contamination,https://github.com/sukanyapatra1997/EPHAD
+LBMKGC: Large Model-Driven Balanced Multimodal Knowledge Graph Completion,https://github.com/guoynow/LBMKGC
+Dependency Parsing Is More Parameter-Efficient with Normalization,https://github.com/paolo-gajo/EfficientSDP
+Learning to Watermark: A Selective Watermarking Framework for Large Language Models Via Multi-Objective Optimization,https://github.com/fattyray/learning-to-watermark
+MUSTAFAR: Promoting Unstructured Sparsity for KV Cache Pruning in LLM Inference,https://github.com/dhjoo98/mustafar
+Segment Policy Optimization: Effective Segment-Level Credit Assignment in RL for Large Language Models,https://github.com/AIFrameResearch/SPO
+Tool-Augmented Spatiotemporal Reasoning for Streamlining Video Question Answering Task,https://github.com/fansunqi/VideoTool
+CATransformers: Carbon Aware Transformers Through Joint Model-Hardware Optimization,https://github.com/facebookresearch/CATransformers
+Temporal Smoothness-Aware Rate-Distortion Optimized 4D Gaussian Splatting,https://github.com/HyeongminLEE/RD4DGS
+G-Net: A Provably Easy Construction of High-Accuracy Random Binary Neural Networks,https://github.com/GNet2025/GNet
+EVODiff: Entropy-aware Variance Optimized Diffusion Inference,https://github.com/ShiguiLi/EVODiff
+Towards Minimizing Feature Drift in Model Merging: Layer-wise Task Vector Fusion for Adaptive Knowledge Integration,https://github.com/SunWenJu123/model-merging
+Uncertainty-aware Preference Alignment for Diffusion Policies,https://anonymous.4open.science/w/Diff-UAPA-5827
+AdaDetectGPT: Adaptive Detection of LLM-Generated Text with Statistical Guarantees,https://github.com/Mamba413/AdaDetectGPT
+EVOREFUSE: Evolutionary Prompt Optimization for Evaluation and Mitigation of LLM Over-Refusal to Pseudo-Malicious Instructions,https://github.com/FishT0ucher/EVOREFUSE
+Bootstrap Off-policy with World Model,https://github.com/molumitu/BOOM_MBRL
+"A Latent Multilayer Graphical Model For Complex, Interdependent Systems",https://github.com/mondrus96/multiSLICE
+Exploring Structural Degradation in Dense Representations for Self-supervised Learning,https://github.com/EldercatSAM/SSL-Degradation
+Beyond Pairwise Connections: Extracting High-Order Functional Brain Network Structures Under Global Constraints,https://github.com/lzhan94swu/GCM
+DSRF: A Dynamic and Scalable Reasoning Framework for Solving RPMs,https://github.com/UNNCRoxLi/DSRF
+Novel View Synthesis from A Few Glimpses Via Test-Time Natural Video Completion,https://decayale.github.io/project/SV2CGS
+Time Series Generation Under Data Scarcity: A Unified Generative Modeling Approach,https://github.com/azencot-group/ImagenFew
+Black-Box Membership Inference Attack for LVLMs Via Prior Knowledge-Calibrated Memory Probing,https://github.com/spmede/KCMP
+Learning to Rank for In-Context Example Retrieval,https://github.com/2022neo/SeDPO_NIPS25*
+Tropical Attention: Neural Algorithmic Reasoning for Combinatorial Algorithms,https://github.com/Baran-phys/Tropical-Attention/
+Curvature Tuning: Provable Training-free Model Steering From A Single Parameter,https://github.com/Leon-Leyang/curvature-tuning
+FLOWING: Implicit Neural Flows for Structure-Preserving Morphing,https://schardong.github.io/flowing
+Flexible MOF Generation with Torsion-Aware Flow Matching,https://github.com/nayoung10/MOFFlow-2
+Attack Via Overfitting: 10-shot Benign Fine-tuning to Jailbreak LLMs,https://github.com/ZHIXINXIE/ten_benign.git
+Deliberation on Priors: Trustworthy Reasoning of Large Language Models on Knowledge Graphs,https://github.com/reml-group/Deliberation-on-Priors
+PolyPose: Deformable 2D/3D Registration Via Polyrigid Transformations,https://polypose.csail.mit.edu
+Enhanced Self-Distillation Framework for Efficient Spiking Neural Network Training,https://github.com/Intelli-Chip-Lab/enhanced-self-distillation-framework-for-snn
+🎧MOSPA: Human Motion Generation Driven By Spatial Audio,https://github.com/xsy27/Mospa-Acoustic-driven-Motion-Generation.git
+Context-Aware Hierarchical Learning: A Two-Step Paradigm Towards Safer LLMs,https://github.com/S2AILab/CAHL
+ReservoirTTA: Prolonged Test-time Adaptation for Evolving and Recurring Domains,https://github.com/LTS5/ReservoirTTA
+$\texttt{STRCMP}$: Integrating Graph Structural Priors with Language Models for Combinatorial Optimization,https://github.com/Y-Palver/L2O-STRCMP
+"When Kernels Multiply, Clusters Unify: Fusing Embeddings with The Kronecker Product",https://github.com/yokiwuuu/KrossFuse
+Contact Map Transfer with Conditional Diffusion Model for Generalizable Dexterous Grasp Generation,https://cmtdiffusion.github.io/
+Robust Ego-Exo Correspondence with Long-Term Memory,https://github.com/juneyeeHu/LM-EEC
+Synergistic Tensor and Pipeline Parallelism,https://github.com/MICLAB-BUPT/STP
+"Homogeneous Keys, Heterogeneous Values: Exploiting Local KV Cache Asymmetry for Long-Context LLMs",https://github.com/the-scale-lab/Asymkv
+Extremely Simple Multimodal Outlier Synthesis for Out-of-Distribution Detection and Segmentation,https://github.com/mona4399/FeatureMixing
+FerretNet: Efficient Synthetic Image Detection Via Local Pixel Dependencies,https://github.com/xigua7105/FerretNet
+EasySpec: Layer-Parallel Speculative Decoding for Efficient Multi-GPU Utilization,https://github.com/Yize-Wu/EasySpec
+CoIDO: Efficient Data Selection for Visual Instruction Tuning Via Coupled Importance-Diversity Optimization,https://github.com/SuDIS-ZJU/CoIDO
+Mamba Only Glances Once (MOGO): A Lightweight Framework for Efficient Video Action Detection,https://github.com/YunqingLiu-ML/MOGO
+Pragmatic Heterogeneous Collaborative Perception Via Generative Communication Mechanism,https://github.com/jeffreychou777/GenComm
+Riemannian Flow Matching for Brain Connectivity Matrices Via Pullback Geometry,https://github.com/antoinecollas/DiffeoCFM
+Instant4D: 4D Gaussian Splatting in Minutes,https://instant4d.github.io/
+TabDPT: Scaling Tabular Foundation Models on Real Data,https://github.com/layer6ai-labs/TabDPT-inference
+No Object Is An Island: Enhancing 3D Semantic Segmentation Generalization with Diffusion Models,https://github.com/FanLiHub/XDiff3D
+ReCon-GS: Continuum-Preserved Guassian Streaming for Fast and Compact Reconstruction of Dynamic Scenes,https://github.com/jyfu-vcl/ReCon-GS/
+Bridging Scales: Spectral Theory Reveals How Local Connectivity Rules Sculpt Global Neural Dynamics in Spatially Extended Networks,https://github.com/huang-yh20/spatial-linear-project
+Defending Multimodal Backdoored Models By Repulsive Visual Prompt Tuning,https://anonymous.4open.science/r/rvpt-anonymous
+FHGS: Feature-Homogenized Gaussian Splatting,https://fhgs.cuastro.org/
+Solver-Informed RL: Grounding Large Language Models for Authentic Optimization Modeling,https://github.com/Cardinal-Operations/SIRL
+Few-Shot Learning from Gigapixel Images Via Hierarchical Vision-Language Alignment and Modeling,https://github.com/bryanwong17/HiVE-MIL
+Rethinking Approximate Gaussian Inference in Classification,https://github.com/bmucsanyi/probit
+Text-Aware Real-World Image Super-Resolution Via Diffusion Model with Joint Segmentation Decoders,https://github.com/mingcv/TADiSR
+Causal Sufficiency and Necessity Improves Chain-of-Thought Reasoning,https://anonymous.4open.science/r/causalmath-1CEF
+DiffEye: Diffusion-Based Continuous Eye-Tracking Data Generation Conditioned on Natural Images,https://diff-eye.github.io/
+InstructSAM: A Training-free Framework for Instruction-Oriented Remote Sensing Object Recognition,https://VoyagerXvoyagerx.github.io/InstructSAM
+Vicinity-Guided Discriminative Latent Diffusion for Privacy-Preserving Domain Adaptation,https://github.com/JingWang18/DVD-SFDA
+GAMMA: Gated Multi-hop Message Passing for Homophily-Agnostic Node Representation in GNNs,https://github.com/amir-ghz/GAMMA
+OCTDiff: Bridged Diffusion Model for Portable OCT Super-Resolution and Enhancement,https://github.com/AI4VSLab/OCTDiff
+Enhanced Cyclic Coordinate Descent Methods for Elastic Net Penalized Linear Models,https://github.com/Yixiao-Wang-Stats/ECCD
+E2E-VGuard: Adversarial Prevention for Production LLM-based End-To-End Speech Synthesis,https://wxzyd123.github.io/e2e-vguard/
+Learning Reconfigurable Representations for Multimodal Federated Learning with Missing Data,https://github.com/nmduonggg/PEPSY
+Online Segment Any 3D Thing As Instance Tracking,https://github.com/AutoLab-SAI-SJTU/AutoSeg3D
+Each Complexity Deserves A Pruning Policy,https://github.com/AutoLab-SAI-SJTU/AutoPrune
+Go With The Flow: Fast Diffusion for Gaussian Mixture Models,https://github.com/georgeRapa/GMMflow
+SGN: Shifted Window-Based Hierarchical Variable Grouping for Multivariate Time Series Classification,https://anonymous.4open.science/r/SGN
+MI-TRQR: Mutual Information-Based Temporal Redundancy Quantification and Reduction for Energy-Efficient Spiking Neural Networks,https://github.com/dfxue/MI-TRQR
+MoniTor: Exploiting Large Language Models with Instruction for Online Video Anomaly Detection,https://github.com/YsTvT/MoniTor
+TF-MAS: Training-free Mamba2 Architecture Search,https://github.com/fanyi-plus/tf-nas
+CAGE: Continuity-Aware EdGE Network Unlocks Robust Floorplan Reconstruction,https://github.com/ee-Liu/CAGE.git
+Layer-Wise Modality Decomposition for Interpretable Multimodal Sensor Fusion,https://github.com/detxter-jvb/Layer-Wise-Modality-Decomposition
+Re-coding for Uncertainties: Edge-awareness Semantic Concordance for Resilient Event-RGB Segmentation,https://github.com/iCVTEAM/ESC
+Universal Few-shot Spatial Control for Diffusion Models,https://github.com/kietngt00/UFC
+SpaceServe: Spatial Multiplexing of Complementary Encoders and Decoders for Multimodal LLMs,https://github.com/gofreelee/SpaceServe
+Learning Provably Improves The Convergence of Gradient Descent,https://github.com/NetX-lab/MathL2OProof-Official
+Addressing Mark Imbalance in Integration-free Marked Temporal Point Processes,https://github.com/undes1red/IFNMTPP
+JanusDNA: A Powerful Bi-directional Hybrid DNA Foundation Model,https://anonymous.4open.science/r/JanusDNA/
+MoE-Gyro: Self-Supervised Over-Range Reconstruction and Denoising for MEMS Gyroscopes,https://github.com/2002-Pan/Moe-Gyro
+Real-World Adverse Weather Image Restoration Via Dual-Level Reinforcement Learning with High-Quality Cold Start,https://github.com/xxclfy/AgentRL-Real-Weather
+IA-GGAD: Zero-shot Generalist Graph Anomaly Detection Via Invariant and Affinity Learning,https://github.com/kg-cc/IA-GGAD/
+Unveiling Extraneous Sampling Bias with Data Missing-Not-At-Random,https://github.com/ChunyuanZheng/neurips-25-SuperDR
+3BASiL: An Algorithmic Framework for Sparse Plus Low-Rank Compression of LLMs,https://github.com/mazumder-lab/3BASiL
+Availability-aware Sensor Fusion Via Unified Canonical Space,https://github.com/kaist-avelab/k-radar
+CORE: Reducing UI Exposure in Mobile Agents Via Collaboration Between Cloud and Local LLMs,https://github.com/Entropy-Fighter/CORE
+Unlocking Dataset Distillation with Diffusion Models,https://github.com/Brian-Moser/prune_and_distill
+Efficient Low Rank Attention for Long-Context Inference in Large Language Models,https://github.com/tenghuilee/LRQK
+Scaling Image Geo-Localization to Continent Level,https://scaling-geoloc.github.io
+Data Mixture Optimization: A Multi-fidelity Multi-scale Bayesian Framework,https://github.com/namkoong-lab/data-recipes
+Top-H Decoding: Adapting The Creativity and Coherence with Bounded Entropy in Text Generation,https://github.com/ErfanBaghaei/Top-H-Decoding
+Deep Edge Filter: Return of The Human-Crafted Layer in Deep Learning,https://github.com/dongkwani/DeepEdgeFilter
+Covering Multiple Objectives with A Small Set of Solutions Using Bayesian Optimization,https://github.com/nataliemaus/mocobo
+PairEdit: Learning Semantic Variations for Exemplar-based Image Editing,https://github.com/xudonmao/PairEdit
+FALQON: Accelerating LoRA Fine-tuning with Low-Bit Floating-Point Arithmetic,https://github.com/iamkanghyunchoi/falqon
+CURE: Concept Unlearning Via Orthogonal Representation Editing in Diffusion Models,https://sites.google.com/view/cure-unlearning/home
+Revisiting Residual Connections: Orthogonal Updates for Stable and Efficient Deep Networks,https://github.com/BootsofLagrangian/ortho-residual
+UGG-ReID: Uncertainty-Guided Graph Model for Multi-Modal Object Re-Identification,https://github.com/wanxixi11/UGG-ReID
+Extracting Task-relevant Preserved Dynamics from Contrastive Aligned Neural Recordings,https://github.com/schnitzer-lab/CANDY-public.git
+FlowMoE: A Scalable Pipeline Scheduling Framework for Distributed Mixture-of-Experts Training,https://anonymous.4open.science/r/FlowMoE
+Calibrating Translation Decoding with Quality Estimation on LLMs,https://github.com/moore3930/calibrating-llm-mt
+RODS: Robust Optimization Inspired Diffusion Sampling for Detecting and Reducing Hallucination in Generative Models,https://github.com/Yiqi-Verna-Tian/RODS
+Tree-Guided Diffusion Planner,https://tree-diffusion-planner.github.io
+InstructRestore: Region-Customized Image Restoration with Human Instructions,https://github.com/shuaizhengliu/InstructRestore.git
+MaxSup: Overcoming Representation Collapse in Label Smoothing,https://github.com/ZhouYuxuanYX/Maximum-Suppression-Regularization
+Scalable and Adaptive Prediction Bands with Kernel Sum-of-squares,https://www.gitlab.com/drti/ksos-bands
+TAMI: Taming Heterogeneity in Temporal Interactions for Temporal Graph Link Prediction,https://github.com/Alleinx/TAMI_temporal_graph
+Ada-KV: Optimizing KV Cache Eviction By Adaptive Budget Allocation for Efficient LLM Inference,https://github.com/FFY0/AdaKV
+Adaptive Discretization for Consistency Models,https://github.com/rainstonee/ADCM
+Rethinking Hebbian Principle: Low-Dimensional Structural Projection for Unsupervised Learning,https://github.com/brain-intelligence-lab/SPHeRe
+Mitigating Spurious Features in Contrastive Learning with Spectral Regularization,https://github.com/NaghmehGh/SpuriousCorrelation_SSRL
+DIsoN: Decentralized Isolation Networks for Out-of-Distribution Detection in Medical Imaging,https://github.com/FelixWag/DIsoN
+ReplaceMe: Network Simplification Via Depth Pruning and Transformer Block Linearization,https://github.com/mts-ai/ReplaceMe
+See Through The Dark: Learning Illumination-affined Representations for Nighttime Occupancy Prediction,https://github.com/yanzq95/LIAR
+Boosting Skeleton-based Zero-Shot Action Recognition with Training-Free Test-Time Adaptation,https://github.com/Alchemist0754/Skeleton-Cache
+How Does Topology Bias Distort Message Passing in Graph Recommender? A Dirichlet Energy Perspective,https://github.com/sotaagi/TSP
+Lookahead Routing for Large Language Models,https://github.com/huangcb01/lookahead-routing
+FlexAC: Towards Flexible Control of Associative Reasoning in Multimodal Large Language Models,https://github.com/ylhz/FlexAC
+Scaling Epidemic Inference on Contact Networks: Theory and Algorithms,https://github.com/GuanghuiMin/RAPID
+MGUP: A Momentum-Gradient Alignment Update Policy for Stochastic Optimization,https://github.com/MaeChd/MGUP
+SViMo: Synchronized Diffusion for Video and Motion Generation in Hand-object Interaction Scenarios,https://droliven.github.io/SViMo_project
+Towards Self-Refinement of Vision-Language Models with Triangular Consistency,https://github.com/dengyl20/SRF-LLaVA-1.5
+Latent Space Factorization in LoRA,https://github.com/idiap/FVAE-LoRA
+DeltaFlow: An Efficient Multi-frame Scene Flow Estimation Method,https://github.com/Kin-Zhang/DeltaFlow
+Text-to-Code Generation for Modular Building Layouts in Building Information Modeling,https://github.com/CI3LAB/Text2MBL
+Zebra-Llama: Towards Extremely Efficient Hybrid Models,https://github.com/AMD-AGI/AMD-Hybrid-Models
+Rethinking Multimodal Learning from The Perspective of Mitigating Classification Ability Disproportion,https://github.com/njustkmg/NeurIPS25-AUG
+Enhancing Interpretability in Deep Reinforcement Learning Through Semantic Clustering,https://github.com/ualiangzhang/semantic_rl
+"Generalized Gradient Norm Clipping & Non-Euclidean $(L_0,L_1)$-Smoothness",https://github.com/LIONS-EPFL/ClippedScion
+MetaMind: Modeling Human Social Thoughts with Metacognitive Multi-Agent Systems,https://github.com/XMZhangAI/MetaMind
+Smooth Regularization for Efficient Video Recognition,https://github.com/gilgoldm/grw-smoothing
+DAIL: Beyond Task Ambiguity for Language-Conditioned Reinforcement Learning,https://github.com/RunpengXie/Distributional-Aligned-Learning
+Uncertainty-Sensitive Privileged Learning,https://github.com/FanmingL/USPL
+Multi-Agent Imitation By Learning and Sampling from Factorized Soft Q-Function,https://github.com/LAMDA-RL/MAFIS
+Distilled Decoding 2: One-step Sampling of Image Auto-regressive Models with Conditional Score Distillation,https://github.com/imagination-research/Distilled-Decoding-2
+FocalCodec: Low-Bitrate Speech Coding Via Focal Modulation Networks,https://lucadellalib.github.io/focalcodec-web/
+Towards Prospective Medical Image Reconstruction Via Knowledge-Informed Dynamic Optimal Transport,https://github.com/TaoranZheng717/KIDOT
+Automatic Synthetic Data and Fine-grained Adaptive Feature Alignment for Composed Person Retrieval,https://github.com/Delong-liu-bupt/Composed_Person_Retrieval
+SynCL: A Synergistic Training Strategy with Instance-Aware Contrastive Learning for End-to-End Multi-Camera 3D Tracking,https://github.com/shubolin028/SynCL
+Discretization-free Multicalibration Through Loss Minimization Over Tree Ensembles,https://github.com/hjenryin/Discretization-free-MC
+3D-Prover: Diversity Driven Theorem Proving With Determinantal Point Processes,https://github.com/sean-lamont/3D-Prover
+BoltzNCE: Learning Likelihoods for Boltzmann Generation with Stochastic Interpolants and Noise Contrastive Estimation,https://github.com/RishalAggarwal/BoltzNCE
+Differentiation Through Black-Box Quadratic Programming Solvers,https://github.com/cwmagoon/dQP
+Multiresolution Analysis and Statistical Thresholding on Dynamic Networks,https://github.com/aida-ugent/anie
+Effects of Dropout on Performance in Long-range Graph Learning Tasks,https://github.com/ignasa007/Dropout-Effects-GNNs
+Connecting Neural Models Latent Geometries with Relative Geodesic Representations,https://github.com/marc0git/RelativeGeodesics
+BNMusic: Blending Environmental Noises Into Personalized Music,https://d-fas.github.io/BNMusic_page/
+FlowRefiner: A Robust Traffic Classification Framework Against Label Noise,https://github.com/NSSL-SJTU/FlowRefiner
+Learning Human-Like RL Agents Through Trajectory Optimization With Action Quantization,https://rlg.iis.sinica.edu.tw/papers/MAQ
+Ranking-based Preference Optimization for Diffusion Models from Implicit User Feedback,https://github.com/basiclab/DiffusionDRO
+ZigzagPointMamba: Spatial-Semantic Mamba for Point Cloud Understanding,https://github.com/Rabbitttttt218/ZigzagPointMamba
+Variational Polya Tree,https://github.com/howardchanth/var-polya-tree
+PlanarGS: High-Fidelity Indoor 3D Gaussian Splatting Guided By Vision-Language Planar Priors,https://planargs.github.io
+Soft Task-Aware Routing of Experts for Equivariant Representation Learning,https://github.com/YonseiML/star
+From Softmax to Score: Transformers Can Effectively Implement In-Context Denoising Steps,https://github.com/paulrosu11/Transformers_are_Diffusion_Denoisers
+Personalized Decision Modeling: Utility Optimization or Textualized-Symbolic Reasoning,https://yibozh.github.io/Athena
+Differentiable Constraint-Based Causal Discovery,https://github.com/PurdueMINDS/DAGPA
+Higher-Order Learning with Graph Neural Networks Via Hypergraph Encodings,https://github.com/Weber-GeoML/Hypergraph_Encodings
+Frequency-Aware Token Reduction for Efficient Vision Transformer,https://github.com/jhtwosun/frequency-aware-token-pruning
+Leveraging Depth and Language for Open-Vocabulary Domain-Generalized Semantic Segmentation,https://github.com/SY-Ch/Vireo
+Less Greedy Equivalence Search,https://github.com/CausalAILab/lges
+BlockDecoder: Boosting ASR Decoders with Context and Merger Modules,https://github.com/csalt-research/blockdecoder
+Towards Interpretable and Efficient Attention: Compressing All By Contracting A Few,https://github.com/QishuaiWen/CBSA
+"No Loss, No Gain: Gated Refinement and Adaptive Compression for Prompt Optimization",https://github.com/Eric8932/GRACE
+Structured Sparse Transition Matrices to Enable State Tracking in State-Space Models,https://github.com/IBM/expressive-sparse-state-space-model
+Doodle to Detect: A Goofy But Powerful Approach to Skeleton-based Hand Gesture Recognition,https://github.com/capableofanything/SKETCH
+SNAP: Low-Latency Test-Time Adaptation with Sparse Updates,https://github.com/chahh9808/SNAP
+ErrorTrace: A Black-Box Traceability Mechanism Based on Model Family Error Space,https://github.com/csdatazcc/ErrorTrace
+Improving Regret Approximation for Unsupervised Dynamic Environment Generation,https://github.com/HarryMJMead/Dynamic-Environment-Generation-for-UED
+MemEIC: A Step Toward Continual and Compositional Knowledge Editing,https://github.com/MemEIC/MemEIC
+Physics-informed Reduced Order Modeling of Time-dependent PDEs Via Differentiable Solvers,https://phi-rom.github.io
+One Head to Rule Them All: Amplifying LVLM Safety Through A Single Critical Attention Head,https://github.com/AIASLab/Oh-Defense
+"Enabling Differentially Private Federated Learning for Speech Recognition: Benchmarks, Adaptive Optimizers, and Gradient Clipping",https://github.com/apple/ml-pfl4asr
+Gaze-VLM: Bridging Gaze and VLMs Through Attention Regularization for Egocentric Understanding,https://github.com/anupampani/Gaze-VLM
+From Indicators to Insights: Diversity-Optimized for Medical Series-Text Decoding Via LLMs,https://github.com/jinxyBJTU/InDiGO
+Prompt-guided Disentangled Representation for Action Recognition,https://github.com/iamsnaping/ProDA.git
+Unlearned But Not Forgotten: Data Extraction After Exact Unlearning in LLM,https://github.com/Nicholas0228/unlearned_data_extraction_llm
+Incomplete Multi-view Clustering Via Hierarchical Semantic Alignment and Cooperative Completion,https://github.com/XiaojianDing/2025-NeurIPS-HSACC
+FlashMoE: Fast Distributed MoE in A Single Kernel,https://github.com/osayamenja/FlashMoE
+Rainbow Delay Compensation: A Multi-Agent Reinforcement Learning Framework for Mitigating Observation Delays,https://github.com/linkjoker1006/RDC-pymarl
+Prior-Guided Diffusion Planning for Offline Reinforcement Learning,https://github.com/ku-dmlab/PG
+Holistic Order Prediction in Natural Scenes,https://github.com/SNU-VGILab/InstaOrder
+StreamBP: Memory-Efficient Exact Backpropagation for Long Sequence Training of LLMs,https://github.com/Ledzy/StreamBP
+Wavelet Canonical Coherence for Nonstationary Signals,https://github.com/mhaibo/WaveCanCoh.git
+Bridging Expressivity and Scalability with Adaptive Unitary SSMs,https://github.com/arjunkaruvally/AUSSM
+Learning 3D Anisotropic Noise Distributions Improves Molecular Force Fields,https://github.com/ZeroKnighting/AniDS
+Per-Architecture Training-Free Metric Optimization for Neural Architecture Search,https://anonymous.4open.science/r/PO-NAS-2953
+Bandit Guided Submodular Curriculum for Adaptive Subset Selection,https://github.com/efficiency-learning/banditsubmod/
+Bridging Equivariant GNNs and Spherical CNNs for Structured Physical Domains,https://github.com/ColinKohler/geometry2sphere
+Towards Syn-to-Real IQA: A Novel Perspective on Reshaping Synthetic Data Distributions,https://github.com/Li-aobo/SynDR-IQA
+Motion Matters: Compact Gaussian Streaming for Free-Viewpoint Video Reconstruction,https://chenjiacong-1005.github.io/ComGS/
+CamSAM2: Segment Anything Accurately in Camouflaged Videos,https://github.com/zhoustan/CamSAM2
+Adaptive Cannistraci-Hebb Network Automata Modelling of Complex Networks for Path-based Link Prediction,https://github.com/biomedical-cybernetics/Cannistraci_Hebb_network_automata
+Reasoning Planning for Language Models,https://github.com/nguyenngocbaocmt02/EPIC
+FlowDAS: A Stochastic Interpolant-based Framework for Data Assimilation,https://github.com/umjiayx/FlowDAS
+TokenSwap: A Lightweight Method to Disrupt Memorized Sequences in LLMs,https://github.com/parjanya20/verbatim-llm
+Statistical Analysis of An Adversarial Bayesian Weak Supervision Method,https://github.com/stevenan5/bayesian-bf-neurips-2025
+JAMUN: Bridging Smoothed Molecular Dynamics and Score-Based Learning for Conformational Ensemble Generation,https://github.com/prescient-design/jamun
+Adaptive Kernel Design for Bayesian Optimization Is A Piece of CAKE with LLMs,https://github.com/richardcsuwandi/cake
+Understanding and Enhancing Mask-Based Pretraining Towards Universal Representations,https://github.com/MingzeDong/r2mae
+Spike4DGS: Towards High-Speed Dynamic Scene Rendering with 4D Gaussian Splatting Via A Spike Camera Array,https://github.com/Qinghongye/Spike4DGS
+Physics-informed Value Learner for Offline Goal-Conditioned Reinforcement Learning,https://github.com/VittorioGiammarino/Eik-HIQL
+Attention! Your Vision Language Model Could Be Maliciously Manipulated,https://github.com/Trustworthy-AI-Group/VMA
+Put CASH on Bandits: A Max K-Armed Problem for Automated Machine Learning,https://github.com/amirbalef/CASH_with_Bandits
+Localist Topographic Expert Routing: A Barrel Cortex-Inspired Modular Network for Sensorimotor Processing,https://github.com/fun0515/MultiBarrelModel
+Scalable Valuation of Human Feedback Through Provably Robust Model Alignment,https://github.com/ma921/HolderDPO
+Some Optimizers Are More Equal: Understanding The Role of Optimizers in Group Fairness,https://github.com/Mkolahdoozi/Some-Optimizers-Are-More-Equal
+Information-Driven Design of Imaging Systems,https://waller-lab.github.io/EncodingInformationWebsite/
+RespoDiff: Dual-Module Bottleneck Transformation for Responsible & Faithful T2I Generation,https://vssilpa.github.io/respodiff_project_page
+Improving The Straight-Through Estimator with Zeroth-Order Information,https://github.com/1733116199/fogzo
+LORE: Lagrangian-Optimized Robust Embeddings for Visual Encoders,https://github.com/Theborna/LORE-Lagrangian-Optimized-Robust-Embeddings
+Accelerating Visual-Policy Learning Through Parallel Differentiable Simulation,https://haoxiangyou.github.io/Dva_website
+CCL: Causal-aware In-context Learning for Out-of-Distribution Generalization,https://github.com/MLAI-Yonsei/causal-context-learning
+How Many Tokens Do 3D Point Cloud Transformer Architectures Really Need?,https://gitmerge3d.github.io
+A High-Dimensional Statistical Method for Optimizing Transfer Quantities in Multi-Source Transfer Learning,https://github.com/zqy0126/OTQMS
+RAPTR: Radar-based 3D Pose Estimation Using Transformer,https://github.com/merlresearch/radar-pose-transformer
+UniZyme: A Unified Protein Cleavage Site Predictor Enhanced with Enzyme Active-Site Knowledge,https://github.com/Ao-LiChen/UniZyme
+Neural Networks for Learnable and Scalable Influence Estimation of Instruction Fine-Tuning Data,https://github.com/agarwalishika/NN-CIFT/tree/main
+$\boldsymbol{\lambda}$-Orthogonality Regularization for Compatible Representation Learning,https://github.com/miccunifi/lambda_orthogonality.git
+VETA-DiT: Variance-Equalized and Temporally Adaptive Quantization for Efficient 4-bit Diffusion Transformers,https://github.com/xululi0223/VETA-DiT
+Tracking and Understanding Object Transformations,https://tubelet-graph.github.io
+Information-Theoretic Discrete Diffusion,https://github.com/Dongjae0324/infodis
+FairImagen: Post-Processing for Bias Mitigation in Text-to-Image Models,https://github.com/fuzihaofzh/FairImagen
+Neuro-Spectral Architectures for Causal Physics-Informed Networks,https://github.com/arthur-bizzi/neusa
+Diffusion-Driven Two-Stage Active Learning for Low-Budget Semantic Segmentation,https://github.com/jn-kim/two-stage-edald
+C-LoRA: Contextual Low-Rank Adaptation for Uncertainty Estimation in Large Language Models,https://github.com/ahra99/c_lora
+Adversary Aware Optimization for Robust Defense,https://github.com/rooshenasgroup/aaopt
+Learning Relative Gene Expression Trends from Pathology Images in Spatial Transcriptomics,https://github.com/naivete5656/STRank
+Crucible: Quantifying The Potential of Control Algorithms Through LLM Agents,https://github.com/thu-media/Crucible
+Hybrid-Collaborative Augmentation and Contrastive Sample Adaptive-Differential Awareness for Robust Attributed Graph Clustering,https://github.com/TianxiangZhao0474/RAGC.git
+Proxy-SPEX: Sample-Efficient Interpretability Via Sparse Feature Interactions in LLMs,https://github.com/mmschlk/shapiq
+Time-Embedded Algorithm Unrolling for Computational MRI,https://github.com/JN-Yun/TE-Unrolling-MRI
+Many LLMs Are More Utilitarian Than One,https://github.com/baltaci-r/MoralAgents
+UGoDIT: Unsupervised Group Deep Image Prior Via Transferable Weights,https://github.com/sjames40/UGoDIT
+ImageNet-trained CNNs Are Not Biased Towards Texture: Revisiting Feature Reliance Through Controlled Suppression,https://github.com/tomburgert/feature-reliance
+Self-Supervised Learning of Graph Representations for Network Intrusion Detection,https://github.com/lorenzo9uerra/GraphIDS
+Deep Compositional Phase Diffusion for Long Motion Sequence Generation,https://github.com/asdryau/TransPhase
+HyPINO: Multi-Physics Neural Operators Via HyperPINNs and The Method of Manufactured Solutions,https://github.com/rbischof/hypino
+Transformer Brain Encoders Explain Human High-level Visual Responses,https://github.com/Hosseinadeli/transformer_brain_encoder/
+Towards Comprehensive Scene Understanding: Integrating First and Third-Person Views for LVLMs,https://github.com/Leeinsu1/Towards-Comprehensive-Scene-Understanding
+Elastic ViTs from Pretrained Models Without Retraining,https://elastic.ashita.nl/
+FrameShield: Adversarially Robust Video Anomaly Detection,https://github.com/rohban-lab/FrameShield
+In Silico Mapping of Visual Categorical Selectivity Across The Whole Brain,https://kriegeskorte-lab.github.io/in-silico-mapping-web/
+Enhancing Tactile-based Reinforcement Learning for Robotic Control,https://elle-miller.github.io/tactile_rl
+What Moves The Eyes: Doubling Mechanistic Model Performance Using Deep Networks to Discover and Test Cognitive Hypotheses,https://github.com/bethgelab/what-moves-the-eyes
+SECA: Semantically Equivalent and Coherent Attacks for Eliciting LLM Hallucinations,https://github.com/Buyun-Liang/SECA
+A Clean Slate for Offline Reinforcement Learning,https://github.com/EmptyJackson/unifloral
+Fast MRI for All: Bridging Access Gaps By Training Without Raw Data,https://github.com/ualcalar17/CUPID
+Adaptive 3D Reconstruction Via Diffusion Priors and Forward Curvature-Matching Likelihood Updates,https://github.com/Seunghyeok0715/FCM
+Zero-shot Denoising Via Neural Compression: Theoretical and Algorithmic Framework,https://github.com/Computational-Imaging-RU/ZS-NCDenoiser
+DisMo: Disentangled Motion Representations for Open-World Motion Transfer,https://compvis.github.io/DisMo
+DEXTER: Diffusion-Guided EXplanations with TExtual Reasoning for Vision Models,https://github.com/perceivelab/dexter
+AgentBreeder: Mitigating The AI Safety Risks of Multi-Agent Scaffolds Via Self-Improvement,https://github.com/jrosseruk/AgentBreeder
+Boundary-Value PDEs Meet Higher-Order Differential Topology-aware GNNs,https://github.com/Supradax/Higher-Order-Differential-Topology-aware-GNN
+Flattening Hierarchies with Policy Bootstrapping,https://johnlyzhou.github.io/saw/
+Approximate Domain Unlearning for Vision-Language Models,https://kodaikawamura.github.io/Domain_Unlearning/
+MetaKoopman: Bayesian Meta-Learning of Koopman Operators for Modeling Structured Dynamics Under Distribution Shifts,https://mahmoud-selim.github.io/MetaKoopman/
+Scalable Feature Learning on Huge Knowledge Graphs for Downstream Machine Learning,https://github.com/flefebv/sepal.git
+CLAWS:Creativity Detection for LLM-generated Solutions Using Attention Window of Sections,https://github.com/kkt94/CLAWS
+Periodic Skill Discovery,https://jonghaepark.github.io/psd
+Sequential Attention-based Sampling for Histopathological Analysis,https://github.com/coglabiisc/SASHA
+Parameter-Free Hypergraph Neural Network for Few-Shot Node Classification,https://github.com/chaewoonbae/ZEN
+Robust and Diverse Multi-Agent Learning Via Rational Policy Gradient,https://rational-policy-gradient.github.io
+On Topological Descriptors for Graph Products,https://github.com/Aalto-QuML/tda_graph_product
+GeneFlow: Translation of Single-cell Gene Expression to Histopathological Images Via Rectified Flow,https://github.com/wangmengbo/GeneFlow
+Know Thyself By Knowing Others: Learning Neuron Identity from Population Context,https://github.com/nerdslab/nuclr
+The Flood Complex: Large-Scale Persistent Homology on Millions of Points,https://github.com/plus-rkwitt/flooder
+SDPGO: Efficient Self-Distillation Training Meets Proximal Gradient Optimization,https://github.com/nanxiaotong/SDGPO
+Mamba Goes HoME: Hierarchical Soft Mixture-of-Experts for 3D Medical Image Segmentation,https://github.com/gmum/MambaHoME
+APML: Adaptive Probabilistic Matching Loss for Robust 3D Point Cloud Reconstruction,https://github.com/apm-loss/apml
+Towards A Translative Model of Sperm Whale Vocalization,https://github.com/Project-CETI/wham
+DISCO: Disentangled Communication Steering for Large Language Models,https://github.com/MaxTorop/DISCO
+Self Supervised Learning for in Vivo Localization of Microelectrode Arrays Using Raw Local Field Potential,https://github.com/tianxiao18/lfp2vec
+Better Tokens for Better 3D: Advancing Vision-Language Modeling in 3D Medical Imaging,https://github.com/ibrahimethemhamamci/BTB3D
+Context-Aware Regularization with Markovian Integration for Attention-Based Nucleotide Analysis,https://github.com/EESI/carmania
+Graph Persistence Goes Spectral,https://github.com/Aalto-QuML/SpectRe/
+ForceFM: Enhancing Protein-Ligand Predictions Through Force-Guided Flow Matching,https://github.com/Guhuary/ForceFM
+Semantic Surgery: Zero-Shot Concept Erasure in Diffusion Models,https://github.com/Lexiang-Xiong/Semantic-Surgery
+MixAT: Combining Continuous and Discrete Adversarial Training for LLMs,https://github.com/insait-institute/MixAT
+VESSA: Video-based ObjEct-centric Self-Supervised Adaptation for Visual Foundation Models,https://github.com/jesimonbarreto/VESSA
+Probing Equivariance and Symmetry Breaking in Convolutional Networks,https://github.com/Sharvaree/EquivarianceStudy
+Covariate-moderated Empirical Bayes Matrix Factorization,https://github.com/william-denault/cebmf_torch
+Progressive Data Dropout: An Embarrassingly Simple Approach to Train Faster,https://github.com/bazyagami/LearningWithRevision
+Object-Centric Representation Learning for Enhanced 3D Semantic Scene Graph Prediction,https://github.com/VisualScienceLab-KHU/OCRL-3DSSG-Codes
+MetaSlot: Break Through The Fixed Number of Slots in Object-Centric Learning,https://github.com/lhj-lhj/MetaSlot
+FastJAM: A Fast Joint Alignment Model for Images,https://bgu-cs-vil.github.io/FastJAM/
+Rectified CFG++ for Flow Based Models,https://rectified-cfgpp.github.io/
+Tree Ensemble Explainability Through The Hoeffding Functional Decomposition and TreeHFD Algorithm,https://github.com/ThalesGroup/treehfd
