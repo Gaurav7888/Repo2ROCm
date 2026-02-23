@@ -25,10 +25,9 @@ from knowledge.rocm_knowledge import (
     ROCM_PREINSTALLED_PACKAGES,
     CUDA_TO_ROCM_MAPPING,
     BANNED_NVIDIA_PACKAGES,
-    select_rocm_image,
 )
 from utils.llm import get_llm_response
-from utils.rich_logger import log_phase, log_info, log_success, console
+from utils.rich_logger import log_phase, log_info, log_success, log_warning, console
 
 
 # ── constants ────────────────────────────────────────────────────────────────
@@ -546,6 +545,207 @@ def _produce_filtered_requirements(
     return install_pkgs, skip_pkgs, flagged_pkgs
 
 
+# ── LLM-based image selection ─────────────────────────────────────────────
+
+def _build_image_catalog_description() -> str:
+    """Format the ROCM_IMAGE_CATALOG into a readable list for the LLM."""
+    lines = []
+    for workload, entry in ROCM_IMAGE_CATALOG.items():
+        lines.append(
+            f"- workload key: \"{workload}\" -> image: {entry['image']}:{entry['default_tag']}"
+            f"\n  Description: {entry['description']}"
+        )
+    return "\n".join(lines)
+
+
+def _build_import_summary(import_counts: Dict[str, int]) -> str:
+    """Top imports sorted by frequency for LLM context."""
+    sorted_imports = sorted(import_counts.items(), key=lambda x: -x[1])[:40]
+    return "\n".join(f"  {pkg}: used in {count} files" for pkg, count in sorted_imports)
+
+
+def _build_code_snippets_summary(py_file_contents: Dict[str, str], max_chars: int = 6000) -> str:
+    """Extract import sections from source files to show the LLM what the code actually uses."""
+    summaries = []
+    total = 0
+    for fpath, content in py_file_contents.items():
+        import_lines = []
+        for line in content.splitlines()[:60]:
+            stripped = line.strip()
+            if stripped.startswith(("import ", "from ")) and not stripped.startswith("# "):
+                import_lines.append(stripped)
+        if import_lines:
+            block = f"--- {fpath} ---\n" + "\n".join(import_lines)
+            if total + len(block) > max_chars:
+                break
+            summaries.append(block)
+            total += len(block)
+    return "\n".join(summaries)
+
+
+def _llm_select_rocm_image(
+    import_counts: Dict[str, int],
+    config_contents: Dict[str, str],
+    readme_content: Optional[str],
+    py_file_contents: Dict[str, str],
+    llm: str,
+) -> dict:
+    """
+    Use the LLM to analyze the repository and select the best ROCm Docker image.
+
+    The LLM sees the full picture: imports with frequencies, dependency files,
+    README context, and code-level import patterns. It picks from the available
+    ROCM_IMAGE_CATALOG entries and explains its reasoning.
+
+    Returns dict with: image, tag, workload, description, reasoning
+    """
+    catalog_desc = _build_image_catalog_description()
+    import_summary = _build_import_summary(import_counts)
+    code_summary = _build_code_snippets_summary(py_file_contents)
+
+    config_section = ""
+    for fname, content in config_contents.items():
+        config_section += f"\n--- {fname} ---\n{content[:2000]}\n"
+
+    readme_snippet = ""
+    if readme_content:
+        readme_snippet = f"\n--- README (first 1500 chars) ---\n{readme_content[:1500]}\n"
+
+    prompt = f"""\
+You are an expert build engineer selecting the best ROCm Docker base image for a repository.
+
+## Available ROCm Docker Images
+
+{catalog_desc}
+
+## Repository Analysis
+
+### Python imports (package: number of files importing it)
+{import_summary}
+
+### Dependency / config files
+{config_section}
+{readme_snippet}
+### Import statements from source files
+{code_summary}
+
+## Task
+
+Analyze the repository's PRIMARY framework. Look at:
+1. Which framework has the MOST imports across files (frequency matters most)
+2. What the requirements.txt / setup.py actually lists as dependencies
+3. What the README describes the project as
+4. Whether a specialized image (sglang, vllm, megatron) is needed, or a general one
+
+A repo might import multiple frameworks (e.g. both torch and jax) but typically one is the
+PRIMARY framework used for the core logic, and others are secondary/utility imports.
+Choose the image that matches the PRIMARY framework.
+
+IMPORTANT rules:
+- If the repo primarily uses PyTorch (torch) for training/inference without DeepSpeed/Megatron,
+  select "pytorch"
+- Only select "pytorch-training" if the repo uses distributed training libraries like
+  DeepSpeed, Accelerate with FSDP, or PyTorch Lightning as core components
+- Only select "jax" if JAX/Flax is the PRIMARY framework, not just a minor utility import
+- Only select "vllm" or "sglang" if the repo actually uses those serving frameworks
+- Only select "vllm-dev" if the repo IS a fork of vLLM itself
+
+Respond with ONLY a JSON object (no markdown fences, no extra text):
+{{"workload": "<key from the catalog>", "reasoning": "<one paragraph explaining why>"}}"""
+
+    messages = [{"role": "user", "content": prompt}]
+    try:
+        response, usage = get_llm_response(llm, messages, temperature=0.1, max_tokens=512)
+        if response and response[0]:
+            log_info(f"LLM image selection: {usage.get('total_tokens', 0)} tokens used")
+            return _parse_image_selection_response(response[0])
+    except Exception as e:
+        log_warning(f"LLM image selection failed ({e}), falling back to heuristic")
+
+    return _fallback_image_selection(import_counts)
+
+
+def _parse_image_selection_response(response_text: str) -> dict:
+    """Parse the LLM JSON response into a structured image selection result."""
+    import json as _json
+
+    text = response_text.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```\w*\n?", "", text)
+        text = re.sub(r"\n?```$", "", text)
+        text = text.strip()
+
+    try:
+        result = _json.loads(text)
+    except _json.JSONDecodeError:
+        json_match = re.search(r"\{[^{}]*\}", text, re.DOTALL)
+        if json_match:
+            result = _json.loads(json_match.group())
+        else:
+            log_warning(f"Could not parse LLM image selection response, falling back")
+            return _fallback_image_selection({})
+
+    workload = result.get("workload", "pytorch")
+    reasoning = result.get("reasoning", "")
+
+    if workload not in ROCM_IMAGE_CATALOG:
+        log_warning(f"LLM selected unknown workload '{workload}', falling back to pytorch")
+        workload = "pytorch"
+
+    entry = ROCM_IMAGE_CATALOG[workload]
+    return {
+        "image": f"{entry['image']}:{entry['default_tag']}",
+        "tag": entry["default_tag"],
+        "workload": workload,
+        "description": entry["description"],
+        "reasoning": [reasoning] if reasoning else [],
+    }
+
+
+def _fallback_image_selection(import_counts: Dict[str, int]) -> dict:
+    """Simple heuristic fallback when LLM is not available or fails."""
+    imports_lower = {k.lower(): v for k, v in import_counts.items()}
+
+    priority_checks = [
+        (["sglang"], "sglang"),
+        (["vllm"], "vllm"),
+        (["megatron", "megatron_core"], "megatron"),
+        (["deepspeed", "lightning", "pytorch_lightning"], "pytorch-training"),
+        (["tensorflow", "keras"], "tensorflow"),
+        (["onnxruntime", "onnx"], "onnxruntime"),
+    ]
+
+    for pkgs, workload in priority_checks:
+        if any(p in imports_lower for p in pkgs):
+            entry = ROCM_IMAGE_CATALOG[workload]
+            return {
+                "image": f"{entry['image']}:{entry['default_tag']}",
+                "tag": entry["default_tag"],
+                "workload": workload,
+                "description": entry["description"],
+                "reasoning": [f"Fallback heuristic: detected {workload}-related imports"],
+            }
+
+    jax_freq = imports_lower.get("jax", 0) + imports_lower.get("flax", 0)
+    torch_freq = imports_lower.get("torch", 0)
+
+    if jax_freq > 0 and torch_freq == 0:
+        workload = "jax"
+    elif jax_freq > torch_freq * 2 and torch_freq > 0:
+        workload = "jax"
+    else:
+        workload = "pytorch"
+
+    entry = ROCM_IMAGE_CATALOG[workload]
+    return {
+        "image": f"{entry['image']}:{entry['default_tag']}",
+        "tag": entry["default_tag"],
+        "workload": workload,
+        "description": entry["description"],
+        "reasoning": [f"Fallback heuristic: primary framework is {workload}"],
+    }
+
+
 # ── other detectors ──────────────────────────────────────────────────────────
 
 def _recommend_base_image(framework: str) -> Tuple[str, str]:
@@ -719,8 +919,7 @@ def generate_plan(repo_path: str, full_name: str, rocm_mode: bool = False,
     if training_params:
         log_info(f"  Found {len(training_params)} large training parameter values")
 
-    # ── Context-aware image selection ──────────────────────────────────────
-    # Collect a sample of source code content for deep pattern matching
+    # ── Context-aware image selection (LLM-based) ──────────────────────────
     py_file_contents: Dict[str, str] = {}
     for fpath in py_files[:60]:
         content = _read_file(fpath, max_chars=5000)
@@ -731,20 +930,22 @@ def generate_plan(repo_path: str, full_name: str, rocm_mode: bool = False,
     base_image_name = ""
     image_selection = {}
     if rocm_mode:
-        image_selection = select_rocm_image(
-            import_counts=import_counts,
-            config_contents=config_contents,
-            readme_content=readme_content,
-            top_level_files=top_level,
-            py_file_contents=py_file_contents,
-        )
+        if llm:
+            image_selection = _llm_select_rocm_image(
+                import_counts=import_counts,
+                config_contents=config_contents,
+                readme_content=readme_content,
+                py_file_contents=py_file_contents,
+                llm=llm,
+            )
+        else:
+            image_selection = _fallback_image_selection(import_counts)
+
         base_image_name = image_selection["image"]
         preinstalled = ROCM_PREINSTALLED_PACKAGES.get(
             base_image_name.split(":")[0], [])
         log_info(f"  Image selection: {base_image_name} "
-                 f"(workload={image_selection['workload']}, score={image_selection['score']})")
-        if image_selection.get("all_scores"):
-            log_info(f"  All scores: {image_selection['all_scores']}")
+                 f"(workload={image_selection['workload']})")
         for reason in image_selection.get("reasoning", []):
             log_info(f"    - {reason}")
 
@@ -852,17 +1053,11 @@ def generate_plan(repo_path: str, full_name: str, rocm_mode: bool = False,
         sections.append(f"ROCm Base Image: {base_image_name}")
         if image_selection:
             sections.append(f"  Workload type: {image_selection['workload']}")
-            sections.append(f"  Selection confidence: {image_selection['score']}")
             sections.append(f"  Description: {image_selection['description']}")
             if image_selection.get("reasoning"):
                 sections.append("  Selection reasoning:")
                 for reason in image_selection["reasoning"]:
                     sections.append(f"    - {reason}")
-            if image_selection.get("all_scores"):
-                other_scores = {k: v for k, v in image_selection["all_scores"].items()
-                                if k != image_selection["workload"]}
-                if other_scores:
-                    sections.append(f"  Other candidates: {other_scores}")
         if preinstalled:
             sections.append(f"  Pre-installed (DO NOT reinstall): {', '.join(preinstalled)}")
         sections.append("")

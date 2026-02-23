@@ -252,6 +252,12 @@ def log_info(message):
     _fwrite(f"  [INFO] {message}")
 
 
+def log_warning(message):
+    """Log a warning message."""
+    console.print(f"  [yellow]WARNING[/] {message}")
+    _fwrite(f"  [WARNING] {message}")
+
+
 def log_context_summary(current_dir, image_name, turns_left, success_cmds):
     """Log the context being sent back to the LLM."""
     table = Table(title="[bold]CONTEXT SENT BACK TO LLM[/]", box=box.SIMPLE, expand=True)
