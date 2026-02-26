@@ -45,7 +45,7 @@ _CONFIG_FILES = [
 _README_NAMES = ["README.md", "readme.md", "README.rst", "README.txt", "README"]
 
 _MAX_FILE_CHARS = 4000
-_MAX_README_CHARS = 6000
+_MAX_README_CHARS = 100000
 _MAX_SOURCE_SCAN_FILES = 120
 
 # stdlib modules removed or significantly changed in Python 3.12
@@ -781,6 +781,109 @@ def _find_entry_scripts(repo_path: str, readme_content: Optional[str]) -> List[s
     return candidates[:10]
 
 
+def _extract_readme_run_commands(readme_content: Optional[str], repo_path: str) -> List[Dict]:
+    """
+    Extract actual run/execution commands from the README, preserving full
+    command lines with arguments (model names, flags, data paths, etc.).
+
+    Returns a list of dicts: {"command": str, "context": str}
+    where context is the surrounding text that explains what the command does.
+    """
+    if not readme_content:
+        return []
+
+    results = []
+    lines = readme_content.splitlines()
+
+    cmd_pattern = re.compile(
+        r"(?:^|\s)((?:CUDA_VISIBLE_DEVICES=\S+\s+)?python[3]?\s+[\w/\-\.]+\.py(?:\s+[^\n`]*)?)",
+        re.IGNORECASE,
+    )
+
+    for i, line in enumerate(lines):
+        for m in cmd_pattern.finditer(line):
+            cmd = m.group(1).strip()
+            if len(cmd) < 10:
+                continue
+
+            context_start = max(0, i - 3)
+            context_end = min(len(lines), i + 2)
+            context_lines = lines[context_start:context_end]
+            context = "\n".join(l for l in context_lines if l.strip())
+
+            if cmd not in [r["command"] for r in results]:
+                results.append({"command": cmd, "context": context})
+
+    return results
+
+
+def _extract_model_references(readme_content: Optional[str], repo_path: str) -> List[Dict]:
+    """
+    Extract HuggingFace model references from README and config files
+    like model2path.json, identifying gated vs likely-ungated models.
+    """
+    refs = []
+    seen = set()
+
+    gated_prefixes = ["meta-llama/", "mistralai/", "google/gemma-7b", "google/gemma-2b"]
+    ungated_prefixes = ["lmsys/", "THUDM/", "Salesforce/", "microsoft/", "TinyLlama/",
+                        "EleutherAI/", "facebook/", "bigscience/bloomz", "google/gemma-2-"]
+
+    hf_model_re = re.compile(r"['\"]([a-zA-Z0-9_\-]+/[a-zA-Z0-9_\.\-]+)['\"]")
+
+    model2path_path = os.path.join(repo_path, "config", "model2path.json")
+    if os.path.isfile(model2path_path):
+        content = _read_file(model2path_path, max_chars=5000)
+        if content:
+            try:
+                mapping = json.loads(content)
+                for alias, hf_path in mapping.items():
+                    if alias not in seen:
+                        seen.add(alias)
+                        is_gated = any(hf_path.startswith(p) for p in gated_prefixes)
+                        is_ungated = any(hf_path.startswith(p) for p in ungated_prefixes)
+                        refs.append({
+                            "alias": alias,
+                            "hf_path": hf_path,
+                            "gated": is_gated,
+                            "ungated": is_ungated,
+                            "source": "config/model2path.json",
+                        })
+            except (json.JSONDecodeError, AttributeError):
+                pass
+
+    if not refs:
+        for root, dirs, files in os.walk(repo_path):
+            dirs[:] = [d for d in dirs if not d.startswith(".") and d != "__pycache__"]
+            if os.path.relpath(root, repo_path).count(os.sep) > 2:
+                continue
+            for f in files:
+                if not (f.endswith(".json") or f.endswith(".py")):
+                    continue
+                fpath = os.path.join(root, f)
+                content = _read_file(fpath, max_chars=8000)
+                if not content:
+                    continue
+                for m in hf_model_re.finditer(content):
+                    hf_path = m.group(1)
+                    if "/" not in hf_path or hf_path.count("/") > 1:
+                        continue
+                    if hf_path in seen:
+                        continue
+                    seen.add(hf_path)
+                    is_gated = any(hf_path.startswith(p) for p in gated_prefixes)
+                    is_ungated = any(hf_path.startswith(p) for p in ungated_prefixes)
+                    refs.append({
+                        "alias": hf_path.split("/")[-1],
+                        "hf_path": hf_path,
+                        "gated": is_gated,
+                        "ungated": is_ungated,
+                        "source": os.path.relpath(fpath, repo_path),
+                    })
+
+    return refs
+
+
 def _detect_python_version(config_contents: Dict[str, str]) -> Optional[str]:
     if ".python-version" in config_contents:
         ver = config_contents[".python-version"].strip().split("\n")[0].strip()
@@ -872,6 +975,17 @@ def generate_plan(repo_path: str, full_name: str, rocm_mode: bool = False,
 
     # 7. Entry scripts
     entry_scripts = _find_entry_scripts(repo_path, readme_content)
+
+    # 7b. Extract run commands and model references from README
+    readme_run_commands = _extract_readme_run_commands(readme_content, repo_path)
+    if readme_run_commands:
+        log_info(f"  Extracted {len(readme_run_commands)} run commands from README")
+
+    model_references = _extract_model_references(readme_content, repo_path)
+    if model_references:
+        gated_count = sum(1 for r in model_references if r["gated"])
+        ungated_count = sum(1 for r in model_references if r["ungated"])
+        log_info(f"  Found {len(model_references)} model references ({ungated_count} ungated, {gated_count} gated)")
 
     # 8. Install mechanisms
     install_mechanisms = []
@@ -1074,6 +1188,40 @@ def generate_plan(repo_path: str, full_name: str, rocm_mode: bool = False,
         sections.append("  (none detected — inspect README for usage examples)")
     sections.append("")
 
+    # ── README run commands (CRITICAL for correct verification) ───────────────
+
+    if readme_run_commands:
+        sections.append("CRITICAL - Exact Run Commands from README (USE THESE for verification):")
+        sections.append("  The README specifies these exact commands. Use them as-is (adapting for ROCm if needed):")
+        for rc in readme_run_commands:
+            sections.append(f"  Command: {rc['command']}")
+            if rc["context"]:
+                for ctx_line in rc["context"].splitlines()[:3]:
+                    if ctx_line.strip() and not ctx_line.strip().startswith("```"):
+                        sections.append(f"    Context: {ctx_line.strip()}")
+        sections.append("")
+
+    # ── Model references and gating status ────────────────────────────────────
+
+    if model_references:
+        sections.append("HuggingFace Model References (gated vs ungated):")
+        has_gated = False
+        for ref in model_references:
+            status = "GATED (will fail without auth)" if ref["gated"] else "ungated" if ref["ungated"] else "unknown"
+            sections.append(f"  - {ref['alias']} -> {ref['hf_path']} [{status}] (from {ref['source']})")
+            if ref["gated"]:
+                has_gated = True
+        if has_gated:
+            ungated_models = [r for r in model_references if r["ungated"]]
+            if ungated_models:
+                sections.append(f"  WARNING: Some models are gated. Prefer ungated models for verification:")
+                for u in ungated_models[:5]:
+                    sections.append(f"    USE: --model {u['alias']}  (maps to {u['hf_path']}, ungated)")
+            else:
+                sections.append(f"  WARNING: All models are gated. Substitute with ungated alternatives")
+                sections.append(f"    (e.g., TinyLlama/TinyLlama-1.1B-Chat-v1.0 for Llama-based models)")
+        sections.append("")
+
     # ── Execution plan ───────────────────────────────────────────────────────
 
     if rocm_mode:
@@ -1113,8 +1261,8 @@ def generate_plan(repo_path: str, full_name: str, rocm_mode: bool = False,
     # ── README snippet ───────────────────────────────────────────────────────
 
     if readme_content:
-        sections.append("README Snippet (first 2000 chars):")
-        sections.append(readme_content[:2000])
+        sections.append(f"README Content (first {_MAX_README_CHARS} chars):")
+        sections.append(readme_content[:_MAX_README_CHARS])
         sections.append("")
 
     raw_plan = "\n".join(sections)
@@ -1145,12 +1293,25 @@ The plan MUST:
 5. {"List all CUDA-to-ROCm migrations needed (package swaps, code patches, env vars)." if rocm_mode else ""}
 6. {"List code hazards (wandb, cudnn, hardcoded paths) with fix commands." if rocm_mode else ""}
 7. List training parameters that must be scaled down with exact sed commands.
-8. Name the target script(s) to run for verification, with suggested arguments.
-9. {"Describe how to create mock data and run with scaled-down parameters." if rocm_mode else "Describe how to run tests."}
+8. **CRITICAL: Include the EXACT run commands from the README, VERBATIM, with all arguments
+   (model names, dataset names, flags, etc.).** The execution agent will NOT read the README
+   itself, so if the README says `python pred_mine.py --model longchat-v1.5-7b-32k`, that
+   EXACT command must appear in the plan. Do NOT summarize or omit these commands.
+9. **If the README specifies which model to use, state it explicitly** (e.g., "The README
+   recommends model `longchat-v1.5-7b-32k`"). If the analysis shows which models are
+   gated vs ungated, include that information and recommend the ungated model.
+10. {"Describe how to create mock data and run with scaled-down parameters." if rocm_mode else "Describe how to run tests."}
 
 CRITICAL: The execution agent will NOT re-read the README, directory listing, or config files.
 The plan must contain ALL information the agent needs to start executing immediately.
-Be specific. Use actual package names, file paths, and commands. Keep it under 1200 words.
+Be specific. Use actual package names, file paths, and commands. Keep it under 1500 words.
+
+CRITICAL: If the raw analysis contains a section titled "CRITICAL - Exact Run Commands from README",
+you MUST copy those commands into the plan VERBATIM. These are the primary verification commands.
+Do NOT replace them with generic `--help` commands.
+
+CRITICAL: If the raw analysis contains "HuggingFace Model References", include the model
+gating information in the plan so the agent knows which models to use and which to avoid.
 
 RAW ANALYSIS:
 {raw_analysis}

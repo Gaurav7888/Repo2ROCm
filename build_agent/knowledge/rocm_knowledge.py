@@ -1444,6 +1444,7 @@ If this assertion fails, STOP and fix it before proceeding with any script execu
 - [ ] The script output mentions `cuda` device (not `cpu`)
 - [ ] Training/inference produces actual results (loss values, predictions, etc.)
 - [ ] If using `uv run`, confirmed it also uses ROCm PyTorch (or switched to `python` directly)
+- [ ] Output files are non-empty and contain real results (not just error logs)
 """
     return prompt
 
@@ -1534,6 +1535,9 @@ Check the plan for specific training parameters that need scaling down.
 
 2. Run the main script with `--help` to understand its interface.
 
+2b. **Choose the right model.** If the script takes a `--model` argument:
+   - Check the README (in the plan above) for the recommended model — USE THAT ONE.
+
 3. **CRITICAL: Actually run the script** with mock data and minimal parameters.
    - For training scripts: Use small dummy data, 1-2 epochs, 3-5 max_steps.
    - For inference scripts: Create minimal mock data.
@@ -1606,5 +1610,7 @@ After ANY dependency installation: `python -c "import torch; assert torch.cuda.i
 - [ ] `torch.cuda.is_available()` prints `True`
 - [ ] Script output mentions `cuda` device (not `cpu`)
 - [ ] Training/inference produces actual results
+- [ ] No `GatedRepoError` or `401 Unauthorized` in output — if present, substitute with ungated model and rerun
+- [ ] Output files are non-empty and contain real results
 """
     return prompt
