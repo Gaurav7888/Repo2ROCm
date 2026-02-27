@@ -15,6 +15,10 @@ and automated verification.
 
 ## Table of Contents
 
+
+- [Quick Start](#quick-start)
+- [CLI Reference](#cli-reference)
+- [Batch Processing](#batch-processing)
 - [Problem Statement](#problem-statement)
 - [How It Works](#how-it-works)
 - [Architecture](#architecture)
@@ -24,11 +28,92 @@ and automated verification.
   - [Sandbox & Rollback](#sandbox--rollback)
   - [ROCm Knowledge Base](#rocm-knowledge-base)
 - [Design Decisions](#design-decisions)
-- [Quick Start](#quick-start)
-- [CLI Reference](#cli-reference)
-- [Batch Processing](#batch-processing)
 - [Future Improvements and Considerations](#future-improvements-and-considerations)
 - [License](#license)
+
+---
+
+## Quick Start
+
+### Prerequisites
+
+- Docker (with GPU passthrough configured for ROCm)
+- Python 3.8+
+- An AMD LLM API Gateway key (for Claude) or an OpenAI API key
+
+### Installation
+
+```bash
+git clone <repo-url> Repo2Run
+cd Repo2Run
+pip install docker pexpect requests tenacity rich pipreqs
+```
+
+### Run on a single repository
+
+```bash
+# Get the latest commit SHA
+SHA=$(git ls-remote https://github.com/user/repo HEAD | cut -f1)
+
+# Run with ROCm mode
+python build_agent/main.py \
+  --full_name "user/repo" \
+  --sha "$SHA" \
+  --root_path . \
+  --llm "claude-sonnet-4" \
+  --rocm \
+  --api-key "$AMD_LLM_API_KEY"
+```
+
+### Output
+
+After a successful run, the output directory contains:
+
+```
+output/user/repo/
+├── Dockerfile          # Reproducible build — docker build -t myenv .
+├── plan.txt            # Strategic plan from the planner
+├── track.json          # Full agent conversation history
+├── inner_commands.json # All commands executed inside the container
+├── outer_commands.json # LLM call timings and metadata
+├── sha.txt             # Git SHA used
+└── agent_debug_log.txt # Rich-formatted debug log
+```
+
+---
+
+## CLI Reference
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--full_name` | string | *required* | GitHub repo (`owner/name`) |
+| `--sha` | string | *required* | Git commit SHA to check out |
+| `--root_path` | string | *required* | Working directory for clones and output |
+| `--llm` | string | `gpt-4o-2024-05-13` | LLM model name (`claude-sonnet-4` for AMD gateway) |
+| `--rocm` | flag | `false` | Enable ROCm migration mode |
+| `--rocm-base-image` | string | auto-selected | Override the ROCm Docker base image |
+| `--api-key` | string | env var | AMD LLM API Gateway key |
+| `--verbose` | flag | `false` | Print full LLM prompts and responses |
+
+---
+
+## Batch Processing
+
+Process multiple repositories in parallel:
+
+```bash
+# Create a script file with one command per line
+cat > batch.sh << 'EOF'
+python -u build_agent/main.py --full_name "org/repo1" --sha "abc123" --root_path . --llm "claude-sonnet-4" --rocm --api-key "$KEY"
+python -u build_agent/main.py --full_name "org/repo2" --sha "def456" --root_path . --llm "claude-sonnet-4" --rocm --api-key "$KEY"
+EOF
+
+# Run with 3 concurrent processes
+python build_agent/multi_main.py batch.sh
+```
+
+`multi_main.py` monitors disk usage on `/dev/vdb` and halts if it exceeds 90%.
+It also cleans up containers between runs.
 
 ---
 
@@ -381,90 +466,6 @@ Allowing multiple bash blocks per turn risks unrecoverable state: if the
 second command fails after the first succeeded, the rollback reverts both.
 Single-action-per-turn means each rollback undoes exactly one operation,
 keeping the environment predictable.
-
----
-
-## Quick Start
-
-### Prerequisites
-
-- Docker (with GPU passthrough configured for ROCm)
-- Python 3.8+
-- An AMD LLM API Gateway key (for Claude) or an OpenAI API key
-
-### Installation
-
-```bash
-git clone <repo-url> Repo2Run
-cd Repo2Run
-pip install docker pexpect requests tenacity rich pipreqs
-```
-
-### Run on a single repository
-
-```bash
-# Get the latest commit SHA
-SHA=$(git ls-remote https://github.com/user/repo HEAD | cut -f1)
-
-# Run with ROCm mode
-python build_agent/main.py \
-  --full_name "user/repo" \
-  --sha "$SHA" \
-  --root_path . \
-  --llm "claude-sonnet-4" \
-  --rocm \
-  --api-key "$AMD_LLM_API_KEY"
-```
-
-### Output
-
-After a successful run, the output directory contains:
-
-```
-output/user/repo/
-├── Dockerfile          # Reproducible build — docker build -t myenv .
-├── plan.txt            # Strategic plan from the planner
-├── track.json          # Full agent conversation history
-├── inner_commands.json # All commands executed inside the container
-├── outer_commands.json # LLM call timings and metadata
-├── sha.txt             # Git SHA used
-└── agent_debug_log.txt # Rich-formatted debug log
-```
-
----
-
-## CLI Reference
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--full_name` | string | *required* | GitHub repo (`owner/name`) |
-| `--sha` | string | *required* | Git commit SHA to check out |
-| `--root_path` | string | *required* | Working directory for clones and output |
-| `--llm` | string | `gpt-4o-2024-05-13` | LLM model name (`claude-sonnet-4` for AMD gateway) |
-| `--rocm` | flag | `false` | Enable ROCm migration mode |
-| `--rocm-base-image` | string | auto-selected | Override the ROCm Docker base image |
-| `--api-key` | string | env var | AMD LLM API Gateway key |
-| `--verbose` | flag | `false` | Print full LLM prompts and responses |
-
----
-
-## Batch Processing
-
-Process multiple repositories in parallel:
-
-```bash
-# Create a script file with one command per line
-cat > batch.sh << 'EOF'
-python -u build_agent/main.py --full_name "org/repo1" --sha "abc123" --root_path . --llm "claude-sonnet-4" --rocm --api-key "$KEY"
-python -u build_agent/main.py --full_name "org/repo2" --sha "def456" --root_path . --llm "claude-sonnet-4" --rocm --api-key "$KEY"
-EOF
-
-# Run with 3 concurrent processes
-python build_agent/multi_main.py batch.sh
-```
-
-`multi_main.py` monitors disk usage on `/dev/vdb` and halts if it exceeds 90%.
-It also cleans up containers between runs.
 
 ---
 
