@@ -913,30 +913,29 @@ You are analyzing a project README to extract **expected outcomes and success cr
 for its run/test commands.
 
 README CONTENT:
-{readme_content[:6000]}
+{readme_content}
 
 KNOWN RUN COMMANDS:
 {cmd_list}
 
 TASK:
 Extract every concrete, verifiable expected outcome from this README.  Look for:
-1. Result tables that show which configurations/parameters produce specific results
-   (e.g. "K6/V4 rw=128 → EXACT", "accuracy > 95%").
+1. Result tables showing which configurations or parameters produce which results.
 2. Sample output blocks or expected console output.
-3. Prose that states success criteria ("All 9 tests should pass",
-   "You should see accuracy above 0.99").
-4. Any documented pass/fail behavior for specific configurations.
+3. Prose stating success criteria (e.g. "all tests should pass",
+   "you should see accuracy above X").
+4. Any documented pass/fail behavior for specific configurations or parameter sets.
 
 For each outcome, state:
 - **command_or_script**: the command, script name, or test name it applies to
   (use the closest match from the known run commands above, or the script filename).
 - **expected_outcome**: a concise, specific description of what correct output
-  looks like.  Include exact values, thresholds, or pass/fail labels from the README.
+  looks like.  Include exact values, thresholds, or labels directly from the README.
 
 Respond with ONLY a JSON array (no markdown fences, no extra text).  Example:
 [
-  {{"command_or_script": "python validate.py", "expected_outcome": "Cosine similarity > 0.99 for all configs"}},
-  {{"command_or_script": "python test_algo.py", "expected_outcome": "All 9 needle-in-haystack tests pass"}}
+  {{"command_or_script": "python run_tests.py", "expected_outcome": "All tests pass with exit code 0"}},
+  {{"command_or_script": "python benchmark.py", "expected_outcome": "Throughput > 100 samples/sec on GPU"}}
 ]
 
 If the README contains NO verifiable expected outcomes, return an empty array: []"""

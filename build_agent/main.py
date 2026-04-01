@@ -135,8 +135,6 @@ def main():
     if no_scale_down:
         log_info(f"No-Scale-Down: ON (will follow README as-is, no mock data)")
     log_info(f"Root Path: {root_path}")
-    print(full_name)
-    print(sha)
     if os.path.exists(f'{root_path}/output/{full_name}/patch'):
         rm_cmd = f"rm -rf {root_path}/output/{full_name}/patch"
         subprocess.run(rm_cmd, shell=True, check=True)

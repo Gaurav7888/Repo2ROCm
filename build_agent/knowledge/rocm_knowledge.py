@@ -1450,10 +1450,9 @@ def generate_rocm_prompt_section_with_plan(no_scale_down=False):
 
 3b. **VALIDATE OUTPUT against the "EXPECTED OUTCOMES FROM README" section in the plan above.**
    - After each script finishes, compare its actual output to the expected results listed in the plan.
-   - If the README documents specific configurations that should produce specific results
-     (e.g., a results table showing which configs yield "EXACT"/"PASS" vs "MISS"/"FAIL"),
-     verify that the correct configs actually produced the expected results.
-   - If the output **contradicts** the documented expectations (e.g., configs that should succeed
+   - If the plan documents which configurations, parameters, or test cases should produce
+     which results, verify that your actual output matches those expectations.
+   - If the output **contradicts** the documented expectations (e.g., tests that should pass
      are failing, or metrics are far below documented thresholds), **investigate and fix the issue**
      before moving on. Common causes: wrong default parameters, missing config flags, incorrect
      data paths, or package version mismatches.
