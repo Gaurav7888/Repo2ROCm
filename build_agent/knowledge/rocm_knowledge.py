@@ -598,10 +598,155 @@ def is_banned_package(package_name):
     return False
 
 
-def generate_rocm_prompt_section():
+def _reminders_section(no_scale_down):
+    """Build the 'Important reminders' and 'Handling hardcoded data paths' sections."""
+    lines = [
+        "### Important reminders for ROCm mode",
+        "- Always check `pip list` after switching base image to see what's already installed.",
+        "- ROCm images are Ubuntu-based and include apt-get. Use apt-get for system packages.",
+        "- Do NOT try to install CUDA toolkit, cuDNN, or any nvidia-* system packages.",
+        "- If a setup.py or requirements.txt has CUDA version pinning (e.g., torch==2.1.0+cu118), "
+        "remove the CUDA suffix or skip that package (it's already in the base image).",
+        "- **NEVER use `runtest` or `poetryruntest`** -- they are disabled. Use `echo ROCM_ENV_VERIFIED` after verifying.",
+        "- **`--help` alone is NOT verification.** You MUST actually run the script with data.",
+    ]
+    if no_scale_down:
+        lines.extend([
+            '- **NO-SCALE-DOWN MODE**: Run commands exactly as the README describes. '
+            'Do NOT reduce parameters or use mock data.',
+            '- **VALIDATE OUTPUT**: After each script runs, compare its output against the '
+            '"EXPECTED OUTCOMES FROM README" section in the plan. If the README documents '
+            'specific results for specific configurations (e.g., a results table), verify '
+            'the actual output matches. Do NOT declare success if output contradicts the '
+            "README's documented results.",
+        ])
+    else:
+        lines.extend([
+            "- **Do NOT use `timeout` commands.** Let scripts run after scaling down.",
+            "- **ALWAYS scale down epochs/iterations/data BEFORE running EVERY script.** This applies to",
+            "  EACH AND EVERY Python script you run, not just the first one. If a project has 3 scripts,",
+            "  you must scale down ALL 3 before running them.",
+            "  **Running ANY script with default 2000 epochs = agent timeout = FAILURE.**",
+            "- Create mock/dummy input data (images, tensors, etc.) to test the script if real data is not available.",
+        ])
+    lines.extend([
+        "- If the script crashes mid-execution with an error, debug and fix it before declaring success.",
+        "- The script MUST produce actual output (not just --help text) to count as verified.",
+        "",
+        "### Handling wandb (Weights & Biases)",
+        "Many ML projects use `wandb` for experiment tracking. In the Docker container there is no API key.",
+        'If you see `wandb.login(key="FILL IN YOUR W&B KEY")` or similar placeholder in the code:',
+        "1. **Comment out or remove** the `wandb.login(...)` call.",
+        "2. **Set wandb to offline mode** so it doesn't try to connect:",
+        "   ```bash",
+        "   export WANDB_MODE=offline && echo 'export WANDB_MODE=offline' >> /root/.bashrc",
+        "   ```",
+        '   OR modify the `wandb.init()` call in the source code to add `mode="offline"`:',
+        "   ```bash",
+        "   sed -i 's/wandb.init(/wandb.init(mode=\"offline\", /' /repo/<script>.py",
+        "   ```",
+        "3. If the script fails with a wandb authentication error, use either approach above.",
+        "",
+        "### Handling hardcoded data paths",
+        "Many projects have hardcoded paths for datasets (e.g., `/data/imagenet`, `/ds-sds/images/imagenet`).",
+        "When the script fails with `FileNotFoundError` for a data path:",
+        "1. **Check if the script accepts a `--data_path` or `--data_dir` argument** to override the path.",
+    ])
+    if no_scale_down:
+        lines.extend([
+            "2. **If not, check whether the data is available or needs to be downloaded as per the README.**",
+            "3. **Follow the README instructions** for obtaining the actual data.",
+        ])
+    else:
+        lines.extend([
+            "2. **If not, use `sed` to replace the hardcoded path** with your dummy data path:",
+            '   ```bash',
+            '   sed -i "s|/original/hardcoded/path|/tmp/dummy_data|g" /repo/<script>.py',
+            '   ```',
+            "3. **Always create proper dummy data** that matches the expected structure (e.g., ImageNet-style",
+            "   with class subdirectories, JSON files with expected keys, etc.).",
+        ])
+    return "\n".join(lines)
+
+
+_STEP5_NO_SCALE_DOWN_BLOCK = """\
+   *** NO-SCALE-DOWN MODE — RUN EXACTLY AS THE README DESCRIBES ***
+   **Do NOT scale down epochs, iterations, batch sizes, steps, or any training parameters.**
+   **Do NOT create mock or dummy data.**
+   **Run the EXACT commands from the README with all original arguments and real data.**
+   **Use the full dataset paths, model names, and parameters specified in the README.**
+
+   Simply run the commands as documented. If the README says to download data first, do that.
+   If the README specifies particular model weights, use those. Do not substitute or reduce anything.
+
+   **After each script finishes, validate its output against the "EXPECTED OUTCOMES FROM README"
+   section in the plan.** If the README documents which configurations should succeed or what
+   metrics to expect, verify the actual output matches. If it contradicts the documented results,
+   investigate and fix before declaring success. Do NOT echo ROCM_ENV_VERIFIED if output
+   contradicts the README's documented results.
+"""
+
+_STEP5_SCALE_DOWN_BLOCK = """\
+   **MANDATORY PRE-RUN CHECK: Scale down epochs, iterations, and data BEFORE running ANY script.**
+   
+   **This is CRITICAL. Training scripts often default to hundreds or thousands of epochs (e.g., 2000, 500, 100)
+   or process very large datasets. Running them at full scale will HANG the agent for hours and waste all remaining turns.
+   Your goal is to verify the environment works, NOT to complete full training.**
+   
+   **THIS APPLIES TO EVERY SINGLE PYTHON SCRIPT YOU RUN — not just the first one.**
+   If a project has multiple scripts,
+   you MUST scale down EACH script BEFORE running it. Scaling down one script does NOT
+   automatically scale down others — they each have their own hardcoded parameters.
+   
+   **BEST PRACTICE: Batch-patch ALL runnable scripts at once BEFORE running any of them:**
+   ```bash
+   # Scale down ALL Python scripts in the project at once
+   find /repo -name "*.py" -exec grep -l "epochs" {{}} \\; | xargs -I{{}} sed -i "s/'epochs': [0-9]*/'epochs': 2/g" {{}}
+   find /repo -name "*.py" -exec grep -l "num_train" {{}} \\; | xargs -I{{}} sed -i "s/'num_train': [0-9]*/'num_train': 10/g" {{}}
+   find /repo -name "*.py" -exec grep -l "num_test" {{}} \\; | xargs -I{{}} sed -i "s/'num_test': [0-9]*/'num_test': 5/g" {{}}
+   ```
+   This ensures you don't forget to scale down any script. Do this ONCE, early in the process.
+   
+   **BEFORE running EACH training/inference script, you MUST:**
+   
+   a) **Inspect THAT SPECIFIC script for hardcoded training parameters:**
+      ```bash
+      grep -n "epochs\\|num_epochs\\|n_epochs\\|max_steps\\|max_iter\\|num_train\\|num_test\\|num_samples\\|iterations\\|total_steps" <script>.py
+      ```
+   
+   b) **If epochs/iterations are passed via CLI arguments** (e.g., `--epochs`), pass small values:
+      ```bash
+      python <script>.py --epochs 2 --max_steps 5 <other_args>
+      ```
+   
+   c) **If epochs/iterations are HARDCODED in the script**, use `sed` to reduce them BEFORE running.
+   
+   d) **If the script uses a config file** (YAML, JSON, .cfg), edit it to reduce epochs.
+   
+   e) **Common parameters to ALWAYS scale down** (target values in parentheses):
+      - `epochs` / `num_epochs` / `n_epochs` → (1-2)
+      - `max_steps` / `num_steps` / `total_steps` / `iterations` → (3-5)
+      - `num_train` / `ntrain` → (5-10)
+      - `num_test` / `ntest` → (3-5)
+      - `batch_size` → keep as-is or reduce to (2-4) if dataset is tiny
+      - `num_workers` → (0 or 1)
+   
+   **A. For TRAINING scripts:** Create small dummy data if needed, run with `--epochs 1 --max_steps 10`.
+   
+   **B. For INFERENCE scripts:** Create minimal mock data, run with minimal arguments.
+   
+   **C. General:** Do NOT use `timeout`. Let the script run naturally after scaling down.
+"""
+
+
+def generate_rocm_prompt_section(no_scale_down=False):
     """
     Generate the ROCm-specific section to be injected into the LLM system prompt.
     Returns a string with ROCm instructions.
+
+    Args:
+        no_scale_down: If True, instructs the agent to run README commands exactly
+            as-is without scaling down parameters or creating mock data.
     """
     image_list = ""
     for wtype, info in ROCM_IMAGE_CATALOG.items():
@@ -749,168 +894,7 @@ Verification steps (you MUST do ALL of these):
 
 3. **CRITICAL: Actually run the script.** This is the real verification.
    - Read the README to understand what data/inputs the script expects.
-   
-   **MANDATORY PRE-RUN CHECK: Scale down epochs, iterations, and data BEFORE running ANY script.**
-   
-   **This is CRITICAL. Training scripts often default to hundreds or thousands of epochs (e.g., 2000, 500, 100)
-   or process very large datasets. Running them at full scale will HANG the agent for hours and waste all remaining turns.
-   Your goal is to verify the environment works, NOT to complete full training.**
-   
-   **THIS APPLIES TO EVERY SINGLE PYTHON SCRIPT YOU RUN — not just the first one.**
-   If a project has multiple scripts,
-   you MUST scale down EACH script BEFORE running it. Scaling down one script does NOT
-   automatically scale down others — they each have their own hardcoded parameters.
-   
-   **BEST PRACTICE: Batch-patch ALL runnable scripts at once BEFORE running any of them:**
-   ```bash
-   # Scale down ALL Python scripts in the project at once
-   find /repo -name "*.py" -exec grep -l "epochs" {{}} \; | xargs -I{{}} sed -i "s/'epochs': [0-9]*/'epochs': 2/g" {{}}
-   find /repo -name "*.py" -exec grep -l "num_train" {{}} \; | xargs -I{{}} sed -i "s/'num_train': [0-9]*/'num_train': 10/g" {{}}
-   find /repo -name "*.py" -exec grep -l "num_test" {{}} \; | xargs -I{{}} sed -i "s/'num_test': [0-9]*/'num_test': 5/g" {{}}
-   ```
-   This ensures you don't forget to scale down any script. Do this ONCE, early in the process.
-   
-   **BEFORE running EACH training/inference script, you MUST:**
-   
-   a) **Inspect THAT SPECIFIC script for hardcoded training parameters:**
-      ```bash
-      grep -n "epochs\|num_epochs\|n_epochs\|max_steps\|max_iter\|num_train\|num_test\|num_samples\|iterations\|total_steps" <script>.py
-      ```
-   
-   b) **If epochs/iterations are passed via CLI arguments** (e.g., `--epochs`), pass small values:
-      ```bash
-      python <script>.py --epochs 2 --max_steps 5 <other_args>
-      ```
-   
-   c) **If epochs/iterations are HARDCODED in the script** (no argparse, just a dict or variable), you MUST
-      use `sed` to reduce them BEFORE running. This is very common — many research scripts hardcode
-      `'epochs': 2000` or `num_iterations = 10000` in the `__main__` block. Examples:
-      ```bash
-      # Reduce hardcoded epochs from any large number to 2
-      sed -i "s/'epochs': [0-9]*/'epochs': 2/g" <script>.py
-      # Reduce hardcoded iterations
-      sed -i "s/iterations = [0-9]*/iterations = 5/g" <script>.py
-      # Reduce num_train and num_test to small values
-      sed -i "s/'num_train': [0-9]*/'num_train': 10/g" <script>.py
-      sed -i "s/'num_test': [0-9]*/'num_test': 5/g" <script>.py
-      ```
-      **IMPORTANT: Do this for EVERY script you plan to run, not just the first one!**
-      Example: If the project has `norm.py` and `norm_DeltaPhi.py`, you must `sed` BOTH:
-      ```bash
-      sed -i "s/'epochs': [0-9]*/'epochs': 2/g" norm.py norm_DeltaPhi.py
-      ```
-   
-   d) **If the script uses a config file** (YAML, JSON, .cfg), edit it to reduce epochs:
-      ```bash
-      sed -i 's/epochs: [0-9]*/epochs: 2/' config.yaml
-      sed -i 's/max_steps: [0-9]*/max_steps: 5/' config.yaml
-      ```
-   
-   e) **Common parameters to ALWAYS scale down** (target values in parentheses):
-      - `epochs` / `num_epochs` / `n_epochs` → (1-2)
-      - `max_steps` / `num_steps` / `total_steps` / `iterations` → (3-5)
-      - `num_train` / `ntrain` → (5-10)
-      - `num_test` / `ntest` → (3-5)
-      - `batch_size` → keep as-is or reduce to (2-4) if dataset is tiny
-      - `num_workers` → (0 or 1)
-      - `save_every` / `eval_every` / `log_every` → (1)
-   
-   **NEVER run ANY Python script without first checking and reducing these values.
-   A script running for 2000 epochs = WASTED RUN. You have limited turns. Be smart.
-   If you scaled down script_A.py but forgot script_B.py, running script_B.py WILL timeout.**
-   
-   **A. For TRAINING scripts (train.py, fine_tune.py, etc.):**
-   - If the script requires data download or pre-trained models:
-     ```bash
-     # Check if data/model downloading is needed
-     cd /repo && python <train_script>.py --help | grep -E "data|model|download"
-     ```
-   - **If large downloads are needed (>1GB models, large datasets):**
-     Create a **small dummy dataset** to verify the training loop starts successfully.
-     **IMPORTANT: For multiline Python code, ALWAYS write a .py file first, then run it.**
-     **Do NOT use multiline `python -c` -- it breaks due to newline handling in the sandbox.**
-
-     Example for text/JSON data -- write a helper script:
-     ```bash
-     cat > /tmp/create_dummy_data.py << 'PYEOF'
-import os, json, torch
-os.makedirs('/tmp/dummy_data', exist_ok=True)
-data = [{{"input": "test " + str(i), "output": "result " + str(i)}} for i in range(10)]
-with open('/tmp/dummy_data/train.json', 'w') as f:
-    json.dump(data, f)
-print('Created dummy training data with 10 samples')
-PYEOF
-     ```
-     Then run it:
-     ```bash
-     python /tmp/create_dummy_data.py
-     ```
-
-     Example for ImageNet-style image data (class folders with images):
-     ```bash
-     cat > /tmp/create_dummy_images.py << 'PYEOF'
-import os
-from PIL import Image
-import numpy as np
-for split in ['train', 'val']:
-    for c in range(2):
-        d = f'/tmp/dummy_imagenet/{{split}}/class_{{c}}'
-        os.makedirs(d, exist_ok=True)
-        for i in range(5):
-            img = Image.fromarray(np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8))
-            img.save(f'{{d}}/img_{{i}}.jpg')
-print('Created dummy ImageNet dataset: 2 classes x 5 images x train+val')
-PYEOF
-     ```
-     Then run it:
-     ```bash
-     python /tmp/create_dummy_images.py
-     ```
-   - **Remember: You MUST have already scaled down epochs/iterations (see pre-run check above).**
-   - Run the training script with the dummy data and **minimal settings** (e.g., `--epochs 1`, `--max_steps 10`):
-     ```bash
-     cd /repo && python <train_script>.py --data_path /tmp/dummy_data --epochs 1 --max_steps 10 <other_minimal_args>
-     ```
-   - **IMPORTANT: For training scripts, you DO NOT need to wait for full training to complete.**
-     - If the script starts training and shows progress (e.g., "Epoch 1/1, Step 1/10, Loss: 2.345..."), **that is sufficient verification**.
-     - You can monitor the first few steps to ensure no errors, then you may interrupt with Ctrl+C if it's clearly working.
-     - Interrupting a training script (Ctrl+C or letting it timeout) does **NOT** revert the environment.
-   
-   **B. For INFERENCE scripts (infer.py, predict.py, generate.py, etc.):**
-   - If the script needs input images/data, create minimal mock data using a helper script:
-     ```bash
-     cat > /tmp/create_test_images.py << 'PYEOF'
-import os
-from PIL import Image
-import numpy as np
-os.makedirs('/tmp/test_data', exist_ok=True)
-for i in range(3):
-    img = Image.fromarray(np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8))
-    img.save(f'/tmp/test_data/img_{{i}}.png')
-print('Created 3 test images')
-PYEOF
-     ```
-     Then run it:
-     ```bash
-     python /tmp/create_test_images.py
-     ```
-   - Then run the script with the mock data and minimal arguments:
-     ```bash
-     cd /repo && python <infer_script>.py --input_path /tmp/test_data <other_minimal_args>
-     ```
-   
-   **C. General guidelines:**
-   - If the script needs to download a large model from HuggingFace (>5GB), create a verification script
-     that tests the model loading path with dummy weights or use a smaller model variant if available.
-   - **Do NOT use `timeout` commands.** Let the script run naturally, but ONLY after you have
-     scaled down epochs/iterations to minimal values (1-5). A properly scaled-down script should
-     finish in under 2 minutes. If you forgot to scale down, the script WILL hang for hours.
-   - **Do NOT use `--help` as a substitute for actually running.** The `--help` flag only tests import
-     paths; it does NOT verify the code actually works end-to-end.
-   - If the script fails with an error, debug and fix it before declaring success.
-   - **ALWAYS `grep` for epoch/iteration counts in scripts AND config files before running them.**
-     Many research repos hardcode `epochs=2000` or `iterations=50000` with no CLI override.
-     Use `sed` to patch these values down to 1-2 epochs before execution.
+{_STEP5_SCALE_DOWN_BLOCK if not no_scale_down else _STEP5_NO_SCALE_DOWN_BLOCK}
 
 4. Once the script has ACTUALLY RUN and produced real output (not just --help text):
    - For training scripts: Verify it shows "Epoch 1" or "Step 1" with loss/metrics
@@ -1109,47 +1093,7 @@ except (ImportError, ModuleNotFoundError):
 - **NEVER set `HSA_OVERRIDE_GFX_VERSION`, `PYTORCH_ROCM_ARCH`, `MAX_JOBS`, or `GPU_ARCHS`** -- they are unnecessary and harmful.
 - If install fails, use the SDPA fallback instead of commenting out imports.
 
-### Important reminders for ROCm mode
-- Always check `pip list` after switching base image to see what's already installed.
-- ROCm images are Ubuntu-based and include apt-get. Use apt-get for system packages.
-- Do NOT try to install CUDA toolkit, cuDNN, or any nvidia-* system packages.
-- If a setup.py or requirements.txt has CUDA version pinning (e.g., torch==2.1.0+cu118), remove the CUDA suffix or skip that package (it's already in the base image).
-- **NEVER use `runtest` or `poetryruntest`** -- they are disabled. Use `echo ROCM_ENV_VERIFIED` after verifying.
-- **`--help` alone is NOT verification.** You MUST actually run the script with data.
-- **Do NOT use `timeout` commands.** Let scripts run after scaling down.
-- **ALWAYS scale down epochs/iterations/data BEFORE running EVERY script.** This applies to
-  EACH AND EVERY Python script you run, not just the first one. If a project has 3 scripts,
-  you must scale down ALL 3 before running them. Use batch-patching early:
-  `find /repo -name "*.py" -exec grep -l "epochs" {{}} \; | xargs -I{{}} sed -i "s/'epochs': [0-9]*/'epochs': 2/g" {{}}`
-  **Running ANY script with default 2000 epochs = agent timeout = FAILURE.**
-- Create mock/dummy input data (images, tensors, etc.) to test the script if real data is not available.
-- If the script crashes mid-execution with an error, debug and fix it before declaring success.
-- The script MUST produce actual output (not just --help text) to count as verified.
-
-### Handling wandb (Weights & Biases)
-Many ML projects use `wandb` for experiment tracking. In the Docker container there is no API key.
-If you see `wandb.login(key="FILL IN YOUR W&B KEY")` or similar placeholder in the code:
-1. **Comment out or remove** the `wandb.login(...)` call.
-2. **Set wandb to offline mode** so it doesn't try to connect:
-   ```bash
-   export WANDB_MODE=offline && echo 'export WANDB_MODE=offline' >> /root/.bashrc
-   ```
-   OR modify the `wandb.init()` call in the source code to add `mode="offline"`:
-   ```bash
-   sed -i 's/wandb.init(/wandb.init(mode="offline", /' /repo/<script>.py
-   ```
-3. If the script fails with a wandb authentication error, use either approach above.
-
-### Handling hardcoded data paths
-Many projects have hardcoded paths for datasets (e.g., `/data/imagenet`, `/ds-sds/images/imagenet`).
-When the script fails with `FileNotFoundError` for a data path:
-1. **Check if the script accepts a `--data_path` or `--data_dir` argument** to override the path.
-2. **If not, use `sed` to replace the hardcoded path** with your dummy data path:
-   ```bash
-   sed -i "s|/original/hardcoded/path|/tmp/dummy_data|g" /repo/<script>.py
-   ```
-3. **Always create proper dummy data** that matches the expected structure (e.g., ImageNet-style
-   with class subdirectories, JSON files with expected keys, etc.).
+{_reminders_section(no_scale_down)}
 
 ### Python 3.12 compatibility
 The ROCm `rocm/pytorch:latest` image uses **Python 3.12**. Some older code is incompatible:
@@ -1449,7 +1393,7 @@ If this assertion fails, STOP and fix it before proceeding with any script execu
     return prompt
 
 
-def generate_rocm_prompt_section_with_plan():
+def generate_rocm_prompt_section_with_plan(no_scale_down=False):
     """
     Generate a slimmed-down ROCm prompt section for use when an upfront plan exists.
 
@@ -1459,6 +1403,10 @@ def generate_rocm_prompt_section_with_plan():
 
     Keeps all technical reference material (flash-attn instructions, banned packages,
     CUDA mapping, code compat rules, etc.) since those are needed during execution.
+
+    Args:
+        no_scale_down: If True, instructs the agent to run README commands exactly
+            as-is without scaling down parameters or creating mock data.
     """
     preinstalled_str = ""
     for img, pkgs in ROCM_PREINSTALLED_PACKAGES.items():
@@ -1472,6 +1420,79 @@ def generate_rocm_prompt_section_with_plan():
             cuda_mapping_str += f"  - `{cuda_pkg}` -> No ROCm equivalent. {info['notes']}\n"
 
     banned_str = ", ".join(f"`{p}`" for p in BANNED_NVIDIA_PACKAGES[:10]) + ", etc."
+
+    if no_scale_down:
+        verification_section = """\
+### Verify by ACTUALLY RUNNING the project's scripts
+**Do NOT use `runtest`. It is disabled in ROCm mode.**
+**Running `--help` alone is NOT SUFFICIENT. You MUST actually execute the script.**
+
+*** NO-SCALE-DOWN MODE — RUN EXACTLY AS THE README DESCRIBES ***
+**Do NOT scale down epochs, iterations, batch sizes, steps, or any training parameters.**
+**Do NOT create mock or dummy data.**
+**Run the EXACT commands from the README with all original arguments and real data.**
+**Use the full dataset paths, model names, and parameters specified in the README.**
+
+1. Verify all core imports work:
+   `python -c "from <main_package> import <main_class>; print('OK')"`
+
+2. Run the main script with `--help` to understand its interface.
+
+2b. **Choose the right model.** If the script takes a `--model` argument:
+   - Check the README (in the plan above) for the recommended model — USE THAT ONE.
+
+3. **CRITICAL: Run the EXACT command from the README** with ALL original arguments.
+   - Do NOT reduce epochs, steps, iterations, or any numeric parameters.
+   - Do NOT substitute real data with dummy/mock data.
+   - Run the command exactly as the README specifies.
+   - **ALWAYS write multiline Python code to a .py file first, then run it.**
+   - **Do NOT use multiline `python -c`.**
+
+3b. **VALIDATE OUTPUT against the "EXPECTED OUTCOMES FROM README" section in the plan above.**
+   - After each script finishes, compare its actual output to the expected results listed in the plan.
+   - If the README documents specific configurations that should produce specific results
+     (e.g., a results table showing which configs yield "EXACT"/"PASS" vs "MISS"/"FAIL"),
+     verify that the correct configs actually produced the expected results.
+   - If the output **contradicts** the documented expectations (e.g., configs that should succeed
+     are failing, or metrics are far below documented thresholds), **investigate and fix the issue**
+     before moving on. Common causes: wrong default parameters, missing config flags, incorrect
+     data paths, or package version mismatches.
+   - If the plan has no "EXPECTED OUTCOMES" section, skip this step.
+   - **Do NOT declare ROCM_ENV_VERIFIED if output contradicts the README's documented results.**
+
+4. Once the script runs and produces real output ON GPU (not CPU) **that matches expected outcomes**:
+   ```bash
+   echo ROCM_ENV_VERIFIED
+   ```
+"""
+    else:
+        verification_section = """\
+### Verify by ACTUALLY RUNNING the project's scripts
+**Do NOT use `runtest`. It is disabled in ROCm mode.**
+**Running `--help` alone is NOT SUFFICIENT. You MUST actually execute the script.**
+
+**MANDATORY PRE-RUN CHECK: Scale down epochs, iterations, and data BEFORE running ANY script.**
+Check the plan for specific training parameters that need scaling down.
+
+1. Verify all core imports work:
+   `python -c "from <main_package> import <main_class>; print('OK')"`
+
+2. Run the main script with `--help` to understand its interface.
+
+2b. **Choose the right model.** If the script takes a `--model` argument:
+   - Check the README (in the plan above) for the recommended model — USE THAT ONE.
+
+3. **CRITICAL: Actually run the script** with mock data and minimal parameters.
+   - For training scripts: Use small dummy data, 1-2 epochs, 3-5 max_steps.
+   - For inference scripts: Create minimal mock data.
+   - **ALWAYS write multiline Python code to a .py file first, then run it.**
+   - **Do NOT use multiline `python -c`.**
+
+4. Once the script runs and produces real output ON GPU (not CPU):
+   ```bash
+   echo ROCM_ENV_VERIFIED
+   ```
+"""
 
     prompt = f"""
 ## AMD ROCm GPU MODE - CRITICAL INSTRUCTIONS
@@ -1523,32 +1544,7 @@ pip install -r requirements.txt --ignore-installed torch torchvision torchaudio
 
 **RULE: After fixing, ALWAYS re-verify `torch.cuda.is_available() == True` before proceeding.**
 
-### Verify by ACTUALLY RUNNING the project's scripts
-**Do NOT use `runtest`. It is disabled in ROCm mode.**
-**Running `--help` alone is NOT SUFFICIENT. You MUST actually execute the script.**
-
-**MANDATORY PRE-RUN CHECK: Scale down epochs, iterations, and data BEFORE running ANY script.**
-Check the plan for specific training parameters that need scaling down.
-
-1. Verify all core imports work:
-   `python -c "from <main_package> import <main_class>; print('OK')"`
-
-2. Run the main script with `--help` to understand its interface.
-
-2b. **Choose the right model.** If the script takes a `--model` argument:
-   - Check the README (in the plan above) for the recommended model — USE THAT ONE.
-
-3. **CRITICAL: Actually run the script** with mock data and minimal parameters.
-   - For training scripts: Use small dummy data, 1-2 epochs, 3-5 max_steps.
-   - For inference scripts: Create minimal mock data.
-   - **ALWAYS write multiline Python code to a .py file first, then run it.**
-   - **Do NOT use multiline `python -c`.**
-
-4. Once the script runs and produces real output ON GPU (not CPU):
-   ```bash
-   echo ROCM_ENV_VERIFIED
-   ```
-
+{verification_section}
 ### Pre-installed packages - DO NOT reinstall these
 {preinstalled_str}
 
