@@ -74,7 +74,10 @@ Explanation: Clear all the items in the conflict list.''',
     return new_text
 
 class Configuration(Agent):
-    def __init__(self, sandbox, image_name, full_name, root_dir, llm="gpt-4o-2024-05-13", max_turn=70, rocm_mode=False, plan=None, no_scale_down=False):
+    def __init__(self, sandbox, image_name, full_name, root_dir, llm="gpt-4o-2024-05-13", max_turn=70, rocm_mode=False, plan=None, no_scale_down=False,
+                 error_classifier=None, rule_engine=None, memory_provider=None,
+                 trajectory_store=None, build_attempt=None, kb_context="",
+                 optimize_kernels=False, use_claude_code=False):
         self.model = llm
         self.root_dir = root_dir
         self.max_turn = max_turn
@@ -84,6 +87,14 @@ class Configuration(Agent):
         self.sandbox_session = self.sandbox.get_session()
         self.full_name = full_name
         self.plan = plan
+        self.error_classifier = error_classifier
+        self.rule_engine = rule_engine
+        self.memory_provider = memory_provider
+        self.trajectory_store = trajectory_store
+        self.build_attempt = build_attempt
+        self.kb_context = kb_context
+        self.optimize_kernels = optimize_kernels
+        self.use_claude_code = use_claude_code
         self.tool_lib = [
             Tools.waiting_list_add,
             Tools.waiting_list_add_file,
@@ -123,6 +134,9 @@ class Configuration(Agent):
                 core_prompt += generate_rocm_prompt_section_with_plan(no_scale_down=self.no_scale_down)
             else:
                 core_prompt += generate_rocm_prompt_section(no_scale_down=self.no_scale_down)
+
+        if self.kb_context:
+            core_prompt += "\n" + self.kb_context + "\n"
 
         if has_plan:
             core_prompt += "\n\n" + "=" * 60 + "\n"
@@ -287,6 +301,81 @@ VERY IMPORTANT TIPS:
     * Avoid modifying or deleting original files, especially test files!
     * Do not use commands like `hatch shell` that open a new shell!
 """
+
+    @staticmethod
+    def _build_agentic_system_prompt_static(
+        image_name: str,
+        rocm_mode: bool = False,
+        no_scale_down: bool = False,
+        plan: str = "",
+        kb_context: str = "",
+    ) -> str:
+        """Build a system prompt for Claude Code's full agentic mode.
+
+        Used when --claude-code-agentic is passed: Claude Code drives the
+        entire configuration process with its own built-in tools.
+        """
+        prompt = f"""\
+You are an expert environment configuration agent running inside a Docker container
+based on {image_name}. Your goal is to configure the repository at /repo so it
+runs correctly on AMD ROCm GPUs.
+
+WORKFLOW:
+1. Inspect the repository structure and configuration files
+2. Install dependencies (respecting CUDA-to-ROCm package mappings)
+3. Apply code patches for ROCm compatibility
+4. Run the main script to verify the environment works
+5. Signal success with: echo ROCM_ENV_VERIFIED
+
+RULES:
+- Do NOT modify test files
+- Use pip install -q for quiet installs
+- Prefer minimal changes to original source files
+- If installing packages, check pipdeptree for conflicts afterward
+- For import errors, check if the module exists locally before pip installing
+"""
+
+        if rocm_mode:
+            prompt += """
+ROCm-SPECIFIC RULES:
+- Replace nvidia-* packages with ROCm equivalents
+- Use torch from ROCm wheel index
+- Verify GPU with: python -c "import torch; print(torch.cuda.is_available())"
+- Guard cudnn flags: if not getattr(torch.version, 'hip', None)
+- Replace nvidia-smi with rocm-smi
+- Set WANDB_MODE=offline if wandb is used
+"""
+
+        prompt += """
+REAL EXECUTION MODE:
+- Do NOT create mock models, mock data, or stub scripts.
+- Download and use the ACTUAL model specified in the README.
+- Run the EXACT commands from the README with REAL arguments.
+- If a HuggingFace model is specified, download and load that EXACT model.
+- If OOM occurs, reduce batch_size or gen_length but keep the REAL model.
+"""
+        if no_scale_down:
+            prompt += """
+NO-SCALE-DOWN MODE:
+Do NOT reduce epochs, iterations, batch sizes, or any training parameters.
+Run the exact README commands with original args.
+"""
+
+        if kb_context:
+            prompt += "\n" + kb_context + "\n"
+
+        if plan:
+            prompt += "\n" + "=" * 60 + "\n"
+            prompt += "STRATEGIC PLAN\n"
+            prompt += "=" * 60 + "\n"
+            prompt += plan + "\n"
+            prompt += "=" * 60 + "\n"
+            prompt += (
+                "Execute this plan. The repo has already been analyzed. "
+                "Start from the first actionable step.\n"
+            )
+
+        return prompt
 
     def show_init_prompt(self):
         print(self.system_prompt)
@@ -540,9 +629,10 @@ VERY IMPORTANT TIPS:
                             "Instead, verify the environment by:\n"
                             "1. Reading the README: `cat /repo/README.md`\n"
                             "2. Verifying imports work: `python -c 'import <main_package>'`\n"
-                            "3. Create mock/dummy input data and ACTUALLY RUN the main script:\n"
-                            "   e.g., `cd /repo && python example_mm.py --data_path /tmp/test_data`\n"
-                            "   Note: `--help` alone is NOT sufficient. You must run with real/mock data.\n"
+                            "3. Run the EXACT commands from the README with REAL models and REAL data.\n"
+                            "   Do NOT create mock/dummy models or data. Download and use the actual model.\n"
+                            "   e.g., `cd /repo && python generate.py` (as specified in README)\n"
+                            "   Note: `--help` alone is NOT sufficient. You must run with real data.\n"
                             "Once the script produces actual output, declare success by outputting:\n"
                             "```bash\necho ROCM_ENV_VERIFIED\n```\n"
                         )
@@ -568,10 +658,97 @@ VERY IMPORTANT TIPS:
                         finish = True
                         break
 
+                    # ── Rule matching before execution ──
+                    matched_rule_ids = []
+                    if self.rule_engine:
+                        rule_context = {
+                            "rocm_mode": self.rocm_mode,
+                            "package_needed": commands[i].strip(),
+                            "package_matches": commands[i].strip(),
+                        }
+                        rule_result = self.rule_engine.match(rule_context)
+                        matched_rule_ids = rule_result.rule_ids
+                        if rule_result.has_deterministic:
+                            det_cmds = rule_result.all_deterministic_commands
+                            if det_cmds:
+                                kb_in_guidance_pre = self.rule_engine.format_for_prompt(rule_result)
+                                system_res += f"\n{kb_in_guidance_pre}\n"
+
                     # ── Execute normal command ──
                     sandbox_res, return_code = self.sandbox_session.execute(commands[i], waiting_list, conflict_list)
                     sandbox_res = res_truncate(sandbox_res)
+
+                    # ── Error Classification (IN phase) ──
+                    classified_error = None
+                    kb_in_guidance = ""
+                    rc_int = return_code if isinstance(return_code, int) else -1
+                    if self.error_classifier and rc_int != 0 and sandbox_res:
+                        classified_error, deterministic_cmds = self.error_classifier.classify_and_fix(
+                            sandbox_res, rc_int
+                        )
+                        if deterministic_cmds and classified_error and not classified_error.is_novel:
+                            kb_in_guidance += (
+                                f"\n** KB MATCH: {classified_error.error_class} "
+                                f"(confidence: {classified_error.confidence:.0%}) **\n"
+                                f"Suggested fix: {' && '.join(deterministic_cmds)}\n"
+                            )
+                        if self.rule_engine and classified_error and classified_error.error_class:
+                            err_rule_ctx = {
+                                "rocm_mode": self.rocm_mode,
+                                "error_class": classified_error.error_class,
+                                "error_output": sandbox_res[:2000],
+                                "error_pattern": sandbox_res[:2000],
+                            }
+                            err_rule_result = self.rule_engine.match(err_rule_ctx)
+                            matched_rule_ids.extend(err_rule_result.rule_ids)
+                            if err_rule_result.has_deterministic or err_rule_result.has_advisory:
+                                kb_in_guidance += "\n" + self.rule_engine.format_for_prompt(err_rule_result)
+                    elif self.memory_provider and rc_int != 0 and sandbox_res:
+                        from storage.models import MemoryRequest, MemoryPhase
+                        in_request = MemoryRequest(
+                            query=commands[i],
+                            context={"error_output": sandbox_res[:1000], "rocm_mode": self.rocm_mode},
+                            phase=MemoryPhase.IN.value,
+                            current_error=sandbox_res[:2000],
+                            turn_number=turn,
+                        )
+                        in_memory = self.memory_provider.provide_memory(in_request)
+                        kb_in_guidance = self.memory_provider.format_in_for_observation(in_memory)
+
+                    # ── Record rule outcomes ──
+                    if self.rule_engine and matched_rule_ids:
+                        for rid in set(matched_rule_ids):
+                            self.rule_engine.record_outcome(rid, rc_int == 0)
+                        if self.build_attempt:
+                            for rid in matched_rule_ids:
+                                if rid not in self.build_attempt.rules_applied:
+                                    self.build_attempt.rules_applied.append(rid)
+
+                    # ── Record trajectory ──
+                    if self.trajectory_store and self.build_attempt:
+                        from storage.models import TrajectoryRecord
+                        record = TrajectoryRecord(
+                            repo_id=self.full_name,
+                            attempt_id=self.build_attempt.id,
+                            agent="configuration",
+                            action_type="bash",
+                            action_content=commands[i],
+                            observation_raw=sandbox_res[:5000] if sandbox_res else "",
+                            outcome="success" if rc_int == 0 else "failure",
+                            return_code=rc_int,
+                            duration_seconds=time.time() - start_time,
+                            turn_number=turn,
+                            error_class=classified_error.error_class if classified_error else None,
+                            novel_situation=classified_error.is_novel if classified_error else False,
+                            kb_rules_applied=list(set(matched_rule_ids)),
+                        )
+                        self.trajectory_store.record_action(
+                            record, self.build_attempt.trajectory_file
+                        )
+
                     system_res += sandbox_res
+                    if kb_in_guidance:
+                        system_res += kb_in_guidance
                     if return_code != 'unknown':
                         system_res += f'\n`{commands[i]}` executes with returncode: {return_code}\n'
 
@@ -605,7 +782,8 @@ VERY IMPORTANT TIPS:
                             system_res += (
                                 "\n\n** WARNING: No unit tests were detected. "
                                 "In ROCm mode, this does NOT mean success. **\n"
-                                "You MUST create mock/dummy data and ACTUALLY RUN the project's main script.\n"
+                                "You MUST run the project's main script with REAL models and REAL data as described in the README.\n"
+                                "Do NOT create mock/dummy models or data. Download and use the actual model.\n"
                                 "`--help` alone is NOT sufficient for verification.\n"
                                 "Once the script produces actual output, output: ```bash\necho ROCM_ENV_VERIFIED\n```\n"
                             )
@@ -681,7 +859,7 @@ The edit format is as follows:
 
             if len(success_cmds) > 0:
                 if self.rocm_mode:
-                    appendix = '\nThe container has successfully executed the following commands in order. Please refer to the execution history, reflect, and decide the subsequent actions. You MUST actually run the project\'s main script with real or mock data (not just --help). Only after the script produces actual output, output `echo ROCM_ENV_VERIFIED` to finish.\n' + \
+                    appendix = '\nThe container has successfully executed the following commands in order. Please refer to the execution history, reflect, and decide the subsequent actions. You MUST actually run the project\'s main script with REAL models and REAL data as specified in the README (not just --help, not mock data). Only after the script produces actual output, output `echo ROCM_ENV_VERIFIED` to finish.\n' + \
                         '\n'.join(success_cmds)
                 else:
                     appendix = '\nThe container has successfully executed the following commands in order. Please refer to the execution history, reflect, and decide the subsequent actions. Remember, your ultimate goal is to pass the tests by executing `runtest` or `poetryruntest`.\n' + \

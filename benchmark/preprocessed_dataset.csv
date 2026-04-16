@@ -1,0 +1,149 @@
+Conference,paper_title,github_link
+ICLR 2025,CATCH: Channel-Aware Multivariate Time Series Anomaly Detection,https://github.com/decisionintelligence/CATCH
+ICLR 2025,MISA: Advancing Prompt-Based Methods for General Continual Learning,https://github.com/kangzhiq/MISA
+ICLR 2025,DSOF (Deep Structure Optimization Framework),https://github.com/yyalau/iclr2025_dsof
+ICLR 2025,Self-Supervised Diffusion MRI Denoising via Iterative Refinement,https://github.com/Qingyuan-02/SSDM
+ICLR 2025,DynamicCity: Large-Scale 4D Occupancy Generation,https://github.com/wzzheng/DynamicCity
+ICLR 2025,PhysBench: Enhancing VLMs for Physical World Understanding,https://github.com/KarelBilek/PhysBench
+ICLR 2025,Knowledge Entropy Decay Hinders New Knowledge Acquisition,https://github.com/kaistAI/Knowledge-Entropy
+ICLR 2025,Language Representations Can be What Recommenders Need,https://github.com/LehengTHU/AlphaRec
+ICLR 2025,DiffusionVeteran,https://github.com/Josh00-Lu/DiffusionVeteran
+ICLR 2025,OOD_ICL: In-Context Learning Generalization,https://github.com/cwgoddard/OOD_ICL
+ICLR 2025,JudgeLM: Fine-tuned Large Language Models are Scalable Judges,https://github.com/baaivision/JudgeLM
+ICLR 2025,Physics of Language Models: Knowledge Capacity Scaling Laws,https://github.com/zeyuanallen-zhu/physics-of-language-models
+ICLR 2025,Internet of Agents: Weaving a Web of Heterogeneous Agents,https://github.com/OpenBMB/IoA
+ICLR 2025,Robustness Reprogramming for Representation Learning,https://github.com/chris-hzc/Robustness-Reprogramming
+ICLR 2025,LayerDAG: Diffusion Model for Directed Acyclic Graph Generation,https://github.com/Graph-COM/LayerDAG
+ICLR 2025,Quality Measures for Dynamic Graph Generative Models,https://github.com/ryienh/jl-metric
+ICLR 2025,Mixture-of-Agents Enhances Large Language Model Capabilities,https://github.com/togethercomputer/moa
+ICLR 2025,"Answer, Assemble, Ace: Understanding How LMs Answer MCQs",https://github.com/allenai/understanding_mcqa
+ICLR 2025,TopoNets: Vision and language models with brain-like topography,https://github.com/murtylab/topoloss
+ICLR 2025,"Wasserstein Distances, Neuronal Entanglement, and Sparsity",https://github.com/Shavit-Lab/Sparse-Expansion
+ICLR 2025,WildBench: Benchmarking LLMs with Tasks from Real Users,https://github.com/allenai/WildBench
+ICLR 2025,Adversarial Perturbations Cannot Reliably Protect Artists,https://github.com/ethz-spylab/robust-style-mimicry
+ICLR 2025,"Multi-session, multi-task neural decoding from distinct cell-types",https://github.com/neuro-galaxy/torch_brain/tree/main/examples/poyo_plus
+ICLR 2025,Reducing Hallucinations via Latent Space Steering,https://github.com/shengliu66/VTI
+ICLR 2025,AutoDAN-Turbo: A Lifelong Agent for Strategy Self-Exploration,https://github.com/SaFo-Lab/AutoDAN-Turbo
+ICLR 2025,BRIGHT: A Realistic Benchmark for Reasoning-Intensive Retrieval,https://github.com/xlang-ai/BRIGHT
+ICLR 2025,Online Reinforcement Learning in Non-Stationary Environments,https://github.com/pouyahmdn/LCPO
+ICLR 2025,CEB: Compositional Evaluation Benchmark for Fairness in LLMs,https://github.com/SongW-SW/CEB
+ICLR 2025,TabWak: A Watermark for Tabular Diffusion Models,https://github.com/chaoyitud/TabWak
+ICLR 2025,Generating Freeform Endoskeletal Robots,https://github.com/iffiX/endoskeletal
+ICLR 2025,AnalogGenie: Automatic Discovery of Analog Circuit Topologies,https://github.com/xz-group/AnalogGenie
+ICLR 2025,DataEnvGym: Data Generation Agents in Teacher Environments,https://github.com/codezakh/DataEnvGym
+ICML 2025,HarmoniCa: Harmonizing Training and Inference for Better Feature Caching,https://github.com/ModelTC/HarmoniCa
+ICML 2025,"CSL-Mem: Towards Memorization Estimation: Fast, Formal and Free",https://github.com/DeepakTatachar/CSL-Mem
+ICML 2025,SECOND: Mitigating Perceptual Hallucination in Vision-Language Models,https://github.com/AIDASLab/SECOND
+ICML 2025,Automatically Identify and Rectify: Robust Deep Contrastive Multi-view Clustering,https://github.com/xihongyang1999/AIRMVC
+ICML 2025,HealthGPT: Medical Large Vision-Language Model via H-LoRA,https://github.com/DCDmllm/HealthGPT
+ICML 2025,CodeI/O: Condensing Reasoning Patterns via Code Input-Output Prediction,https://github.com/hkust-nlp/CodeIO
+ICML 2025,ReferSplat: 3D Gaussian Splatting for Referring Expressions,https://github.com/heshuting555/ReferSplat
+ICML 2025,OmniBench: Scalable Multi-Dimensional Benchmark for Virtual Agents,https://github.com/antgroup/OmniBench
+ICML 2025,LoRA-One: Subspace Alignment for Low-Rank Adaptation,https://github.com/YuanheZ/LoRA-One
+ICML 2025,TarFlow: Normalizing Flows are Capable Generative Models,https://github.com/apple/ml-tarflow
+ICML 2025,EMMA-Bench: Evaluating Empathy and Morality in AI,https://github.com/EMMA-Bench/EMMA
+ICML 2025,General-Level and General-Bench for Multimodal Generalists,https://github.com/path2generalist/General-Level
+ICML 2025,Stacey: Promoting Stochastic Steepest Descent,https://github.com/xinyuluo8561/Stacey
+ICML 2025,ELMO : Efficiency via Low-precision and Peak Memory Optimization,https://github.com/xmc-aalto/elmo
+ICML 2025,EARTH: Epidemiology-Aware Neural ODE,https://github.com/GuanchengWan/EARTH
+ICML 2025,AutoML-Agent: A Multi-Agent LLM Framework for Full-Pipeline AutoML,https://github.com/DeepAuto-AI/automl-agent
+ICML 2025,Memento: Fine-tuning LLM Agents without Fine-tuning LLMs,https://github.com/Agent-on-the-Fly/Memento
+ICML 2025,Scaling Collapse Reveals Universal Dynamics,https://github.com/shikaiqiu/supercollapse
+ICML 2025,AnyEdit: Edit Any Knowledge Encoded in Language Models,https://github.com/jianghoucheng/AnyEdit
+ICML 2025,An analytic theory of creativity in convolutional diffusion models,https://github.com/Kambm/convolutional_diffusion
+ICML 2025,Online Learning in Risk Sensitive constrained MDP,https://github.com/mmoharami/Risk-Sensitive-CMDP
+ICML 2025,MAGELLAN: Metacognitive predictions of learning progress,https://github.com/flowersteam/MAGELLAN
+ICML 2025,Orthogonal Subspace Decomposition for Generalizable AI-Generated Image Detection,https://github.com/YZY-stack/Effort-AIGI-Detection 
+ICML 2025,Separating Knowledge with Procedural Data,https://github.com/adriarm/separating_knowledge
+ICLR 2025,TOP-ERL: Transformer-based Off-Policy Episodic Reinforcement Learning,https://github.com/BruceGeLi/TOP_ERL_ICLR25  
+ICLR 2025,CausalRivers - Scaling up benchmarking of causal discovery,https://github.com/CausalRivers/causalrivers
+ICLR 2025,Provably Reliable Conformal Prediction Sets,https://github.com/yascho/reliable_conformal_prediction
+ICLR 2025,Progressive Compositionality in Text-to-Image Generative Models,https://github.com/evansh666/EvoGen
+ICLR 2025,Benchmarking Predictive Coding Networks -- Made Simple,https://github.com/liukidar/pcx  
+ICLR 2025,Elicitation: A New Attack Vector for Large Language Models,https://github.com/Aniloid2/Confidence_Elicitation_Attacks  
+ICLR 2025,CoMRes: Semi-Supervised Time Series Forecasting,https://github.com/yjucho1/CoMRes  
+ICLR 2025,MCNC: Manifold-Constrained Reparameterization for Neural Compression,https://github.com/mint-vu/MCNC  
+ICLR 2025,HARDMath: A Benchmark Dataset for Challenging Problems,https://github.com/sarahmart/HARDMath  
+ICLR 2025,Not All Heads Matter: A Head-Level KV Cache Compression Method,https://github.com/FYYFU/HeadKV  
+ICLR 2025,AdaIR: Adaptive All-in-One Image Restoration,https://github.com/c-yn/AdaIR  
+ICLR 2025,Forte : Finding Outliers with Representation Typicality Estimation,https://github.com/DebarghaG/forte  
+ICLR 2025,LLM-wrapper: Black-Box Semantic-Aware Adaptation of Vision-Language Models,https://github.com/valeoai/llm_wrapper
+ACL 2025,Beyond Prompt Engineering: Robust Behavior Control in LLMs via Steering Target Atoms,https://github.com/zjunlp/steer-target-atoms
+ACL 2025,Outlier-Safe Pre-Training for Robust 4-Bit Quantization,https://github.com/dmis-lab/Outlier-Safe-Pre-Training
+ACL 2025,Can LLMs Deceive CLIP? Benchmarking Adversarial Compositionality,https://github.com/ahnjaewoo/MAC
+ACL 2025,Structural Deep Encoding for Table Question Answering,https://github.com/RaphaelMouravieff/TabStruct
+ACL 2025,Balancing Diversity and Risk in LLM Sampling,https://github.com/ZhouYuxuanYX/Benchmarking-and-Guiding-Adaptive-Sampling-Decoding-for-LLMs
+ACL 2025,Leveraging Context for Multimodal Fallacy Classification,https://github.com/alessiopittiglio/mm-argfallacy
+ACL 2025,AskQE: Question Answering as Automatic Evaluation for Machine Translation,https://github.com/dayeonki/askqe
+ACL 2025,BookCoref: Coreference Resolution at Book Scale,https://github.com/sapienzanlp/bookcoref
+ACL 2025,Evaluating Design Decisions for Dual Encoder-based Entity Disambiguation,https://github.com/flairNLP/VerbalizED
+ACL 2025,What Makes a Good Natural Language Prompt?,https://github.com/dxlong2000/NLPromptEval
+ACL 2025,Modeling Uncertainty in Composed Image Retrieval via Probabilistic Embeddings,https://github.com/tanghme0w/ACL25-CoPE
+ACL 2025,Multiple LLM Agents Debate for Equitable Cultural Alignment,https://github.com/dayeonki/cultural_debate
+ACL 2025,Retrospective Learning from Interactions,https://github.com/lil-lab/respect
+ACL 2025,PlanGenLLMs: A Modern Survey of LLM Planning Capabilities,https://github.com/wll199566/Awesome-LLM-Planning-Capability
+ACL 2025,SelfElicit: Your Language Model Secretly Knows Where is the Relevant Evidence!,https://github.com/ZhiningLiu1998/SelfElicit
+ACL 2025,SeedBench: Benchmarking Large Language Models in Seed Science,https://github.com/InternScience/SeedBench
+ACL 2025,Embedding language models in probability space via log-likelihood vectors,https://github.com/shimo-lab/modelmap
+ACL 2025,LADDER: Language-Driven Slice Discovery and Error Rectification,https://github.com/batmanlab/Ladder
+ACL 2025,Does Time Have Its Place? Temporal Heads in Language Models,https://github.com/dmis-lab/TemporalHead
+ACL 2025,Neural Incompatibility: The Gap of Cross-Scale Parametric Knowledge Transfer,https://github.com/Trae1ounG/Neural_Incompatibility
+ACL 2025,Circuit Compositions: Exploring Modular Structures in Transformer-Based LLMs,https://github.com/SondreWold/comp_rep_study
+ACL 2025,Nunchi-Bench: Benchmarking LLMs on Cultural Reasoning,https://github.com/koreankiwi99/Nunchi-Bench
+ACL 2025,"TabXEval: An exhaustive, explainable rubric for table evaluation",https://github.com/CoRAL-ASU/TabXEval
+ACL 2025,UAlberta at SemEval-2025 Task 2: Prompting for Entity-Aware Translation,https://github.com/UAlberta-NLP/SemEval2025-EAMT
+ACL 2025,"Evaluating Multimodal LLMs on indexical, iconic, and symbolic gestures",https://github.com/norikinishida/mllm-gesture-eval
+ACL 2025,ORMind: A Cognitive-Inspired End-to-End Reasoning Framework for OR,https://github.com/XiaoAI1989/ORMind
+ACL 2025,M-RewardBench: Evaluating Reward Models in Multilingual Settings,https://github.com/Cohere-Labs-Community/m-rewardbench
+ACL 2025,ELABORATION: Benchmark on Human-LLM Competitive Programming,https://github.com/SCUNLP/ELABORATION
+ACL 2025,FEA-Bench: Evaluating Repository-Level Code Generation,https://github.com/microsoft/FEA-Bench
+ACL 2025,FR-Spec: Sparse Feature Representations,https://github.com/thunlp/FR-Spec
+ACL 2025,DynamicKnowledgeCircuits,https://github.com/zjunlp/DynamicKnowledgeCircuits
+ACL 2025,CLEME2.0: Towards Interpretable Evaluation,https://github.com/THUKElab/CLEME
+ACL 2025,GraphNarrator: Generating Textual Explanations for GNNs,https://github.com/pb0316/GraphNarrator
+NeurIPS 2025,Code Graph Model (CGM),https://github.com/codefuse-ai/CodeFuse-CGM
+NeurIPS 2025,VETA-DiT: Quantization for Efficient 4-bit Diffusion Transformers,https://github.com/xululi0223/VETA-DiT
+NeurIPS 2025,TubeletGraph: Tracking and Understanding Object Transformations,https://github.com/YihongSun/TubeletGraph
+NeurIPS 2025,UltraHR-100K: Enhancing UHR Image Synthesis,https://github.com/NJU-PCALab/UltraHR-100k
+NeurIPS 2025,Perception Encoder: The Best Visual Embeddings Are Not at The Output,https://github.com/facebookresearch/perception_models
+NeurIPS 2025,Gated Attention for Large Language Models,https://github.com/qiuzh20/gated_attention
+NeurIPS 2025,Large Language Diffusion Models,https://github.com/ML-GSAI/LLaDA
+NeurIPS 2025,Efficient Part-level 3D Object Generation Via Dual Volume Packing,https://github.com/NVlabs/PartPacker
+NeurIPS 2025,Show-o2: Improved Native Unified Multimodal Models,https://github.com/showlab/Show-o
+NeurIPS 2025,MoBA: Mixture of Block Attention for Long-Context LLMs,https://github.com/MoonshotAI/MoBA
+NeurIPS 2025,Composing Global Solutions to Reasoning Tasks Via Algebraic Objects,https://github.com/facebookresearch/luckmatters
+NeurIPS 2025,Scalable Best-of-N Selection for Large Language Models Via Self-Certainty,https://github.com/backprop07/Self-Certainty
+NeurIPS 2025,PrefixKV: Adaptive Prefix KV Cache Is What Vision Instruction Models Need,https://github.com/THU-MIG/PrefixKV
+NeurIPS 2025,Compute-Optimal Scaling for Value-Based Deep RL,https://github.com/prestonfu/model_scaling
+NeurIPS 2025,YOLOv12: Attention-Centric Real-Time Object Detectors,https://github.com/sunsmarterjie/yolov12
+NeurIPS 2025,Tiled Flash Linear Attention: Efficient Linear RNN and XLSTM Kernels,https://github.com/NX-AI/mlstm_kernels
+NeurIPS 2025,FlashBias: Fast Computation of Attention with Bias,https://github.com/thuml/FlashBias
+NeurIPS 2025,Pioneering Investigation of Graph Prompting in Terms of Graph Topology,https://github.com/xbfu/GraphTOP
+NeurIPS 2025,CoVoMix2: Advancing Zero-Shot Dialogue Generation via Flow Matching,https://github.com/vivian556123/NeurIPS2024-CoVoMix
+NeurIPS 2025,ConTextTab: A Semantics-Aware Tabular In-Context Learner,https://github.com/SAP-samples/contexttab
+NeurIPS 2025,Synthesize Privacy-Preserving High-Resolution Images,https://github.com/MarkGodrick/SPTI
+NeurIPS 2025,Toward Relative Positional Encoding in Spiking Transformers,https://github.com/microsoft/SeqSNN
+NeurIPS 2025,TimeEmb: Lightweight Static-Dynamic Disentanglement,https://github.com/showmeon/TimeEmb
+NeurIPS 2025,NeuroPath: Neurobiology-Inspired Path Tracking,https://github.com/KennyCaty/NeuroPath
+NeurIPS 2025,Data-Free Model Extraction for Black-box Recommender Systems,https://github.com/Vencent-Won/DBGRME.git
+NeurIPS 2025,FACE: Mapping Collaborative Filtering Embeddings Into LLM Tokens,https://github.com/YixinRoll/FACE
+NeurIPS 2025,UI-Genie: User Interface Generation,https://github.com/Euphoria16/UI-Genie
+NeurIPS 2025,ImAge: Robust Image Representation for Place Recognition,https://github.com/Lu-Feng/ImAge
+NeurIPS 2025,4KAgent: Agentic Any Image to 4K Super-Resolution,https://github.com/llmsresearch/paperbanana
+NeurIPS 2025,Class-aware Domain Knowledge Fusion for Continual Test-Time Adaptation,https://github.com/zhoujiahuan1991/NeurIPS2025-KFF
+NeurIPS 2025,ASBS: Adjoint Samplers,https://github.com/facebookresearch/adjoint_samplers
+NeurIPS 2025,PhySense: Physics Sensing,https://github.com/thuml/PhySense
+NeurIPS 2025,LLM Reproducibility,https://github.com/nanomaoli/llm_reproducibility
+NeurIPS 2025,BiggerGait: Unlocking Gait Recognition with Layer-wise Representations,https://github.com/ShiqiYu/OpenGait
+NeurIPS 2025,Ada-KV: Optimizing KV Cache Eviction By Adaptive Budget Allocation,https://github.com/FFY0/AdaKV
+NeurIPS 2025,Trans-EnV: A Framework for Evaluating the Linguistic Robustness,https://github.com/jiyounglee-0523/TransEnV
+NeurIPS 2025,SeePhys: Benchmarking Vision-Based Physics Reasoning,https://github.com/AI4Phys/SeePhys
+NeurIPS 2025,3EED: Ground Everything Everywhere in 3D,https://github.com/worldbench/3EED
+NeurIPS 2025,C-SEO Bench: Does Conversational SEO Work?,https://github.com/parameterlab/c-seo-bench
+NeurIPS 2025,UniZyme: A Unified Protein Cleavage Site Predictor,https://github.com/Ao-LiChen/UniZyme
+ICLR 2025,Closed-Form Merging of Parameter-Efficient Modules for Federated Continual Learning,https://github.com/aimagelab/fed-mammoth
+ICLR 2025,Breaking the Reclustering Barrier in Centroid-based Deep Clustering,https://github.com/Probabilistic-and-Interactive-ML/breaking-the-reclustering-barrier
+ICLR 2025,Frequency-Guided Masking for Enhanced Vision Self-Supervised Learning,https://github.com/aminK8/FOLK
+ICLR 2025,Generalized Consistency Trajectory Models for Image Manipulation,https://github.com/1202kbs/GCTM
+ICLR 2025,Exact Certification of (Graph) Neural Networks Against Label Poisoning,https://github.com/saper0/qpcert
+ICLR 2025,Test-time Adaptation for Cross-modal Retrieval with Query Shift,https://github.com/XLearning-SCU/2025-ICLR-TCR

@@ -1470,8 +1470,20 @@ def generate_rocm_prompt_section_with_plan(no_scale_down=False):
 **Do NOT use `runtest`. It is disabled in ROCm mode.**
 **Running `--help` alone is NOT SUFFICIENT. You MUST actually execute the script.**
 
-**MANDATORY PRE-RUN CHECK: Scale down epochs, iterations, and data BEFORE running ANY script.**
-Check the plan for specific training parameters that need scaling down.
+*** YOU MUST USE REAL MODELS, REAL DATA, AND REAL COMMANDS — NO MOCKS ***
+**Do NOT create mock models, mock data, or stub scripts.**
+**Do NOT substitute real models with dummy/fake/tiny alternatives unless the plan explicitly says to.**
+**Download and use the ACTUAL model specified in the README.**
+**Run the EXACT commands from the README with REAL arguments.**
+
+If the README specifies a HuggingFace model (e.g., `GSAI-ML/LLaDA-8B-Instruct`):
+- Download and load that EXACT model. Do NOT create a MockModel class.
+- If the model is gated and you have HF_TOKEN, authenticate first.
+- If the model is gated and no token is available, use an ungated alternative of SIMILAR SIZE
+  (not a tiny toy model — use the closest available real model).
+
+For training scripts: You MAY reduce epochs to 1-2 and steps to 5-10 to save time,
+but still use the REAL model and REAL data pipeline.
 
 1. Verify all core imports work:
    `python -c "from <main_package> import <main_class>; print('OK')"`
@@ -1480,14 +1492,20 @@ Check the plan for specific training parameters that need scaling down.
 
 2b. **Choose the right model.** If the script takes a `--model` argument:
    - Check the README (in the plan above) for the recommended model — USE THAT ONE.
+   - Download and use the REAL model. Do NOT create a mock/dummy model.
 
-3. **CRITICAL: Actually run the script** with mock data and minimal parameters.
-   - For training scripts: Use small dummy data, 1-2 epochs, 3-5 max_steps.
-   - For inference scripts: Create minimal mock data.
+3. **CRITICAL: Run the EXACT command from the README** with REAL model and REAL data.
    - **ALWAYS write multiline Python code to a .py file first, then run it.**
    - **Do NOT use multiline `python -c`.**
+   - If the script downloads a model, let it download. Do NOT mock the download.
+   - If OOM occurs, reduce batch_size or gen_length but keep the REAL model.
 
-4. Once the script runs and produces real output ON GPU (not CPU):
+3b. **VALIDATE OUTPUT against the "EXPECTED OUTCOMES FROM README" section in the plan above.**
+   - After each script finishes, compare its actual output to the expected results listed in the plan.
+   - If the output **contradicts** the documented expectations, **investigate and fix the issue**.
+   - **Do NOT declare ROCM_ENV_VERIFIED if output contradicts the README's documented results.**
+
+4. Once the script runs and produces real output ON GPU (not CPU) **with the real model**:
    ```bash
    echo ROCM_ENV_VERIFIED
    ```

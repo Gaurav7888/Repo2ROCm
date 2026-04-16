@@ -27,6 +27,15 @@ def set_api_key(api_key):
     _amd_api_key = api_key
 
 
+def _is_claude_code_active() -> bool:
+    """Check if Claude Code mode is enabled (lazy import to avoid circular deps)."""
+    try:
+        from utils.claude_code_client import is_claude_code_mode
+        return is_claude_code_mode()
+    except ImportError:
+        return False
+
+
 def _get_api_key():
     """Resolve API key from global state or environment variable."""
     if _amd_api_key:
@@ -116,6 +125,12 @@ def _call_amd_claude(model, messages, temperature, max_tokens):
 
 
 def get_llm_response(model: str, messages, temperature=0.0, n=1, max_tokens=4096, system_prompt=None):
+    if _is_claude_code_active():
+        from utils.claude_code_client import get_claude_code_response
+        return get_claude_code_response(
+            model, list(messages), temperature, n, max_tokens, system_prompt
+        )
+
     if system_prompt:
         messages = [{"role": "system", "content": system_prompt}] + list(messages)
 

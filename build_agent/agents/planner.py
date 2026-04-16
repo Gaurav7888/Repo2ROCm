@@ -1075,9 +1075,9 @@ def generate_plan(repo_path: str, full_name: str, rocm_mode: bool = False,
         ungated_count = sum(1 for r in model_references if r["ungated"])
         log_info(f"  Found {len(model_references)} model references ({ungated_count} ungated, {gated_count} gated)")
 
-    # 7c. Extract expected outcomes from README (only in --no-scale-down mode)
+    # 7c. Extract expected outcomes from README
     expected_outcomes: List[Dict] = []
-    if no_scale_down and llm:
+    if llm:
         expected_outcomes = _extract_readme_expected_outcomes(
             readme_content, readme_run_commands, llm,
         )
