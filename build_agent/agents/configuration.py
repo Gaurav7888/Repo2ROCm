@@ -74,11 +74,12 @@ Explanation: Clear all the items in the conflict list.''',
     return new_text
 
 class Configuration(Agent):
-    def __init__(self, sandbox, image_name, full_name, root_dir, llm="gpt-4o-2024-05-13", max_turn=70, rocm_mode=False, plan=None):
+    def __init__(self, sandbox, image_name, full_name, root_dir, llm="gpt-4o-2024-05-13", max_turn=70, rocm_mode=False, plan=None, no_scale_down=False):
         self.model = llm
         self.root_dir = root_dir
         self.max_turn = max_turn
         self.rocm_mode = rocm_mode
+        self.no_scale_down = no_scale_down
         self.sandbox = sandbox
         self.sandbox_session = self.sandbox.get_session()
         self.full_name = full_name
@@ -119,9 +120,9 @@ class Configuration(Agent):
 
         if self.rocm_mode:
             if has_plan:
-                core_prompt += generate_rocm_prompt_section_with_plan()
+                core_prompt += generate_rocm_prompt_section_with_plan(no_scale_down=self.no_scale_down)
             else:
-                core_prompt += generate_rocm_prompt_section()
+                core_prompt += generate_rocm_prompt_section(no_scale_down=self.no_scale_down)
 
         if has_plan:
             core_prompt += "\n\n" + "=" * 60 + "\n"

@@ -97,6 +97,8 @@ def main():
     parser.add_argument('--rocm-base-image', type=str, default=None, help='Override the default ROCm base image (e.g., rocm/pytorch:latest)')
     parser.add_argument('--api-key', type=str, default=None, help='AMD LLM API Gateway key (or set AMD_LLM_API_KEY env var)')
     parser.add_argument('--verbose', action='store_true', default=False, help='Show full LLM messages, responses, and context tables in terminal')
+    parser.add_argument('--no-scale-down', action='store_true', default=False,
+                        help='Run the repo exactly as the README describes — no scale-down of training params, no mock data. Uses real data/commands from the README as-is.')
 
     args = parser.parse_args()
 
@@ -122,6 +124,7 @@ def main():
     llm = args.llm
     rocm_mode = args.rocm
     rocm_base_image = args.rocm_base_image
+    no_scale_down = args.no_scale_down
 
     log_header("REPO2RUN", f"Automated Environment Configuration Agent")
     log_phase("CONFIGURATION")
@@ -129,9 +132,9 @@ def main():
     log_info(f"SHA: {sha}")
     log_info(f"LLM: {llm}")
     log_info(f"ROCm Mode: {rocm_mode}")
+    if no_scale_down:
+        log_info(f"No-Scale-Down: ON (will follow README as-is, no mock data)")
     log_info(f"Root Path: {root_path}")
-    print(full_name)
-    print(sha)
     if os.path.exists(f'{root_path}/output/{full_name}/patch'):
         rm_cmd = f"rm -rf {root_path}/output/{full_name}/patch"
         subprocess.run(rm_cmd, shell=True, check=True)
@@ -169,6 +172,7 @@ def main():
         full_name=full_name,
         rocm_mode=rocm_mode,
         llm=llm,
+        no_scale_down=no_scale_down,
     )
     print_plan(plan)
 
@@ -200,7 +204,7 @@ def main():
     log_phase("RUNNING CONFIGURATION AGENT")
     configuration_agent = Configuration(
         configuration_sandbox, base_image, full_name, root_path, llm, 100,
-        rocm_mode=rocm_mode, plan=plan,
+        rocm_mode=rocm_mode, plan=plan, no_scale_down=no_scale_down,
     )
     msg, outer_commands = configuration_agent.run('/tmp', trajectory, waiting_list, conflict_list)
     with open(f'{root_path}/output/{full_name.split("/")[0]}/{full_name.split("/")[1]}/track.json', 'w') as w1:

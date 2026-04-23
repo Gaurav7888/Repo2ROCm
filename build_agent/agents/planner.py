@@ -884,6 +884,88 @@ def _extract_model_references(readme_content: Optional[str], repo_path: str) -> 
     return refs
 
 
+def _extract_readme_expected_outcomes(
+    readme_content: Optional[str],
+    readme_run_commands: List[Dict],
+    llm: Optional[str] = None,
+) -> List[Dict]:
+    """
+    Use the LLM to extract expected outcomes / success criteria from the README.
+
+    Many READMEs document what correct output looks like — result tables, sample
+    outputs, accuracy thresholds, pass/fail expectations.  The execution agent
+    needs this information so it can validate its own output rather than
+    declaring success just because a script didn't crash.
+
+    Returns a list of dicts:
+        {"command_or_script": str, "expected_outcome": str}
+    Falls back to an empty list when no LLM is available or extraction fails.
+    """
+    if not readme_content or not llm:
+        return []
+
+    cmd_list = "\n".join(
+        f"  - {rc['command']}" for rc in readme_run_commands
+    ) if readme_run_commands else "(no specific commands extracted)"
+
+    prompt = f"""\
+You are analyzing a project README to extract **expected outcomes and success criteria**
+for its run/test commands.
+
+README CONTENT:
+{readme_content}
+
+KNOWN RUN COMMANDS:
+{cmd_list}
+
+TASK:
+Extract every concrete, verifiable expected outcome from this README.  Look for:
+1. Result tables showing which configurations or parameters produce which results.
+2. Sample output blocks or expected console output.
+3. Prose stating success criteria (e.g. "all tests should pass",
+   "you should see accuracy above X").
+4. Any documented pass/fail behavior for specific configurations or parameter sets.
+
+For each outcome, state:
+- **command_or_script**: the command, script name, or test name it applies to
+  (use the closest match from the known run commands above, or the script filename).
+- **expected_outcome**: a concise, specific description of what correct output
+  looks like.  Include exact values, thresholds, or labels directly from the README.
+
+Respond with ONLY a JSON array (no markdown fences, no extra text).  Example:
+[
+  {{"command_or_script": "python run_tests.py", "expected_outcome": "All tests pass with exit code 0"}},
+  {{"command_or_script": "python benchmark.py", "expected_outcome": "Throughput > 100 samples/sec on GPU"}}
+]
+
+If the README contains NO verifiable expected outcomes, return an empty array: []"""
+
+    messages = [{"role": "user", "content": prompt}]
+    try:
+        response, usage = get_llm_response(llm, messages, temperature=0.1, max_tokens=2048)
+        if response and response[0]:
+            log_info(f"Expected-outcome extraction: {usage.get('total_tokens', 0)} tokens used")
+            text = response[0].strip()
+            if text.startswith("```"):
+                text = re.sub(r"^```\w*\n?", "", text)
+                text = re.sub(r"\n?```$", "", text)
+            parsed = json.loads(text)
+            if isinstance(parsed, list):
+                valid = [
+                    e for e in parsed
+                    if isinstance(e, dict)
+                    and "command_or_script" in e
+                    and "expected_outcome" in e
+                ]
+                if valid:
+                    log_info(f"  Extracted {len(valid)} expected outcomes from README")
+                return valid
+    except (json.JSONDecodeError, Exception) as e:
+        log_info(f"Expected-outcome extraction failed ({e}), skipping")
+
+    return []
+
+
 def _detect_python_version(config_contents: Dict[str, str]) -> Optional[str]:
     if ".python-version" in config_contents:
         ver = config_contents[".python-version"].strip().split("\n")[0].strip()
@@ -922,9 +1004,15 @@ def _build_rocm_migration_section(cuda_deps: List[str]) -> str:
 # ── main planner ─────────────────────────────────────────────────────────────
 
 def generate_plan(repo_path: str, full_name: str, rocm_mode: bool = False,
-                  llm: Optional[str] = None) -> Tuple[str, Optional[str]]:
+                  llm: Optional[str] = None,
+                  no_scale_down: bool = False) -> Tuple[str, Optional[str]]:
     """
     Deep-analyze the repository and produce a comprehensive strategic plan.
+
+    Args:
+        no_scale_down: If True, skip training parameter detection and scale-down
+            sed commands. The agent will run the README commands exactly as-is
+            with real data instead of mock data.
 
     Returns:
         (plan_text, recommended_image) — recommended_image is the Docker image
@@ -987,6 +1075,13 @@ def generate_plan(repo_path: str, full_name: str, rocm_mode: bool = False,
         ungated_count = sum(1 for r in model_references if r["ungated"])
         log_info(f"  Found {len(model_references)} model references ({ungated_count} ungated, {gated_count} gated)")
 
+    # 7c. Extract expected outcomes from README (only in --no-scale-down mode)
+    expected_outcomes: List[Dict] = []
+    if no_scale_down and llm:
+        expected_outcomes = _extract_readme_expected_outcomes(
+            readme_content, readme_run_commands, llm,
+        )
+
     # 8. Install mechanisms
     install_mechanisms = []
     if "poetry.lock" in config_contents or ("pyproject.toml" in config_contents and "poetry" in config_contents.get("pyproject.toml", "").lower()):
@@ -1028,10 +1123,14 @@ def generate_plan(repo_path: str, full_name: str, rocm_mode: bool = False,
     if code_hazards:
         log_info(f"  Found {len(code_hazards)} code-level hazards")
 
-    # Training params
-    training_params = _detect_training_params(py_files, repo_path)
-    if training_params:
-        log_info(f"  Found {len(training_params)} large training parameter values")
+    # Training params (skipped in --no-scale-down mode)
+    if no_scale_down:
+        training_params = []
+        log_info("  Skipping training parameter detection (--no-scale-down)")
+    else:
+        training_params = _detect_training_params(py_files, repo_path)
+        if training_params:
+            log_info(f"  Found {len(training_params)} large training parameter values")
 
     # ── Context-aware image selection (LLM-based) ──────────────────────────
     py_file_contents: Dict[str, str] = {}
@@ -1222,6 +1321,19 @@ def generate_plan(repo_path: str, full_name: str, rocm_mode: bool = False,
                 sections.append(f"    (e.g., TinyLlama/TinyLlama-1.1B-Chat-v1.0 for Llama-based models)")
         sections.append("")
 
+    # ── Expected outcomes (for output validation in --no-scale-down mode) ───
+
+    if expected_outcomes:
+        sections.append("EXPECTED OUTCOMES FROM README (VALIDATE YOUR OUTPUT AGAINST THESE):")
+        sections.append("  After running each script, check that your output matches these expected results.")
+        sections.append("  Do NOT declare ROCM_ENV_VERIFIED if output contradicts these expectations.")
+        sections.append("")
+        for eo in expected_outcomes:
+            sections.append(f"  Script/Command: {eo['command_or_script']}")
+            for outcome_line in eo["expected_outcome"].splitlines():
+                sections.append(f"    Expected: {outcome_line}")
+            sections.append("")
+
     # ── Execution plan ───────────────────────────────────────────────────────
 
     if rocm_mode:
@@ -1246,11 +1358,20 @@ def generate_plan(repo_path: str, full_name: str, rocm_mode: bool = False,
         if training_params:
             sections.append(f"  {step}. Scale down training params before running scripts (sed commands above)")
             step += 1
-        sections.append(f"  {step}. Run target script with minimal args / mock data")
+        if no_scale_down:
+            sections.append(f"  {step}. Run the EXACT commands from the README as-is — do NOT scale down, do NOT use mock data")
+        else:
+            sections.append(f"  {step}. Run target script with minimal args / mock data")
         step += 1
         sections.append(f"  {step}. Verify GPU execution (output must show cuda device, not cpu)")
         step += 1
         sections.append(f"  {step}. echo ROCM_ENV_VERIFIED")
+        if no_scale_down:
+            sections.append("")
+            sections.append("*** NO-SCALE-DOWN MODE ACTIVE ***")
+            sections.append("Do NOT reduce epochs, iterations, batch sizes, or any training parameters.")
+            sections.append("Do NOT create mock/dummy data. Use the real data paths and commands from the README.")
+            sections.append("Run scripts EXACTLY as the README describes, with all original arguments.")
     else:
         sections.append("Execution Plan:")
         sections.append("  1. Install dependencies following Install Strategy above")
@@ -1270,7 +1391,7 @@ def generate_plan(repo_path: str, full_name: str, rocm_mode: bool = False,
     # ── Optionally refine with LLM ───────────────────────────────────────────
 
     if llm:
-        plan = _refine_plan_with_llm(raw_plan, full_name, rocm_mode, llm)
+        plan = _refine_plan_with_llm(raw_plan, full_name, rocm_mode, llm, no_scale_down=no_scale_down)
     else:
         plan = raw_plan
 
@@ -1279,8 +1400,26 @@ def generate_plan(repo_path: str, full_name: str, rocm_mode: bool = False,
     return plan, recommended_image
 
 
-def _refine_plan_with_llm(raw_analysis: str, full_name: str, rocm_mode: bool, llm: str) -> str:
+def _refine_plan_with_llm(raw_analysis: str, full_name: str, rocm_mode: bool, llm: str,
+                         no_scale_down: bool = False) -> str:
     mode_label = "ROCm GPU migration" if rocm_mode else "environment configuration"
+
+    if no_scale_down:
+        scale_down_instruction = (
+            "7. **NO-SCALE-DOWN MODE**: Do NOT include any sed commands to reduce epochs/iterations/steps. "
+            "Do NOT suggest creating mock or dummy data. The agent must run the README commands "
+            "exactly as written, with the original parameters and real data."
+        )
+        run_instruction = (
+            "10. The agent must run the EXACT commands from the README with original arguments. "
+            "Do NOT scale down any parameters. Do NOT create mock data."
+        )
+    else:
+        scale_down_instruction = "7. List training parameters that must be scaled down with exact sed commands."
+        run_instruction = (
+            f"10. {'Describe how to create mock data and run with scaled-down parameters.' if rocm_mode else 'Describe how to run tests.'}"
+        )
+
     prompt = f"""\
 You are an expert build engineer. Given the following deep analysis of the repository
 "{full_name}", produce a concise, step-by-step strategic plan for {mode_label}.
@@ -1292,7 +1431,7 @@ The plan MUST:
 4. Flag version pins that will fail and recommend dropping them.
 5. {"List all CUDA-to-ROCm migrations needed (package swaps, code patches, env vars)." if rocm_mode else ""}
 6. {"List code hazards (wandb, cudnn, hardcoded paths) with fix commands." if rocm_mode else ""}
-7. List training parameters that must be scaled down with exact sed commands.
+{scale_down_instruction}
 8. **CRITICAL: Include the EXACT run commands from the README, VERBATIM, with all arguments
    (model names, dataset names, flags, etc.).** The execution agent will NOT read the README
    itself, so if the README says `python pred_mine.py --model longchat-v1.5-7b-32k`, that
@@ -1300,7 +1439,7 @@ The plan MUST:
 9. **If the README specifies which model to use, state it explicitly** (e.g., "The README
    recommends model `longchat-v1.5-7b-32k`"). If the analysis shows which models are
    gated vs ungated, include that information and recommend the ungated model.
-10. {"Describe how to create mock data and run with scaled-down parameters." if rocm_mode else "Describe how to run tests."}
+{run_instruction}
 
 CRITICAL: The execution agent will NOT re-read the README, directory listing, or config files.
 The plan must contain ALL information the agent needs to start executing immediately.
@@ -1312,6 +1451,11 @@ Do NOT replace them with generic `--help` commands.
 
 CRITICAL: If the raw analysis contains "HuggingFace Model References", include the model
 gating information in the plan so the agent knows which models to use and which to avoid.
+
+CRITICAL: If the raw analysis contains a section titled "EXPECTED OUTCOMES FROM README",
+you MUST copy it into the plan VERBATIM — including every script/command and its expected
+outcome.  The execution agent will use this to validate its output.  Do NOT summarize,
+paraphrase, or omit any expected outcomes.
 
 RAW ANALYSIS:
 {raw_analysis}
