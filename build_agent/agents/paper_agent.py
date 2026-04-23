@@ -519,6 +519,7 @@ Return ONLY the JSON object, no markdown fences."""
             dirs[:] = [d for d in dirs if not d.startswith(".") and d not in {
                 "node_modules", "__pycache__", "venv", ".venv", "build", "dist",
                 "site-packages", "checkpoints", "wandb", "outputs",
+                "graphify-out",  # our own per-repo code-graph cache
             }]
             rel_root = os.path.relpath(root, repo_path)
             in_config_dir = any(
@@ -571,41 +572,94 @@ Return ONLY the JSON object, no markdown fences."""
     @staticmethod
     def _select_relevant_configs(graphify_text: str,
                                   repo_configs: Dict[str, str],
-                                  max_paths: int = 4) -> List[str]:
+                                  max_paths: int = 4,
+                                  query_terms: Optional[List[str]] = None) -> List[str]:
         """
-        Pick the config files that graphify surfaced as most relevant.
+        Pick the config files most relevant to the planner's query.
 
-        graphify_text is the text-rendered subgraph from `gp.query(...)`. Each
-        node line carries `src=<absolute-path>`. We extract the basenames of the
-        config files (yaml/toml/json/cfg/ini) that show up there and intersect
-        them with the configs we already loaded from the repo.
+        Three-stage selection (each falls through to the next on miss):
+
+        1. **Graphify AST**: parse `src=<path>.{yaml,toml,json,cfg,ini}`
+           citations from the graphify subgraph text. Works when graphify
+           surfaces config files via cross-references in the code.
+
+        2. **Filename + first-line keyword overlap**: rank repo_configs by
+           token overlap between
+             (a) the basename + parent-dir tokens of each config path, and
+             (b) the first ~40 lines of its content (typically `name:`,
+                 `model: ...`, `optimizer: ...` keys),
+           against `query_terms`. Picks the top-K.
+
+        3. **Deterministic fallback**: first `max_paths` items in the original
+           order (priority-sorted by `_collect_repo_configs`).
+
+        `query_terms` defaults to the canonical hyperparameter vocabulary if
+        not provided, so the function is also useful when called outside the
+        paper-agent context (e.g. from a future planner stage).
         """
-        if not graphify_text or not repo_configs:
+        if not repo_configs:
             return []
-        # Repo-relative basenames present in graph output
-        hits = re.findall(
-            r"src=([^\s\]]+\.(?:yaml|yml|toml|json|cfg|ini))",
-            graphify_text, flags=re.IGNORECASE,
-        )
-        if not hits:
-            return []
-        # Match by suffix against repo_configs keys (which are repo-relative).
+
+        # ── Stage 1: graphify AST hits ──────────────────────────────────────
         out: List[str] = []
         seen: set = set()
-        for h in hits:
-            base = h.replace("\\", "/").split("/")[-1].lower()
-            for cfg_path in repo_configs:
-                if cfg_path.lower().endswith(base) and cfg_path not in seen:
-                    out.append(cfg_path)
-                    seen.add(cfg_path)
-                    break
-            if len(out) >= max_paths:
-                break
-        # If graphify surfaced nothing matchable, fall back to the first
-        # max_paths config files (deterministic, bounded).
-        if not out:
-            out = list(repo_configs.keys())[:max_paths]
-        return out
+        if graphify_text:
+            hits = re.findall(
+                r"src=([^\s\]]+\.(?:yaml|yml|toml|json|cfg|ini))",
+                graphify_text, flags=re.IGNORECASE,
+            )
+            for h in hits:
+                base = h.replace("\\", "/").split("/")[-1].lower()
+                for cfg_path in repo_configs:
+                    if cfg_path.lower().endswith(base) and cfg_path not in seen:
+                        out.append(cfg_path)
+                        seen.add(cfg_path)
+                        break
+                if len(out) >= max_paths:
+                    return out
+        if out:
+            return out
+
+        # ── Stage 2: filename + first-line keyword overlap ──────────────────
+        if query_terms is None:
+            query_terms = [
+                "config", "hyperparam", "hyperparameters",
+                "model", "init", "peft", "lora", "rank", "alpha",
+                "optimizer", "scheduler", "lr", "learning", "rate",
+                "batch", "size", "epoch", "epochs", "seed",
+                "warmup", "weight", "decay",
+                "train", "training", "experiment", "experiments",
+                "accelerate", "deepspeed", "fsdp",
+            ]
+        terms_lc = {t.lower() for t in query_terms if t and len(t) >= 2}
+
+        def _score(path: str, content: str) -> float:
+            # Tokenize path + first 40 content lines.
+            path_tokens = re.findall(r"[A-Za-z]+", path.lower())
+            head = "\n".join(content.splitlines()[:40]) if content else ""
+            content_tokens = re.findall(r"[A-Za-z]+", head.lower())
+            tokens = set(path_tokens) | set(content_tokens)
+            if not tokens:
+                return 0.0
+            overlap = len(tokens & terms_lc)
+            # small recency bonus for shallow paths (top-level configs)
+            depth_penalty = path.count("/")
+            return overlap - 0.05 * depth_penalty
+
+        scored = [
+            (_score(p, c), p)
+            for p, c in repo_configs.items()
+            if not p.startswith("graphify-out/")
+        ]
+        scored.sort(key=lambda t: (-t[0], t[1]))
+        if scored and scored[0][0] > 0:
+            return [p for _, p in scored[:max_paths]]
+
+        # ── Stage 3: deterministic fallback ─────────────────────────────────
+        return [
+            p for p in list(repo_configs.keys())
+            if not p.startswith("graphify-out/")
+        ][:max_paths]
 
     @staticmethod
     def _bucket_runtime(minutes: float) -> str:
@@ -731,34 +785,45 @@ Return ONLY the JSON object, no markdown fences."""
             # nodes match hyperparameter-related terms, then renders only those.
             configs_block = ""
             configs_method = "fallback-dump"
+            cfg_query_terms = [
+                "config", "model", "hyperparam", "hyperparameters",
+                "init", "peft", "lora", "rank", "alpha", "optimizer",
+                "scheduler", "lr", "learning", "rate", "batch", "size",
+                "epoch", "epochs", "seed", "warmup", "weight", "decay",
+                "train", "training", "experiment",
+            ]
+            cfg_snippet = ""
             if graphify_provider is not None and getattr(graphify_provider, "enabled", False):
                 try:
                     cfg_snippet = graphify_provider.query(
-                        "config files hyperparameters learning rate batch size "
-                        "epochs lora rank alpha optimizer scheduler",
-                        token_budget=2500, depth=1, top_seeds=8,
+                        " ".join(cfg_query_terms), token_budget=2500,
+                        depth=1, top_seeds=8,
                     ) or ""
-                    # Pair the graphify subgraph with the actual file contents
-                    # of any yaml/toml/json node it surfaces.
-                    relevant_paths = self._select_relevant_configs(
-                        cfg_snippet, repo_configs, max_paths=4)
-                    if relevant_paths:
-                        chunks = [
-                            f"# ---- {p} ----\n{repo_configs[p][:6000]}"
-                            for p in relevant_paths if p in repo_configs
-                        ]
-                        if chunks:
-                            configs_block = (
-                                "REPO CONFIG FILES (graphify-selected, most "
-                                "hyperparameter-relevant; full repo had "
-                                f"{len(repo_configs)} config files):\n\n"
-                                + "\n\n".join(chunks)
-                            )
-                            configs_method = f"graphify ({len(chunks)}/{len(repo_configs)} files)"
                 except Exception as _e:
                     print(f"[paper_agent] graphify configs query failed: {_e}")
+            try:
+                relevant_paths = self._select_relevant_configs(
+                    cfg_snippet, repo_configs, max_paths=4,
+                    query_terms=cfg_query_terms,
+                )
+            except Exception as _e:
+                print(f"[paper_agent] _select_relevant_configs failed: {_e}")
+                relevant_paths = []
+            if relevant_paths:
+                chunks = [
+                    f"# ---- {p} ----\n{repo_configs[p][:6000]}"
+                    for p in relevant_paths if p in repo_configs
+                ]
+                if chunks:
+                    configs_block = (
+                        f"REPO CONFIG FILES (selected by relevance; full repo "
+                        f"had {len(repo_configs)} config files):\n\n"
+                        + "\n\n".join(chunks)
+                    )
+                    configs_method = (
+                        "graphify+keyword" if cfg_snippet else "keyword-overlap"
+                    ) + f" ({len(chunks)}/{len(repo_configs)} files)"
             if not configs_block:
-                # Legacy fallback: dump everything (capped per-file).
                 if repo_configs:
                     config_chunks = [
                         f"# ---- {path} ----\n{content[:8000]}"

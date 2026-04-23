@@ -118,3 +118,22 @@ class Tools(Enum):
             "(default 1500)."
         ),
     }
+    # ── PR-A: deterministic external lookups (no API key, no LLM) ──
+    pypi_versions = {
+        "command": 'pypi_versions <package_name> [--limit N]',
+        "description": (
+            "Look up recent PyPI versions of a package + release dates. Use "
+            "this BEFORE pinning a CUDA-only wheel (e.g. flash-attn, "
+            "bitsandbytes, xformers) to find a version that matches your ROCm "
+            "torch. Cached for 7 days in the global KB."
+        ),
+    }
+    dockerhub_tags = {
+        "command": 'dockerhub_tags <image> [--limit N]',
+        "description": (
+            "Look up the most recently published tags on a Docker Hub repo "
+            "(e.g. rocm/pytorch, rocm/vllm, rocm/sgl-dev). Use this BEFORE "
+            "calling `change_base_image` to pick an actual current tag (the "
+            "static catalog can go stale). Cached for 7 days in the global KB."
+        ),
+    }

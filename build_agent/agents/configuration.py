@@ -17,7 +17,10 @@ import subprocess
 from agents.agent import Agent
 from utils.llm import get_llm_response
 from utils.agent_util import safe_cmd, extract_commands, append_trajectory, TIME_OUT_LABEL, extract_diffs, save_diff_description, DIFF_FENCE, BASH_FENCE, INIT_PROMPT, EDIT_PROMPT, HEAD, DIVIDER, UPDATED
-from utils.parser.parse_command import match_mem_recall, match_graphify_query
+from utils.parser.parse_command import (
+    match_mem_recall, match_graphify_query,
+    match_pypi_versions, match_dockerhub_tags,
+)
 from utils.tools_config import Tools
 from utils.split_cmd import split_cmd_statements
 from knowledge.rocm_knowledge import generate_rocm_prompt_section, generate_rocm_prompt_section_with_plan
@@ -121,9 +124,11 @@ class Configuration(Agent):
         # Track Stage-1 compaction savings for diagnostics.
         self._compaction_orig_chars = 0
         self._compaction_short_chars = 0
-        # Stage 5b: track in-loop retrieval-tool usage.
+        # Stage 5b + PR-A: track in-loop retrieval-tool usage.
         self._mem_recall_calls = 0
         self._graphify_query_calls = 0
+        self._pypi_versions_calls = 0
+        self._dockerhub_tags_calls = 0
         # Stage 3: track latest activity to use as retrieval query for the appendix.
         self._last_action_text = ""
         self._last_obs_short = ""
@@ -163,6 +168,9 @@ class Configuration(Agent):
             self.tool_lib.append(Tools.mem_recall)
         if self.graphify_provider is not None and getattr(self.graphify_provider, "enabled", False):
             self.tool_lib.append(Tools.graphify_query)
+        # PR-A: external lookups always available (pure-stdlib HTTP, soft-fail).
+        self.tool_lib.append(Tools.pypi_versions)
+        self.tool_lib.append(Tools.dockerhub_tags)
         self.image_name = image_name
         self.outer_commands = list()
         tools_list = ""
@@ -246,6 +254,30 @@ class Configuration(Agent):
             except Exception as e:
                 return f"graphify_query failed: {e}\n", 1
 
+        # PR-A: pypi_versions
+        pv = match_pypi_versions(command)
+        if pv != -1:
+            self._pypi_versions_calls += 1
+            try:
+                from tools.external_lookups import pypi_versions as _pv
+                body, rc = _pv(pv["package"], limit=int(pv.get("limit", 12)))
+                msg = f"Running `{command}`...\n" + body
+                return msg, rc
+            except Exception as e:
+                return f"pypi_versions failed: {e}\n", 1
+
+        # PR-A: dockerhub_tags
+        dt = match_dockerhub_tags(command)
+        if dt != -1:
+            self._dockerhub_tags_calls += 1
+            try:
+                from tools.external_lookups import dockerhub_tags as _dt
+                body, rc = _dt(dt["image"], limit=int(dt.get("limit", 12)))
+                msg = f"Running `{command}`...\n" + body
+                return msg, rc
+            except Exception as e:
+                return f"dockerhub_tags failed: {e}\n", 1
+
         return None
 
     def _build_system_prompt(self, tools_list):
@@ -305,11 +337,13 @@ Use `pipdeptree -p <pkg>` to inspect dependencies. Use `pip index versions <pkg>
 For import errors, check if the module exists in /repo before pip installing externally.
 Do not use `git clone` or `wget` to download large files into /repo.
 
-WHEN TO USE RETRIEVAL TOOLS (mem_recall / graphify_query, if listed above):
+WHEN TO USE RETRIEVAL TOOLS (mem_recall / graphify_query / pypi_versions / dockerhub_tags, if listed above):
 - BEFORE retrying a command that just failed, run `mem_recall "the failing command + error class"` to see if a previous turn (or a past run via --global) already solved this. Do NOT repeat a known-bad action.
 - BEFORE running `find -name`/`grep -r` to locate code, run `graphify_query "what you're looking for"` — it returns ranked symbols and file:line locations in one step.
 - BEFORE picking hyperparameters or env vars, run `mem_recall "<topic>" --rooms plan,paper_extracts,decisions` to ground in plan + paper.
-- These tools are FREE (local, no LLM, no container). Use them whenever you would otherwise guess.
+- BEFORE pinning a CUDA-only wheel (flash-attn, bitsandbytes, xformers, triton, etc.), run `pypi_versions <pkg>` to find the actual version that is currently installable. Pinning a stale version is a top failure mode.
+- BEFORE calling `change_base_image`, run `dockerhub_tags <image>` to pick a real currently-published tag. The static catalog can go stale; recently-updated tags reflect the AMD ROCm version + Python + PyTorch that is supported TODAY.
+- All four tools are free (local + cached). Use them whenever you would otherwise guess.
 
 {INIT_PROMPT}
 {EDIT_PROMPT}

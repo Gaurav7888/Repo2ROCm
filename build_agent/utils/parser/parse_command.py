@@ -248,6 +248,46 @@ def match_graphify_query(command: str):
         "budget": int(budget_m.group(1)) if budget_m else 1500,
     }
 
+
+# ── PR-A: external lookups (PyPI versions, Docker Hub tags) ──────────────────
+
+def match_pypi_versions(command: str):
+    """
+    Parse:  pypi_versions <package_name> [--limit N]
+    Package name allows letters, digits, dots, hyphens, underscores.
+    Returns dict with keys: package, limit on success; -1 on no match.
+    """
+    s = command.strip()
+    m = re.match(r'^\s*pypi_versions\s+([A-Za-z0-9._\-]+)\s*(.*)$', s, re.IGNORECASE)
+    if not m:
+        return -1
+    pkg = m.group(1)
+    rest = m.group(2) or ''
+    lim_m = re.search(r'--limit\s+(\d+)', rest)
+    return {
+        "package": pkg,
+        "limit": int(lim_m.group(1)) if lim_m else 12,
+    }
+
+
+def match_dockerhub_tags(command: str):
+    """
+    Parse:  dockerhub_tags <image> [--limit N]
+    Image is `repo/name` or just `name`.
+    Returns dict with keys: image, limit on success; -1 on no match.
+    """
+    s = command.strip()
+    m = re.match(r'^\s*dockerhub_tags\s+([A-Za-z0-9._\-/]+)\s*(.*)$', s, re.IGNORECASE)
+    if not m:
+        return -1
+    image = m.group(1)
+    rest = m.group(2) or ''
+    lim_m = re.search(r'--limit\s+(\d+)', rest)
+    return {
+        "image": image,
+        "limit": int(lim_m.group(1)) if lim_m else 12,
+    }
+
 if __name__ == '__main__':
     print(extract_commands_warnings('''
 ### Thought: hello

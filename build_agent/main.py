@@ -608,7 +608,10 @@ def main():
 
     run_success = False
     try:
-        integrate_dockerfile(f'{root_path}/output/{full_name}')
+        integrate_dockerfile(
+            f'{root_path}/output/{full_name}',
+            runtime_base_image=base_image,
+        )
         msg_str = f'Generate success!'
         log_success(msg_str)
         with open(f'{root_path}/output/{full_name}/track.txt', 'a') as a1:
