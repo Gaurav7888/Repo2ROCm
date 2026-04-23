@@ -17,6 +17,7 @@ import subprocess
 from agents.agent import Agent
 from utils.llm import get_llm_response
 from utils.agent_util import safe_cmd, extract_commands, append_trajectory, TIME_OUT_LABEL, extract_diffs, save_diff_description, DIFF_FENCE, BASH_FENCE, INIT_PROMPT, EDIT_PROMPT, HEAD, DIVIDER, UPDATED
+from utils.parser.parse_command import match_mem_recall, match_graphify_query
 from utils.tools_config import Tools
 from utils.split_cmd import split_cmd_statements
 from knowledge.rocm_knowledge import generate_rocm_prompt_section, generate_rocm_prompt_section_with_plan
@@ -97,7 +98,7 @@ class Configuration(Agent):
                  optimize_kernels=False, use_claude_code=False,
                  reproduce_results=False, paper_pdf_path=None,
                  paper_experiments=None, paper_title="",
-                 run_memory=None):
+                 run_memory=None, graphify_provider=None):
         self.model = llm
         self.root_dir = root_dir
         self.max_turn = max_turn
@@ -116,9 +117,13 @@ class Configuration(Agent):
         self.optimize_kernels = optimize_kernels
         self.use_claude_code = use_claude_code
         self.run_memory = run_memory  # mempalace per-run store (Stage 2); may be None
+        self.graphify_provider = graphify_provider  # per-repo code graph (Stage 4); may be None
         # Track Stage-1 compaction savings for diagnostics.
         self._compaction_orig_chars = 0
         self._compaction_short_chars = 0
+        # Stage 5b: track in-loop retrieval-tool usage.
+        self._mem_recall_calls = 0
+        self._graphify_query_calls = 0
         # Stage 3: track latest activity to use as retrieval query for the appendix.
         self._last_action_text = ""
         self._last_obs_short = ""
@@ -153,6 +158,11 @@ class Configuration(Agent):
             Tools.change_base_image,
             Tools.clear_configuration,
         ]
+        # Stage 5b: only advertise retrieval tools when their backends are wired.
+        if self.run_memory is not None and getattr(self.run_memory, "enabled", False):
+            self.tool_lib.append(Tools.mem_recall)
+        if self.graphify_provider is not None and getattr(self.graphify_provider, "enabled", False):
+            self.tool_lib.append(Tools.graphify_query)
         self.image_name = image_name
         self.outer_commands = list()
         tools_list = ""
@@ -160,6 +170,83 @@ class Configuration(Agent):
             tools_list += f"{tool.value['command']} # {tool.value['description']}\n"
 
         self.system_prompt = self._build_system_prompt(tools_list)
+
+    # ── Stage 5b: in-loop retrieval tools (mempalace + graphify) ────────────
+
+    def _maybe_run_retrieval_tool(self, command: str):
+        """
+        If `command` is a retrieval tool (mem_recall / graphify_query), execute
+        it locally and return (observation_text, return_code). Otherwise return
+        None so the caller falls through to sandbox execution.
+
+        Observation text is intentionally short: the goal is to give the agent a
+        focused snippet of prior context, not another wall of text.
+        """
+        if not command or not isinstance(command, str):
+            return None
+
+        # mem_recall
+        mr = match_mem_recall(command)
+        if mr != -1:
+            self._mem_recall_calls += 1
+            if self.run_memory is None or not getattr(self.run_memory, "enabled", False):
+                return (
+                    "mem_recall is unavailable (run memory not enabled). "
+                    "Install `mempalace` and re-run, or fall back to grep/find.\n"
+                ), 1
+            try:
+                rooms = mr.get("rooms") or (
+                    "commands_success", "commands_failed", "fixes",
+                    "decisions", "patches", "plan", "paper_extracts",
+                )
+                if isinstance(rooms, list):
+                    rooms = tuple(rooms)
+                pack = self.run_memory.recall_pack(
+                    mr["question"], rooms=rooms, n_per_room=4,
+                    token_budget=int(mr.get("budget", 1500)),
+                ) or ""
+                if mr.get("use_global"):
+                    g = self.run_memory.recall_global_lessons(
+                        mr["question"], n_per_room=3,
+                        token_budget=max(400, int(mr.get("budget", 1500)) // 3),
+                    ) or ""
+                    pack = pack + g
+                if not pack.strip():
+                    pack = (
+                        "mem_recall: no relevant prior context found for this "
+                        "question. Either rephrase, broaden --rooms, or proceed "
+                        "without memory hints.\n"
+                    )
+                msg = f"Running `{command}`...\n" + pack
+                return msg, 0
+            except Exception as e:
+                return f"mem_recall failed: {e}\n", 1
+
+        # graphify_query
+        gq = match_graphify_query(command)
+        if gq != -1:
+            self._graphify_query_calls += 1
+            if self.graphify_provider is None or not getattr(self.graphify_provider, "enabled", False):
+                return (
+                    "graphify_query is unavailable (code graph not built). "
+                    "Install `graphifyy[pdf]` and re-run, or fall back to "
+                    "grep/find on /repo.\n"
+                ), 1
+            try:
+                snippet = self.graphify_provider.query(
+                    gq["question"], token_budget=int(gq.get("budget", 1500)),
+                ) or ""
+                if not snippet.strip():
+                    snippet = (
+                        "graphify_query: no nodes matched. Try different terms, "
+                        "or fall back to grep/find on /repo.\n"
+                    )
+                msg = f"Running `{command}`...\n" + snippet
+                return msg, 0
+            except Exception as e:
+                return f"graphify_query failed: {e}\n", 1
+
+        return None
 
     def _build_system_prompt(self, tools_list):
         """Build the system prompt, choosing plan-aware or full version."""
@@ -217,6 +304,12 @@ ERROR HANDLING:
 Use `pipdeptree -p <pkg>` to inspect dependencies. Use `pip index versions <pkg>` to find available versions.
 For import errors, check if the module exists in /repo before pip installing externally.
 Do not use `git clone` or `wget` to download large files into /repo.
+
+WHEN TO USE RETRIEVAL TOOLS (mem_recall / graphify_query, if listed above):
+- BEFORE retrying a command that just failed, run `mem_recall "the failing command + error class"` to see if a previous turn (or a past run via --global) already solved this. Do NOT repeat a known-bad action.
+- BEFORE running `find -name`/`grep -r` to locate code, run `graphify_query "what you're looking for"` — it returns ranked symbols and file:line locations in one step.
+- BEFORE picking hyperparameters or env vars, run `mem_recall "<topic>" --rooms plan,paper_extracts,decisions` to ground in plan + paper.
+- These tools are FREE (local, no LLM, no container). Use them whenever you would otherwise guess.
 
 {INIT_PROMPT}
 {EDIT_PROMPT}
@@ -1082,9 +1175,14 @@ STAGE 2 - PAPER RESULT REPRODUCTION (only after ROCM_ENV_VERIFIED):
                                 kb_in_guidance_pre = self.rule_engine.format_for_prompt(rule_result)
                                 system_res += f"\n{kb_in_guidance_pre}\n"
 
-                    # ── Execute normal command ──
-                    sandbox_res, return_code = self.sandbox_session.execute(commands[i], waiting_list, conflict_list)
-                    sandbox_res = res_truncate(sandbox_res)
+                    # ── Stage 5b: intercept retrieval tools BEFORE sandbox dispatch ──
+                    intercepted = self._maybe_run_retrieval_tool(commands[i])
+                    if intercepted is not None:
+                        sandbox_res, return_code = intercepted
+                    else:
+                        # ── Execute normal command ──
+                        sandbox_res, return_code = self.sandbox_session.execute(commands[i], waiting_list, conflict_list)
+                        sandbox_res = res_truncate(sandbox_res)
 
                     # ── Error Classification (IN phase) ──
                     classified_error = None

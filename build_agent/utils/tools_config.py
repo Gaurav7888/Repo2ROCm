@@ -95,3 +95,26 @@ class Tools(Enum):
         "command": 'clear_configuration',
         "description": "Reset all the configuration to the initial setting of python:3.10."
     }
+    # ── Stage 5b: in-loop retrieval tools (graphify code + mempalace memory) ──
+    mem_recall = {
+        "command": 'mem_recall "<question>" [--rooms r1,r2,...] [--budget N] [--global]',
+        "description": (
+            "Query this run's memory (mempalace) for the slice most relevant to "
+            "<question> instead of guessing. Default rooms: "
+            "commands_success,commands_failed,fixes,decisions,patches,plan,"
+            "paper_extracts. Use --global to additionally pull cross-run lessons "
+            "(do/dont/pattern). --budget is a token budget (default 1500). Use "
+            "this BEFORE retrying a failed install or rerunning the same command."
+        ),
+    }
+    graphify_query = {
+        "command": 'graphify_query "<question>" [--budget N]',
+        "description": (
+            "Ask the per-repo code graph (tree-sitter, no LLM) for code/config "
+            "snippets relevant to <question>. Returns ranked nodes (files, "
+            "classes, functions) with absolute paths and line numbers. Use this "
+            "instead of `find -name`/`grep -r` to locate entry points, config "
+            "loaders, model factories, etc. --budget is a token budget "
+            "(default 1500)."
+        ),
+    }

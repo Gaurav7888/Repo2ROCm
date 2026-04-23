@@ -198,6 +198,56 @@ def match_clear_configuration(command):
     match = pattern.match(command)
     return bool(match)
 
+# ── Stage 5b: in-loop retrieval tools ────────────────────────────────────────
+
+def match_mem_recall(command: str):
+    """
+    Parse:  mem_recall "<question>" [--rooms r1,r2] [--budget N] [--global]
+    Returns dict with keys: question, rooms (list|None), budget (int), use_global (bool)
+    on success; -1 on no match.
+    """
+    s = command.strip()
+    if not re.match(r'^\s*mem_recall\b', s, re.IGNORECASE):
+        return -1
+    body = re.sub(r'^\s*mem_recall\s*', '', s, count=1, flags=re.IGNORECASE)
+    qm = re.match(r'^"([^"]+)"|^\'([^\']+)\'', body)
+    if not qm:
+        return -1
+    question = qm.group(1) or qm.group(2)
+    rest = body[qm.end():]
+    rooms_m = re.search(r'--rooms\s+([A-Za-z0-9_,]+)', rest)
+    budget_m = re.search(r'--budget\s+(\d+)', rest)
+    use_global = bool(re.search(r'--global\b', rest))
+    rooms = [r.strip() for r in rooms_m.group(1).split(',')] if rooms_m else None
+    budget = int(budget_m.group(1)) if budget_m else 1500
+    return {
+        "question": question,
+        "rooms": rooms,
+        "budget": budget,
+        "use_global": use_global,
+    }
+
+
+def match_graphify_query(command: str):
+    """
+    Parse:  graphify_query "<question>" [--budget N]
+    Returns dict with keys: question, budget on success; -1 on no match.
+    """
+    s = command.strip()
+    if not re.match(r'^\s*graphify_query\b', s, re.IGNORECASE):
+        return -1
+    body = re.sub(r'^\s*graphify_query\s*', '', s, count=1, flags=re.IGNORECASE)
+    qm = re.match(r'^"([^"]+)"|^\'([^\']+)\'', body)
+    if not qm:
+        return -1
+    question = qm.group(1) or qm.group(2)
+    rest = body[qm.end():]
+    budget_m = re.search(r'--budget\s+(\d+)', rest)
+    return {
+        "question": question,
+        "budget": int(budget_m.group(1)) if budget_m else 1500,
+    }
+
 if __name__ == '__main__':
     print(extract_commands_warnings('''
 ### Thought: hello

@@ -569,6 +569,45 @@ Return ONLY the JSON object, no markdown fences."""
         return results
 
     @staticmethod
+    def _select_relevant_configs(graphify_text: str,
+                                  repo_configs: Dict[str, str],
+                                  max_paths: int = 4) -> List[str]:
+        """
+        Pick the config files that graphify surfaced as most relevant.
+
+        graphify_text is the text-rendered subgraph from `gp.query(...)`. Each
+        node line carries `src=<absolute-path>`. We extract the basenames of the
+        config files (yaml/toml/json/cfg/ini) that show up there and intersect
+        them with the configs we already loaded from the repo.
+        """
+        if not graphify_text or not repo_configs:
+            return []
+        # Repo-relative basenames present in graph output
+        hits = re.findall(
+            r"src=([^\s\]]+\.(?:yaml|yml|toml|json|cfg|ini))",
+            graphify_text, flags=re.IGNORECASE,
+        )
+        if not hits:
+            return []
+        # Match by suffix against repo_configs keys (which are repo-relative).
+        out: List[str] = []
+        seen: set = set()
+        for h in hits:
+            base = h.replace("\\", "/").split("/")[-1].lower()
+            for cfg_path in repo_configs:
+                if cfg_path.lower().endswith(base) and cfg_path not in seen:
+                    out.append(cfg_path)
+                    seen.add(cfg_path)
+                    break
+            if len(out) >= max_paths:
+                break
+        # If graphify surfaced nothing matchable, fall back to the first
+        # max_paths config files (deterministic, bounded).
+        if not out:
+            out = list(repo_configs.keys())[:max_paths]
+        return out
+
+    @staticmethod
     def _bucket_runtime(minutes: float) -> str:
         if minutes <= 10:
             return "small"

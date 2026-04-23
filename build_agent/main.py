@@ -581,6 +581,7 @@ def main():
             paper_experiments=paper_experiments,
             paper_title=paper_title,
             run_memory=run_memory,
+            graphify_provider=graphify_provider,
         )
         msg, outer_commands = configuration_agent.run('/tmp', trajectory, waiting_list, conflict_list)
         # Stage 1 / 3 compaction summary
