@@ -6,3 +6,13 @@ openai==1.65.2
 requests>=2.31.0
 tenacity>=8.2.0
 rich>=13.0.0
+# Optional: used by the paper-reproduction planner (--reproduce-results) for
+# PDF-to-text extraction. Falls back to `pdftotext` (poppler-utils) or to
+# Claude Code's built-in PDF Read tool at runtime if unavailable.
+pymupdf>=1.24.0; python_version >= "3.8"
+
+# Stage 1+2 memory layer (per-run ChromaDB-backed mempalace store + cumulative
+# DO/DON'T/PATTERN knowledge base). Both are imported defensively; if either is
+# missing, build_agent degrades to a no-op RunMemory and skips compaction.
+mempalace>=3.3.0
+chromadb>=1.5.0

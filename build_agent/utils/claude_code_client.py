@@ -603,6 +603,66 @@ def get_rocm_subagents() -> Dict[str, Dict[str, Any]]:
             ),
             "tools": ["Bash", "Read", "Edit", "Glob", "Grep"],
         },
+        "paper-reproducer": {
+            "description": (
+                "Research-paper result reproduction judge. Reads /repo/paper.pdf, locates the "
+                "numeric claims for a named experiment, parses the experiment's actual output "
+                "log, and renders a strict-JSON verdict (reproduced / partial / not_reproduced) "
+                "using a numeric tolerance check with LLM-judge fallback."
+            ),
+            "prompt": (
+                "You are the paper-reproducer judge. Your ONLY job is to decide whether a "
+                "just-run experiment reproduces a claim from the paper, and return a strict JSON "
+                "verdict. You do NOT configure environments or install packages.\n\n"
+                "Inputs you can rely on:\n"
+                "- `/repo/paper.pdf` (use the `Read` tool; Claude Code reads PDFs natively).\n"
+                "- `/repo/paper_experiment.log` with the chosen experiment's stdout.\n"
+                "- The `PAPER REPRODUCTION TARGET` section of the strategic plan (the caller "
+                "  pastes its relevant fields when delegating), which names the experiment, "
+                "  the expected metric, and the tolerance rule.\n\n"
+                "Workflow:\n"
+                "1. Open /repo/paper.pdf with `Read`. Find the table/figure/section that "
+                "   reports the target metric for the chosen experiment. Extract the exact "
+                "   paper-reported value (and units).\n"
+                "2. Read /repo/paper_experiment.log (and any artefact files it references). "
+                "   Parse the actual numeric value of the same metric from the run.\n"
+                "3. Compute `delta_pct = |actual - expected| / max(|expected|, 1e-8) * 100`.\n"
+                "4. Tolerance defaults (unless overridden by the plan's tolerance rule):\n"
+                "   - speedups / ratios:  <= 15% relative delta\n"
+                "   - accuracy / F1 (%):  <= 3 absolute points (i.e. treat as absolute delta)\n"
+                "   - perplexity / loss:  <= 5% relative delta\n"
+                "   - throughput:         <= 15% relative delta\n"
+                "5. Verdict:\n"
+                "   - `reproduced`       if the delta is within tolerance.\n"
+                "   - `partial`          if the direction/magnitude is plausible but outside "
+                "                         tolerance (e.g. 20% off a 2x claim), or if only a "
+                "                         related metric matched.\n"
+                "   - `not_reproduced`   if the delta is gross, has the wrong sign, or the "
+                "                         experiment failed to produce the metric.\n"
+                "6. If the paper does NOT report a directly comparable number for this exact "
+                "   experiment (or the units differ), DO NOT guess a number. Instead switch to "
+                "   LLM-judge mode: summarise the paper's qualitative claim for this "
+                "   experiment and the run's observed qualitative behaviour, and choose a "
+                "   verdict with a short written justification.\n\n"
+                "Return ONLY a single strict-JSON object, no prose, no markdown fences:\n"
+                "{\n"
+                "  \"verdict\": \"reproduced|partial|not_reproduced\",\n"
+                "  \"metric\": {\n"
+                "    \"name\": \"...\",\n"
+                "    \"expected\": \"...\",\n"
+                "    \"actual\": \"...\",\n"
+                "    \"units\": \"...\"\n"
+                "  },\n"
+                "  \"delta_pct\": <number or null>,\n"
+                "  \"tolerance_used\": \"...\",\n"
+                "  \"mode\": \"numeric|llm_judge\",\n"
+                "  \"justification\": \"<= 3 sentences\"\n"
+                "}\n\n"
+                "NEVER fabricate numbers. If parsing fails, return verdict=`not_reproduced` "
+                "with a parsing note in `justification`."
+            ),
+            "tools": ["Bash", "Read", "Grep", "Glob"],
+        },
     }
 
 
@@ -613,6 +673,8 @@ def generate_claude_md(
     plan: str = "",
     kb_context: str = "",
     rocm_mode: bool = True,
+    paper_pdf_path: Optional[str] = None,
+    reproduce_results: bool = False,
 ) -> str:
     """Generate CLAUDE.md content for Claude Code project memory."""
     sections = []
@@ -659,9 +721,43 @@ def generate_claude_md(
         sections.append(kb_context)
         sections.append("")
 
+    if reproduce_results:
+        sections.append("## Paper Reproduction Mode\n")
+        sections.append(
+            "This run has `--reproduce-results` enabled. After the environment is "
+            "verified (ROCM_ENV_VERIFIED), you MUST also run one paper experiment "
+            "and verify its result against the paper's reported numbers.\n"
+        )
+        if paper_pdf_path:
+            sections.append(
+                f"The paper PDF has been placed at `/repo/paper.pdf` "
+                f"(host path: `{paper_pdf_path}`). Use the `Read` tool on "
+                "`/repo/paper.pdf` to open it directly; Claude Code natively "
+                "handles PDFs.\n"
+            )
+        sections.append(
+            "The strategic plan below contains a `PAPER REPRODUCTION TARGET` "
+            "section that names the Chosen experiment, its paper-reported metric, "
+            "the suggested command, a tolerance rule, and fallback experiments. "
+            "Follow that section verbatim.\n"
+        )
+        sections.append(
+            "Delegate result judgement to the `paper-reproducer` sub-agent "
+            "(defined in `.claude/agents/paper-reproducer.md`). It will read "
+            "`/repo/paper.pdf`, locate the relevant table/figure, parse the "
+            "experiment's actual stdout, compute a numeric delta first, and "
+            "fall back to an LLM-judge verdict when the metric is not directly "
+            "comparable. Return its strict-JSON verdict verbatim to the main "
+            "conversation, then echo exactly ONE of:\n"
+            "```\n"
+            "echo PAPER_RESULT_REPRODUCED metric=<name> actual=<v> expected=<v> delta_pct=<x>\n"
+            "echo PAPER_RESULT_NOT_REPRODUCED <one-line reason>\n"
+            "```\n"
+        )
+
     if plan:
         sections.append("## Strategic Plan\n")
-        sections.append(plan[:3000])
+        sections.append(plan[:6000] if reproduce_results else plan[:3000])
         sections.append("")
 
     return "\n".join(sections)
@@ -672,11 +768,17 @@ def setup_claude_code_project(
     plan: str = "",
     kb_context: str = "",
     rocm_mode: bool = True,
+    paper_pdf_path: Optional[str] = None,
+    reproduce_results: bool = False,
 ):
     """
     Set up Claude Code project files (.claude/) for the repository.
 
     Creates CLAUDE.md, sub-agent definitions, and skill files.
+
+    When `reproduce_results` is True and `paper_pdf_path` points to a valid
+    PDF, the file is (re)copied to `<repo_root>/paper.pdf` so Claude's Read
+    tool can open it at `/repo/paper.pdf` inside the container.
     """
     claude_dir = os.path.join(repo_root, ".claude")
     agents_dir = os.path.join(claude_dir, "agents")
@@ -684,11 +786,26 @@ def setup_claude_code_project(
     os.makedirs(agents_dir, exist_ok=True)
     os.makedirs(skills_dir, exist_ok=True)
 
-    claude_md = generate_claude_md(repo_root, plan, kb_context, rocm_mode)
+    if paper_pdf_path and os.path.isfile(paper_pdf_path):
+        target = os.path.join(repo_root, "paper.pdf")
+        try:
+            if os.path.abspath(paper_pdf_path) != os.path.abspath(target):
+                import shutil as _shutil
+                _shutil.copyfile(paper_pdf_path, target)
+        except Exception:
+            pass
+
+    claude_md = generate_claude_md(
+        repo_root, plan, kb_context, rocm_mode,
+        paper_pdf_path=paper_pdf_path,
+        reproduce_results=reproduce_results,
+    )
     with open(os.path.join(claude_dir, "CLAUDE.md"), "w") as f:
         f.write(claude_md)
 
     subagents = get_rocm_subagents()
+    if not reproduce_results:
+        subagents.pop("paper-reproducer", None)
     for name, cfg in subagents.items():
         agent_md = (
             f"---\n"

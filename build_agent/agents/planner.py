@@ -18,7 +18,7 @@ Deep analysis includes:
 import os
 import re
 import json
-from typing import Dict, List, Optional, Tuple, Set
+from typing import Any, Dict, List, Optional, Tuple, Set
 
 from knowledge.rocm_knowledge import (
     ROCM_IMAGE_CATALOG,
@@ -1005,7 +1005,11 @@ def _build_rocm_migration_section(cuda_deps: List[str]) -> str:
 
 def generate_plan(repo_path: str, full_name: str, rocm_mode: bool = False,
                   llm: Optional[str] = None,
-                  no_scale_down: bool = False) -> Tuple[str, Optional[str]]:
+                  no_scale_down: bool = False,
+                  paper_pdf_path: Optional[str] = None,
+                  reproduce_results: bool = False,
+                  run_memory: Optional[Any] = None,
+                  graphify_provider: Optional[Any] = None) -> Tuple[str, Optional[str]]:
     """
     Deep-analyze the repository and produce a comprehensive strategic plan.
 
@@ -1013,11 +1017,15 @@ def generate_plan(repo_path: str, full_name: str, rocm_mode: bool = False,
         no_scale_down: If True, skip training parameter detection and scale-down
             sed commands. The agent will run the README commands exactly as-is
             with real data instead of mock data.
+        paper_pdf_path: Local path to the paper PDF, when --reproduce-results is on.
+        reproduce_results: When True, shortlist paper experiments and splice a
+            PAPER REPRODUCTION TARGET section into the plan.
 
     Returns:
-        (plan_text, recommended_image) — recommended_image is the Docker image
-        string (e.g. "rocm/vllm:latest") selected by context-aware analysis,
-        or None if not in ROCm mode.
+        (plan_text, recommended_image, paper_context) — recommended_image is
+        the Docker image string (or None in non-ROCm mode). `paper_context`
+        is a dict with keys `experiments` (list of ExperimentCandidate dicts,
+        empty when reproduce_results is False) and `title` (paper title or "").
     """
     log_phase("RECONNAISSANCE & PLANNING", f"Analyzing {full_name}")
 
@@ -1081,6 +1089,34 @@ def generate_plan(repo_path: str, full_name: str, rocm_mode: bool = False,
         expected_outcomes = _extract_readme_expected_outcomes(
             readme_content, readme_run_commands, llm,
         )
+
+    # 7d. Shortlist paper experiments for reproduction (if requested)
+    paper_experiments: List = []
+    paper_title: str = ""
+    if reproduce_results:
+        try:
+            from agents.paper_agent import PaperAgent
+            paper_agent = PaperAgent(llm=llm or "")
+            paper_experiments, paper_title = paper_agent.shortlist_experiments(
+                paper_pdf_path=paper_pdf_path,
+                repo_path=repo_path,
+                readme_content=readme_content or "",
+                llm=llm,
+                run_memory=run_memory,
+                graphify_provider=graphify_provider,
+            )
+            if paper_experiments:
+                log_info(
+                    f"  Paper shortlist: {len(paper_experiments)} experiments "
+                    f"(chosen: {paper_experiments[0].name[:80]!r}, "
+                    f"code_available={paper_experiments[0].code_available})"
+                )
+            else:
+                log_warning("  Paper shortlist produced no experiments; reproduction section will be minimal.")
+        except Exception as e:
+            log_warning(f"  Paper shortlist failed: {e}")
+            paper_experiments = []
+            paper_title = ""
 
     # 8. Install mechanisms
     install_mechanisms = []
@@ -1334,6 +1370,88 @@ def generate_plan(repo_path: str, full_name: str, rocm_mode: bool = False,
                 sections.append(f"    Expected: {outcome_line}")
             sections.append("")
 
+    # ── Paper reproduction target (for --reproduce-results) ──────────────────
+
+    if reproduce_results:
+        sections.append("PAPER REPRODUCTION TARGET (from paper.pdf at /repo/paper.pdf):")
+        if paper_title:
+            sections.append(f"  Paper: {paper_title}")
+        if not paper_experiments:
+            sections.append("  (No experiments could be shortlisted from the paper automatically.")
+            sections.append("   The paper-reproducer sub-agent must open /repo/paper.pdf with the Read tool,")
+            sections.append("   pick the shortest runnable experiment whose code exists in the repo,")
+            sections.append("   run it with the EXACT paper/README config, and judge the result.)")
+        else:
+            chosen = paper_experiments[0]
+            runtime_str = (
+                f"{chosen.est_runtime_minutes:.0f} min"
+                if chosen.est_runtime_minutes > 0 else "unknown"
+            )
+            sections.append(f"  Chosen experiment: {chosen.name}")
+            if chosen.section:
+                sections.append(f"    Source: {chosen.section}")
+            sections.append(
+                f"    Reason: shortest runtime with code {'AVAILABLE' if chosen.code_available else 'NOT MATCHED'}"
+                f" in repo (~{runtime_str} est.)"
+            )
+            metric_line = (
+                f"{chosen.expected_metric_name}={chosen.expected_metric_value} {chosen.expected_metric_units}".strip()
+                if chosen.expected_metric_name else "(none parsed)"
+            )
+            sections.append(f"    Paper-reported metric: {metric_line}")
+            if chosen.hardware:
+                sections.append(f"    Paper hardware: {chosen.hardware}")
+            if chosen.suggested_command:
+                sections.append(f"    Suggested command (EXACT, all non-default flags): {chosen.suggested_command}")
+            if chosen.paper_config:
+                sections.append(f"    Paper-exact hyperparameters:")
+                for k, v in list(chosen.paper_config.items())[:20]:
+                    if v not in (None, ""):
+                        sections.append(f"      - {k} = {v}")
+            if chosen.config_source:
+                sections.append(f"    Config source (paper + codebase): {chosen.config_source}")
+            if chosen.codebase_config_files:
+                sections.append(f"    Codebase config files (read + override these, do NOT guess):")
+                for cf in chosen.codebase_config_files[:10]:
+                    sections.append(f"      - /repo/{cf}")
+            if chosen.missing_flags:
+                sections.append(f"    Flags not exposed by script (agent must patch): {', '.join(chosen.missing_flags[:10])}")
+            if chosen.matched_files:
+                sections.append(f"    Matched files in repo: {', '.join(chosen.matched_files[:5])}")
+            sections.append(
+                f"    Tolerance: {chosen.tolerance_rule or '<=15% for ratios/speedups, <=3 abs pts for accuracy, <=5% for PPL/throughput'}"
+            )
+            if chosen.caveats:
+                sections.append(f"    Caveats (from paper/README):")
+                for cv in chosen.caveats[:6]:
+                    sections.append(f"      * {cv}")
+            if chosen.notes:
+                sections.append(f"    Notes: {chosen.notes}")
+            if len(paper_experiments) > 1:
+                sections.append("  Fallback experiments (if the chosen one fails):")
+                for fb in paper_experiments[1:4]:
+                    fb_rt = (
+                        f"~{fb.est_runtime_minutes:.0f} min"
+                        if fb.est_runtime_minutes > 0 else "unknown"
+                    )
+                    fb_code = "code available" if fb.code_available else "no direct code match"
+                    sections.append(f"    - {fb.name} ({fb_rt}, {fb_code})")
+                    if fb.suggested_command:
+                        sections.append(f"        cmd: {fb.suggested_command}")
+                    for cv in (fb.caveats or [])[:2]:
+                        sections.append(f"        caveat: {cv}")
+        sections.append("  Verification protocol:")
+        sections.append("    1. Complete Stage 1 (ROCM_ENV_VERIFIED) as today.")
+        sections.append("    2. Run the chosen experiment with the EXACT paper/README config (no scale-down).")
+        sections.append("    3. Capture stdout + artifacts to /repo/paper_experiment.log.")
+        sections.append("    4. Delegate to the `paper-reproducer` sub-agent; it will read /repo/paper.pdf,")
+        sections.append("       locate the relevant table/figure, compute a numeric delta, and fall back")
+        sections.append("       to an LLM-judge verdict when the metric is not directly comparable.")
+        sections.append("    5. Based on its JSON verdict, echo exactly ONE of:")
+        sections.append("         echo PAPER_RESULT_REPRODUCED metric=<name> actual=<v> expected=<v> delta_pct=<x>")
+        sections.append("         echo PAPER_RESULT_NOT_REPRODUCED <one-line reason>")
+        sections.append("")
+
     # ── Execution plan ───────────────────────────────────────────────────────
 
     if rocm_mode:
@@ -1366,6 +1484,15 @@ def generate_plan(repo_path: str, full_name: str, rocm_mode: bool = False,
         sections.append(f"  {step}. Verify GPU execution (output must show cuda device, not cpu)")
         step += 1
         sections.append(f"  {step}. echo ROCM_ENV_VERIFIED")
+        step += 1
+        if reproduce_results:
+            sections.append(f"  {step}. Run the Chosen experiment from PAPER REPRODUCTION TARGET (exact config, no scale-down)")
+            step += 1
+            sections.append(f"  {step}. Tee its output to /repo/paper_experiment.log")
+            step += 1
+            sections.append(f"  {step}. Invoke the paper-reproducer sub-agent to compare vs paper.pdf")
+            step += 1
+            sections.append(f"  {step}. echo PAPER_RESULT_REPRODUCED <...> OR echo PAPER_RESULT_NOT_REPRODUCED <reason>")
         if no_scale_down:
             sections.append("")
             sections.append("*** NO-SCALE-DOWN MODE ACTIVE ***")
@@ -1397,7 +1524,11 @@ def generate_plan(repo_path: str, full_name: str, rocm_mode: bool = False,
 
     log_success("Plan generated successfully")
     recommended_image = base_image_name if rocm_mode and base_image_name else None
-    return plan, recommended_image
+    paper_context = {
+        "experiments": [c.to_dict() for c in paper_experiments] if paper_experiments else [],
+        "title": paper_title or "",
+    }
+    return plan, recommended_image, paper_context
 
 
 def _refine_plan_with_llm(raw_analysis: str, full_name: str, rocm_mode: bool, llm: str,

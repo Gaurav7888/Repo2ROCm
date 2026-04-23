@@ -29,6 +29,23 @@ from utils.rich_logger import (
 import re
 import time
 
+# ── Stage 1 (observation compactor) + Stage 2 (per-run mempalace) ──
+try:
+    from learning.observation_compactor import compact as _compact_obs
+    _COMPACTOR_AVAILABLE = True
+except Exception:
+    _COMPACTOR_AVAILABLE = False
+    def _compact_obs(text, **kw):  # type: ignore[no-redef]
+        class _C:
+            short = text
+            full = text
+            error_class = None
+            metrics = []
+            truncated = False
+            orig_chars = len(text or "")
+            compact_chars = len(text or "")
+        return _C()
+
 def res_truncate(text):
     keywords = ['''waitinglist command usage error, the following command formats are leagal:
 1. `waitinglist add -p package_name1 -v >=1.0.0 -t pip`
@@ -77,7 +94,10 @@ class Configuration(Agent):
     def __init__(self, sandbox, image_name, full_name, root_dir, llm="gpt-4o-2024-05-13", max_turn=70, rocm_mode=False, plan=None, no_scale_down=False,
                  error_classifier=None, rule_engine=None, memory_provider=None,
                  trajectory_store=None, build_attempt=None, kb_context="",
-                 optimize_kernels=False, use_claude_code=False):
+                 optimize_kernels=False, use_claude_code=False,
+                 reproduce_results=False, paper_pdf_path=None,
+                 paper_experiments=None, paper_title="",
+                 run_memory=None):
         self.model = llm
         self.root_dir = root_dir
         self.max_turn = max_turn
@@ -95,6 +115,27 @@ class Configuration(Agent):
         self.kb_context = kb_context
         self.optimize_kernels = optimize_kernels
         self.use_claude_code = use_claude_code
+        self.run_memory = run_memory  # mempalace per-run store (Stage 2); may be None
+        # Track Stage-1 compaction savings for diagnostics.
+        self._compaction_orig_chars = 0
+        self._compaction_short_chars = 0
+        # Stage 3: track latest activity to use as retrieval query for the appendix.
+        self._last_action_text = ""
+        self._last_obs_short = ""
+        self._last_error_class = ""
+        # Stage 3 diagnostics
+        self._appendix_old_chars = 0
+        self._appendix_new_chars = 0
+
+        # ── STAGE 2 (paper reproduction) state ───────────────────────────────
+        self.reproduce_results = bool(reproduce_results)
+        self.paper_pdf_path = paper_pdf_path or ""
+        self.paper_experiments = list(paper_experiments) if paper_experiments else []
+        self.paper_title = paper_title or ""
+        self._stage2_active = False
+        self._stage2_announced = False
+        self._paper_result_line = ""
+        self._paper_verdict = ""  # "reproduced" | "not_reproduced" | ""
         self.tool_lib = [
             Tools.waiting_list_add,
             Tools.waiting_list_add_file,
@@ -309,12 +350,18 @@ VERY IMPORTANT TIPS:
         no_scale_down: bool = False,
         plan: str = "",
         kb_context: str = "",
+        reproduce_results: bool = False,
     ) -> str:
         """Build a system prompt for Claude Code's full agentic mode.
 
         Used when --claude-code-agentic is passed: Claude Code drives the
         entire configuration process with its own built-in tools.
         """
+        stage_line = (
+            "5. Signal STAGE 1 success with: echo ROCM_ENV_VERIFIED"
+            if reproduce_results else
+            "5. Signal success with: echo ROCM_ENV_VERIFIED"
+        )
         prompt = f"""\
 You are an expert environment configuration agent running inside a Docker container
 based on {image_name}. Your goal is to configure the repository at /repo so it
@@ -325,7 +372,7 @@ WORKFLOW:
 2. Install dependencies (respecting CUDA-to-ROCm package mappings)
 3. Apply code patches for ROCm compatibility
 4. Run the main script to verify the environment works
-5. Signal success with: echo ROCM_ENV_VERIFIED
+{stage_line}
 
 RULES:
 - Do NOT modify test files
@@ -361,6 +408,30 @@ Do NOT reduce epochs, iterations, batch sizes, or any training parameters.
 Run the exact README commands with original args.
 """
 
+        if reproduce_results:
+            prompt += """
+STAGE 2 - PAPER RESULT REPRODUCTION (only after ROCM_ENV_VERIFIED):
+- The strategic plan below contains a PAPER REPRODUCTION TARGET section
+  that names the Chosen experiment, its paper-reported metric, the suggested
+  command, a tolerance rule, and fallback experiments. Follow it verbatim.
+- The paper PDF is available at /repo/paper.pdf (Claude's Read tool handles PDFs).
+- Run the chosen experiment with the EXACT paper/README config (obey --no-scale-down
+  if set; do NOT reduce steps, batch size, seq length, or any hyperparameter).
+- Tee the experiment's stdout+stderr to /repo/paper_experiment.log, e.g.:
+    bash -lc "<cmd> 2>&1 | tee /repo/paper_experiment.log"
+- Delegate judgement to the `paper-reproducer` sub-agent. Pass it the exact
+  Chosen-experiment block from the plan and the path /repo/paper_experiment.log.
+  It will read /repo/paper.pdf, compute a numeric delta (falling back to
+  LLM-judge when units/numbers are not directly comparable), and return a
+  strict JSON verdict.
+- Based on the sub-agent's JSON verdict, echo EXACTLY one of:
+    echo PAPER_RESULT_REPRODUCED metric=<name> actual=<v> expected=<v> delta_pct=<x>
+    echo PAPER_RESULT_NOT_REPRODUCED <one-line reason>
+- Do NOT fabricate metrics. If the run/parse fails, re-run the experiment ONCE;
+  if it still fails, echo PAPER_RESULT_NOT_REPRODUCED with a brief parsing note.
+- Only after echoing one of those markers is STAGE 2 complete.
+"""
+
         if kb_context:
             prompt += "\n" + kb_context + "\n"
 
@@ -376,6 +447,316 @@ Run the exact README commands with original args.
             )
 
         return prompt
+
+    def _build_stage2_prompt_block(self) -> str:
+        """Return the STAGE 2 instruction block injected when ROCM_ENV_VERIFIED fires
+        and --reproduce-results is on. Self-contained so the LLM has everything it
+        needs (chosen experiment, expected metric + portability class, tolerance,
+        marker format, and sandbox hygiene hints)."""
+        lines = []
+        lines.append("")
+        lines.append("=" * 70)
+        lines.append("STAGE 2 — PAPER RESULT REPRODUCTION")
+        lines.append("=" * 70)
+        if self.paper_title:
+            lines.append(f"Paper: {self.paper_title}")
+        if self.paper_pdf_path:
+            lines.append(f"Paper PDF: {self.paper_pdf_path} (also at /repo/paper.pdf inside the container)")
+        lines.append("")
+        lines.append("ROCm Stage 1 is complete. Do NOT echo ROCM_ENV_VERIFIED again.")
+        lines.append("You MUST now run ONE paper experiment and verify its results match the")
+        lines.append("paper's reported value. Then echo exactly ONE of:")
+        lines.append("  echo PAPER_RESULT_REPRODUCED metric=<name> actual=<v> expected=<v> delta_pct=<x>")
+        lines.append("  echo PAPER_RESULT_NOT_REPRODUCED <one-line reason>")
+        lines.append("")
+
+        # ── Cross-hardware guidance (generic, not paper-specific) ────────────
+        lines.append("CROSS-HARDWARE NOTE:")
+        lines.append("  We are running on AMD ROCm GPUs; the paper most likely used NVIDIA")
+        lines.append("  hardware. ABSOLUTE throughput (tokens/s, samples/s, QPS) and latency")
+        lines.append("  (ms) are NOT directly comparable across GPUs. For reproduction, prefer")
+        lines.append("  hardware-portable metrics in this order:")
+        lines.append("    1. ratios / speedups / percentages (e.g. '2.5x speedup' vs a baseline)")
+        lines.append("    2. accuracy / F1 / EM / Top-k / pass@k / win-rate (portable)")
+        lines.append("    3. perplexity / loss / NLL / reward (mostly portable)")
+        lines.append("    4. absolute throughput / latency (GPU-dependent — last resort)")
+        lines.append("  If the paper's headline claim is a SPEEDUP ratio (e.g. method X is 2.5x")
+        lines.append("  faster than baseline Y), reproduce BOTH runs (baseline AND method) and")
+        lines.append("  compute the RATIO locally; that ratio is what should match the paper,")
+        lines.append("  not the absolute tokens/s of either run.")
+        lines.append("")
+
+        if not self.paper_experiments:
+            lines.append("No experiments were shortlisted from the paper automatically.")
+            lines.append("You have an unmodified paper.pdf at /repo/paper.pdf. Use `pdftotext -layout")
+            lines.append("/repo/paper.pdf - | head -c 60000` to read it, pick the shortest experiment")
+            lines.append("that exercises the paper's PROPOSED METHOD (not a baseline) and whose")
+            lines.append("metric is hardware-portable (prefer speedups/percentages/accuracy over")
+            lines.append("absolute tokens/s), run it with the EXACT paper/README config, parse the")
+            lines.append("numeric metric(s) from its stdout, compare to the paper's reported value")
+            lines.append("(tolerance: 15% relative for ratios, 3 absolute points for accuracy, 5%")
+            lines.append("relative for PPL/loss, 25% relative for absolute throughput), and echo one")
+            lines.append("of the two markers above.")
+            self._append_stage2_sandbox_hygiene(lines)
+            return "\n".join(lines)
+
+        chosen = self.paper_experiments[0]
+        def _g(d, k, default=""):
+            return d.get(k, default) if isinstance(d, dict) else getattr(d, k, default)
+
+        lines.append(f"Chosen experiment: {_g(chosen, 'name')}")
+        if _g(chosen, "section"):
+            lines.append(f"  Source: {_g(chosen, 'section')}")
+        runtime = _g(chosen, "est_runtime_minutes", 0) or 0
+        try:
+            runtime_f = float(runtime)
+        except (TypeError, ValueError):
+            runtime_f = 0.0
+        if runtime_f > 0:
+            lines.append(f"  Estimated runtime: ~{runtime_f:.0f} min.")
+        reason_bits = []
+        if _g(chosen, "code_available"):
+            reason_bits.append("code AVAILABLE in the repo")
+        else:
+            reason_bits.append("code NOT directly matched in the repo")
+        if _g(chosen, "is_baseline"):
+            reason_bits.append("(this is a BASELINE row — only picked because nothing better was found)")
+        else:
+            reason_bits.append("exercises the paper's proposed METHOD (not a baseline)")
+        metric_class = _g(chosen, "metric_class")
+        if metric_class:
+            portability_label = {
+                "ratio_speedup": "hardware-portable (ratio/speedup)",
+                "accuracy": "hardware-portable (accuracy-style)",
+                "quality": "mostly hardware-portable (quality metric)",
+                "absolute_perf": "HARDWARE-DEPENDENT (absolute throughput/latency)",
+                "other": "portability unknown",
+            }.get(metric_class, "portability unknown")
+            reason_bits.append(portability_label)
+        lines.append("  Reason: " + "; ".join(reason_bits) + ".")
+        metric_name = _g(chosen, "expected_metric_name")
+        metric_value = _g(chosen, "expected_metric_value")
+        metric_units = _g(chosen, "expected_metric_units")
+        if metric_name:
+            lines.append(
+                f"  Paper-reported metric: {metric_name} = {metric_value} {metric_units}".rstrip()
+            )
+        if _g(chosen, "hardware"):
+            lines.append(f"  Paper hardware: {_g(chosen, 'hardware')}")
+        if _g(chosen, "suggested_command"):
+            lines.append(f"  Suggested command (EXACT — includes all non-default flags):")
+            lines.append(f"    {_g(chosen, 'suggested_command')}")
+        # Paper config: render compactly as key=value pairs so the agent can
+        # see every hyperparameter it must set.
+        paper_config = _g(chosen, "paper_config") or {}
+        if paper_config:
+            lines.append(f"  Paper-exact hyperparameters (use ALL of these; do NOT rely on script defaults):")
+            for k, v in list(paper_config.items())[:30]:
+                if v not in (None, ""):
+                    lines.append(f"    - {k} = {v}")
+        if _g(chosen, "config_source"):
+            lines.append(f"  Config source (paper + codebase): {_g(chosen, 'config_source')}")
+        codebase_cfgs = _g(chosen, "codebase_config_files") or []
+        if codebase_cfgs:
+            lines.append("  Codebase config files governing this experiment (READ + OVERRIDE these,")
+            lines.append("  do NOT guess values when the paper is ambiguous):")
+            for cf in codebase_cfgs[:10]:
+                lines.append(f"    - /repo/{cf}")
+        missing_flags = _g(chosen, "missing_flags") or []
+        if missing_flags:
+            lines.append(f"  !!! Paper flags NOT exposed by the entry script (you must work around):")
+            for mf in missing_flags[:10]:
+                lines.append(f"        - {mf}  (patch the script or skip, then note in the verdict)")
+        matched_files = _g(chosen, "matched_files") or []
+        if matched_files:
+            lines.append(f"  Matched files in repo: {', '.join(matched_files[:5])}")
+        tolerance = _g(chosen, "tolerance_rule") or (
+            "<=15% for ratios/speedups, <=3 abs pts for accuracy, <=5% for PPL/loss, <=25% for absolute throughput"
+        )
+        lines.append(f"  Tolerance: {tolerance}")
+        caveats = _g(chosen, "caveats") or []
+        if caveats:
+            lines.append(f"  Caveats (disclaimers from the paper/README — READ CAREFULLY before running):")
+            for cv in caveats[:6]:
+                lines.append(f"    * {cv}")
+            lines.append(
+                "  If a caveat says the claimed metric requires a config we CANNOT use here"
+            )
+            lines.append(
+                "  (e.g. a dataset not shipped in the repo, a batch size the script can't accept),"
+            )
+            lines.append(
+                "  you SHOULD note that in the marker and echo PAPER_RESULT_NOT_REPRODUCED with"
+            )
+            lines.append(
+                "  a reason that references the specific caveat, instead of guessing a number."
+            )
+        if _g(chosen, "notes"):
+            lines.append(f"  Notes: {_g(chosen, 'notes')}")
+
+        # If the chosen metric is absolute_perf, remind the agent to compute a
+        # ratio locally by also running a baseline from the fallback list.
+        if metric_class == "absolute_perf":
+            lines.append("")
+            lines.append("  !!! The chosen metric is an ABSOLUTE throughput/latency value. Because we")
+            lines.append("      are on AMD hardware and the paper used a different GPU, the absolute")
+            lines.append("      number will differ substantially. You SHOULD additionally run a")
+            lines.append("      paired baseline from the 'Fallback experiments' list below and")
+            lines.append("      compute the RATIO method/baseline locally; the ratio is what should")
+            lines.append("      match the paper's speedup claim (if any). Report that ratio as the")
+            lines.append("      reproduced metric (metric=speedup_ratio) instead of absolute tok/s.")
+
+        if len(self.paper_experiments) > 1:
+            lines.append("")
+            lines.append("Fallback experiments (use only if the chosen one fails to run, or as")
+            lines.append("baselines to compute a ratio when the chosen metric is absolute):")
+            for fb in self.paper_experiments[1:4]:
+                name = _g(fb, "name")
+                cmd = _g(fb, "suggested_command")
+                rt = _g(fb, "est_runtime_minutes", 0) or 0
+                try:
+                    rt_f = float(rt)
+                except (TypeError, ValueError):
+                    rt_f = 0.0
+                rt_str = f"~{rt_f:.0f} min" if rt_f > 0 else "unknown"
+                flags = []
+                if _g(fb, "code_available"):
+                    flags.append("code available")
+                else:
+                    flags.append("no direct code match")
+                if _g(fb, "is_baseline"):
+                    flags.append("BASELINE")
+                fb_metric_class = _g(fb, "metric_class")
+                if fb_metric_class:
+                    flags.append(fb_metric_class)
+                lines.append(f"  - {name} ({rt_str}, {', '.join(flags)})")
+                if cmd:
+                    lines.append(f"      cmd: {cmd}")
+                fb_caveats = _g(fb, "caveats") or []
+                for cv in fb_caveats[:2]:
+                    lines.append(f"      caveat: {cv}")
+
+        lines.append("")
+        lines.append("Protocol (follow in order):")
+        lines.append("  1. Use the EXACT paper/README config shown above (all hyperparameters). If")
+        lines.append("     the entry script's CLI doesn't expose a flag the paper used, patch the")
+        lines.append("     script in-place (via python -c / sed / the code_edit.py tool) to hardcode")
+        lines.append("     that value. Do NOT silently rely on the script's default — that would")
+        lines.append("     change the experiment and invalidate the comparison.")
+        lines.append("  2. Run the chosen experiment (and, if computing a ratio, the matching")
+        lines.append("     baseline) with that exact config. Tee stdout+stderr to a log:")
+        lines.append("       ```bash")
+        lines.append("       cd /repo && <suggested command> 2>&1 | tee /repo/paper_experiment.log")
+        lines.append("       ```")
+        lines.append("  3. Parse the relevant metric from the log (grep/awk/python). If the paper")
+        lines.append("     reports a SPEEDUP and the script only prints raw tokens/s, compute the")
+        lines.append("     ratio locally: method_tok/s / baseline_tok/s.")
+        lines.append("  4. Compare to the paper-reported value using the tolerance above:")
+        lines.append("       numeric first; if units differ or the paper has only a qualitative")
+        lines.append("       claim, render an LLM-judge verdict based on the observed behavior.")
+        lines.append("  5. In your FINAL bash block, echo exactly ONE of:")
+        lines.append("       echo PAPER_RESULT_REPRODUCED metric=<name> actual=<v> expected=<v> delta_pct=<x>")
+        lines.append("       echo PAPER_RESULT_NOT_REPRODUCED <one-line reason>  # cite the caveat if any")
+        lines.append("  6. Do NOT fabricate numbers. If parsing fails, rerun the experiment ONCE;")
+        lines.append("     if it still fails, echo PAPER_RESULT_NOT_REPRODUCED with a parsing note.")
+        lines.append("  7. Do NOT echo ROCM_ENV_VERIFIED again — Stage 1 is done.")
+        self._append_stage2_sandbox_hygiene(lines)
+        lines.append("=" * 70)
+        return "\n".join(lines)
+
+    @staticmethod
+    def _append_stage2_sandbox_hygiene(lines):
+        """Append small hygiene rules to avoid known sandbox failure modes."""
+        lines.append("")
+        lines.append("Sandbox hygiene (to avoid wasted turns):")
+        lines.append("  - AVOID multi-line heredoc file writes like `cat > file.py << 'EOF' ... EOF`;")
+        lines.append("    the bash sandbox used here is interactive and often mangles heredocs.")
+        lines.append("    To write a file, prefer ONE of:")
+        lines.append("      (a) `python - <<'PY' ... PY`  (heredoc into python, single-arg)")
+        lines.append("      (b) `python -c \"open('/repo/x.py','w').write('...content...')\"`")
+        lines.append("      (c) echo '...single-line content...' > /repo/x.py")
+        lines.append("      (d) sed -i / the project's code_edit.py tool for in-place edits")
+        lines.append("  - Single-line bash blocks joined with `&&` work reliably.")
+        lines.append("  - Prefer modifying an existing entry script over writing a new wrapper,")
+        lines.append("    unless the entry script lacks timing/metric instrumentation.")
+
+    def _handle_paper_marker(self, text: str, waiting_list, conflict_list) -> None:
+        """Record the STAGE 2 verdict, persist artefacts, and log it.
+
+        `text` is the source string containing one of the PAPER_RESULT_* tokens
+        (either the LLM-produced command or the sandbox output)."""
+        reproduced_line = ""
+        not_reproduced_line = ""
+        for line in (text or "").splitlines():
+            if "PAPER_RESULT_REPRODUCED" in line and not reproduced_line:
+                reproduced_line = line.strip()
+            elif "PAPER_RESULT_NOT_REPRODUCED" in line and not not_reproduced_line:
+                not_reproduced_line = line.strip()
+
+        if reproduced_line:
+            verdict = "reproduced"
+            marker_line = reproduced_line
+        elif not_reproduced_line:
+            verdict = "not_reproduced"
+            marker_line = not_reproduced_line
+        else:
+            verdict = "unknown"
+            marker_line = ""
+
+        self._paper_verdict = verdict
+        self._paper_result_line = marker_line
+
+        out_dir = f'{self.root_dir}/output/{self.full_name}'
+        os.makedirs(out_dir, exist_ok=True)
+
+        test_lines = ["ROCM_ENV_VERIFIED"]
+        if verdict == "reproduced":
+            test_lines.append("PAPER_RESULT_REPRODUCED")
+        elif verdict == "not_reproduced":
+            test_lines.append("PAPER_RESULT_NOT_REPRODUCED")
+        try:
+            with open(f'{out_dir}/test.txt', 'w') as w:
+                w.write('\n'.join(test_lines) + '\n')
+        except Exception:
+            pass
+
+        chosen = self.paper_experiments[0] if self.paper_experiments else {}
+        if not isinstance(chosen, dict):
+            try:
+                chosen = chosen.to_dict()
+            except Exception:
+                chosen = {}
+
+        record = {
+            "verdict": verdict,
+            "paper_title": self.paper_title,
+            "paper_pdf_path": self.paper_pdf_path,
+            "chosen_experiment": chosen,
+            "fallback_experiments": [
+                (c if isinstance(c, dict) else c.to_dict())
+                for c in self.paper_experiments[1:4]
+            ] if self.paper_experiments else [],
+            "reproduced_line": reproduced_line,
+            "not_reproduced_line": not_reproduced_line,
+            "source": "configuration_agent_stage2",
+        }
+        try:
+            with open(f'{out_dir}/paper_reproduction.json', 'w') as w:
+                w.write(json.dumps(record, indent=2))
+        except Exception:
+            pass
+
+        try:
+            self._save_final_artifacts(waiting_list, conflict_list)
+        except Exception:
+            pass
+
+        if verdict == "reproduced":
+            log_success(f"PAPER_RESULT_REPRODUCED: {marker_line}")
+        elif verdict == "not_reproduced":
+            log_error(f"PAPER_RESULT_NOT_REPRODUCED: {marker_line}")
+        else:
+            log_info("Paper reproduction verdict: unknown (no marker parsed)")
 
     def show_init_prompt(self):
         print(self.system_prompt)
@@ -641,16 +1022,43 @@ Run the exact README commands with original args.
                         self.outer_commands[-1]["returncode"] = 0
                         continue
 
+                    # ── STAGE 2 markers: check BEFORE Stage 1 marker so a combined ──
+                    # bash block ending with PAPER_RESULT_* finishes cleanly.
+                    if self._stage2_active and (
+                        'PAPER_RESULT_REPRODUCED' in commands[i] or
+                        'PAPER_RESULT_NOT_REPRODUCED' in commands[i]
+                    ):
+                        self._handle_paper_marker(commands[i], waiting_list, conflict_list)
+                        self.outer_commands[-1]["returncode"] = 0
+                        self.outer_commands[-1]["time"] = time.time() - start_time
+                        system_res += (
+                            "\nPaper reproduction verdict recorded. Agent finished.\n"
+                        )
+                        finish = True
+                        break
+
                     # ── ROCm mode: detect success signal ──
                     # Flexible match: accept any command that contains ROCM_ENV_VERIFIED
                     # e.g. echo ROCM_ENV_VERIFIED, echo "ROCM_ENV_VERIFIED",
                     #      ls -la && echo ROCM_ENV_VERIFIED, etc.
-                    if self.rocm_mode and 'ROCM_ENV_VERIFIED' in commands[i]:
+                    if self.rocm_mode and 'ROCM_ENV_VERIFIED' in commands[i] and not self._stage2_active:
                         log_rocm_success()
                         sandbox_res = "ROCM_ENV_VERIFIED\nCongratulations, you have successfully configured the environment!"
                         system_res += sandbox_res
                         self.outer_commands[-1]["returncode"] = 0
                         self.outer_commands[-1]["time"] = time.time() - start_time
+
+                        if self.reproduce_results:
+                            # ── Transition to STAGE 2 instead of finishing ──
+                            self._stage2_active = True
+                            with open(f'{self.root_dir}/output/{self.full_name}/test.txt', 'w') as w3:
+                                w3.write('ROCM_ENV_VERIFIED\n')
+                            log_success("ROCm environment verified. Transitioning to STAGE 2: paper reproduction.")
+                            if not self._stage2_announced:
+                                system_res += self._build_stage2_prompt_block()
+                                self._stage2_announced = True
+                            continue
+
                         self._save_final_artifacts(waiting_list, conflict_list)
                         log_success("ROCm environment verified. Agent finished.")
                         with open(f'{self.root_dir}/output/{self.full_name}/test.txt', 'w') as w3:
@@ -724,7 +1132,13 @@ Run the exact README commands with original args.
                                 if rid not in self.build_attempt.rules_applied:
                                     self.build_attempt.rules_applied.append(rid)
 
+                    # ── Stage 1: compact the raw observation BEFORE injecting ──
+                    compacted = _compact_obs(sandbox_res or "", action_content=commands[i])
+                    self._compaction_orig_chars += compacted.orig_chars
+                    self._compaction_short_chars += compacted.compact_chars
+
                     # ── Record trajectory ──
+                    record = None
                     if self.trajectory_store and self.build_attempt:
                         from storage.models import TrajectoryRecord
                         record = TrajectoryRecord(
@@ -746,9 +1160,32 @@ Run the exact README commands with original args.
                             record, self.build_attempt.trajectory_file
                         )
 
-                    system_res += sandbox_res
+                    # ── Stage 2: write the turn to mempalace (write-only) ──
+                    if self.run_memory is not None and getattr(self.run_memory, "enabled", False):
+                        try:
+                            self.run_memory.write_turn(
+                                record if record is not None else {
+                                    "turn_number": turn, "action_type": "bash",
+                                    "action_content": commands[i],
+                                    "outcome": "success" if rc_int == 0 else "failure",
+                                    "return_code": rc_int,
+                                    "duration_seconds": time.time() - start_time,
+                                    "error_class": classified_error.error_class if classified_error else None,
+                                },
+                                full_observation=sandbox_res or "",
+                                compact_obj=compacted,
+                            )
+                        except Exception as _mp_e:
+                            log_info(f"[mempalace] write_turn failed: {_mp_e}")
+
+                    # Inject the COMPACTED observation, not the raw output.
+                    system_res += compacted.short
                     if kb_in_guidance:
                         system_res += kb_in_guidance
+                    # Stage 3: stash for the per-turn recall query
+                    self._last_action_text = commands[i] or ""
+                    self._last_obs_short = compacted.short or ""
+                    self._last_error_class = compacted.error_class or ""
                     if return_code != 'unknown':
                         system_res += f'\n`{commands[i]}` executes with returncode: {return_code}\n'
 
@@ -763,11 +1200,36 @@ Run the exact README commands with original args.
                         self.sandbox_session = self.sandbox.get_session()
                         self.outer_commands[-1]["returncode"] = 1
 
+                    # ── STAGE 2 markers in command output ──
+                    if self._stage2_active and return_code == 0 and (
+                        'PAPER_RESULT_REPRODUCED' in sandbox_res or
+                        'PAPER_RESULT_NOT_REPRODUCED' in sandbox_res
+                    ):
+                        self._handle_paper_marker(sandbox_res, waiting_list, conflict_list)
+                        finish = True
+                        break
+
                     # ── ROCm mode: detect success signal in command output ──
                     # Catches cases where the LLM produced ROCM_ENV_VERIFIED via
                     # any means (echo with quotes, printf, a script that prints it, etc.)
-                    if self.rocm_mode and 'ROCM_ENV_VERIFIED' in sandbox_res and return_code == 0:
+                    if (
+                        self.rocm_mode
+                        and 'ROCM_ENV_VERIFIED' in sandbox_res
+                        and return_code == 0
+                        and not self._stage2_active
+                    ):
                         log_rocm_success()
+                        if self.reproduce_results:
+                            # ── Transition to STAGE 2 instead of finishing ──
+                            self._stage2_active = True
+                            with open(f'{self.root_dir}/output/{self.full_name}/test.txt', 'w') as w3:
+                                w3.write('ROCM_ENV_VERIFIED\n')
+                            log_success("ROCm environment verified (detected in output). Transitioning to STAGE 2: paper reproduction.")
+                            if not self._stage2_announced:
+                                system_res += self._build_stage2_prompt_block()
+                                self._stage2_announced = True
+                            continue
+
                         self._save_final_artifacts(waiting_list, conflict_list)
                         log_success("ROCm environment verified (detected in output). Agent finished.")
                         with open(f'{self.root_dir}/output/{self.full_name}/test.txt', 'w') as w3:
@@ -822,7 +1284,25 @@ Run the exact README commands with original args.
                         with open(f'{self.root_dir}/output/{self.full_name}/patch/patch_{diff_no}.diff', 'w') as w0:
                             w0.write(generate_diff + '\n')
                         diff_no += 1
-                    system_res += sandbox_res
+                        # Stage 2: persist the applied patch to mempalace
+                        if self.run_memory is not None and getattr(self.run_memory, "enabled", False):
+                            try:
+                                self.run_memory.write_turn(
+                                    {"turn_number": turn, "action_type": "diff",
+                                     "action_content": diffs[:4000],
+                                     "outcome": "success", "return_code": 0,
+                                     "duration_seconds": elasped_time,
+                                     "error_class": None},
+                                    full_observation=sandbox_res or "",
+                                    compact_obj=_compact_obs(sandbox_res or ""),
+                                )
+                            except Exception as _mp_e:
+                                log_info(f"[mempalace] write_turn(diff) failed: {_mp_e}")
+                    # Stage 1: compact diff observation before injection
+                    _diff_compacted = _compact_obs(sandbox_res or "")
+                    self._compaction_orig_chars += _diff_compacted.orig_chars
+                    self._compaction_short_chars += _diff_compacted.compact_chars
+                    system_res += _diff_compacted.short
                     log_observation(sandbox_res, return_code)
                     if TIME_OUT_LABEL in sandbox_res:
                         self.sandbox_session = self.sandbox.get_session()
@@ -857,22 +1337,98 @@ The edit format is as follows:
             system_res += reminder
             success_cmds = extract_cmds(self.sandbox.commands)
 
-            if len(success_cmds) > 0:
-                if self.rocm_mode:
-                    appendix = '\nThe container has successfully executed the following commands in order. Please refer to the execution history, reflect, and decide the subsequent actions. You MUST actually run the project\'s main script with REAL models and REAL data as specified in the README (not just --help, not mock data). Only after the script produces actual output, output `echo ROCM_ENV_VERIFIED` to finish.\n' + \
-                        '\n'.join(success_cmds)
-                else:
-                    appendix = '\nThe container has successfully executed the following commands in order. Please refer to the execution history, reflect, and decide the subsequent actions. Remember, your ultimate goal is to pass the tests by executing `runtest` or `poetryruntest`.\n' + \
-                        '\n'.join(success_cmds)
+            # Stage 3: build the appendix as
+            #   (a) instruction prefix (unchanged, drives the agent's behavior)
+            #   (b) tiny recency tail = last 5 success commands (orientation only)
+            #   (c) per-run recall pack from mempalace (relevant prior context)
+            #   (d) cross-run lessons from the global wing (DO/DON'T/PATTERN)
+            # Old behavior dumped ALL success_cmds verbatim → grew linearly each turn.
+
+            if self._stage2_active:
+                instr = (
+                    "\nThe container has executed prior commands successfully. "
+                    "STAGE 1 (ROCM_ENV_VERIFIED) is complete — do NOT echo ROCM_ENV_VERIFIED again. "
+                    "Your ONLY remaining goal is to reproduce the CHOSEN paper experiment described "
+                    "in the STAGE 2 block above: run it with the EXACT paper/README config, tee the "
+                    "output to /repo/paper_experiment.log, compare the metric against the paper's "
+                    "reported value, and echo EXACTLY ONE of:\n"
+                    "  echo PAPER_RESULT_REPRODUCED metric=<name> actual=<v> expected=<v> delta_pct=<x>\n"
+                    "  echo PAPER_RESULT_NOT_REPRODUCED <one-line reason>\n"
+                    "Never fabricate numbers; if parsing fails, rerun once, then echo NOT_REPRODUCED.\n"
+                )
+            elif self.rocm_mode:
+                instr = (
+                    "\nThe container has executed prior commands successfully. "
+                    "Reflect on the execution history below and decide the next action. "
+                    "You MUST actually run the project's main script with REAL models and REAL data "
+                    "as specified in the README (not just --help, not mock data). Only after the "
+                    "script produces actual output, echo ROCM_ENV_VERIFIED to finish.\n"
+                )
             else:
-                appendix = '\nThe container remains in its original state.'
+                instr = (
+                    "\nThe container has executed prior commands successfully. "
+                    "Reflect on the execution history below and decide the next action. "
+                    "Remember, your ultimate goal is to pass the tests by executing "
+                    "`runtest` or `poetryruntest`.\n"
+                )
+
+            if len(success_cmds) > 0:
+                tail = success_cmds[-5:]
+                recency = (
+                    f"Total successful commands so far: {len(success_cmds)}. "
+                    f"Most recent (last {len(tail)}):\n" + "\n".join(f"  - {c}" for c in tail)
+                )
+                # Old appendix size for diagnostics
+                old_appendix_body = "\n".join(success_cmds)
+                self._appendix_old_chars += len(old_appendix_body)
+            else:
+                recency = "The container remains in its original state.\n"
+
+            # Per-run + global recall, only if mempalace is enabled.
+            recall_block = ""
+            global_block = ""
+            if self.run_memory is not None and getattr(self.run_memory, "enabled", False):
+                # Build a focused query from the most recent activity.
+                query_parts = []
+                if self._last_action_text:
+                    query_parts.append(self._last_action_text[:400])
+                if self._last_error_class:
+                    query_parts.append(f"error: {self._last_error_class}")
+                if self._last_obs_short:
+                    query_parts.append(self._last_obs_short[:400])
+                query = "\n".join(query_parts).strip() or (success_cmds[-1] if success_cmds else "")
+                if query:
+                    try:
+                        recall_block = self.run_memory.recall_pack(
+                            query,
+                            rooms=("commands_success", "commands_failed",
+                                   "fixes", "decisions", "patches"),
+                            n_per_room=4,
+                            token_budget=1500,
+                        ) or ""
+                    except Exception as _e:
+                        log_info(f"[mempalace] recall_pack failed: {_e}")
+                    try:
+                        global_block = self.run_memory.recall_global_lessons(
+                            query,
+                            rooms=("dont", "do", "pattern"),
+                            n_per_room=3,
+                            token_budget=800,
+                        ) or ""
+                    except Exception as _e:
+                        log_info(f"[mempalace] recall_global_lessons failed: {_e}")
+
+            appendix = instr + "\n" + recency + recall_block + global_block
+
+            # Preserve the legacy normalization of pip_download wrapper paths.
             pattern = r'python\s+/home/tools/pip_download.py\s+-p\s+(\S+)\s+-v\s+""([^""]+)""'
             replacement = r'pip install \1\2'
             appendix = re.sub(pattern, replacement, appendix)
             pattern1 = r'python\s+/home/tools/pip_download.py\s+-p\s+(\S+)'
             replacement1 = r'pip install \1'
             appendix = re.sub(pattern1, replacement1, appendix)
-            
+
+            self._appendix_new_chars += len(appendix)
             system_res += appendix
 
             # ── Log context summary ──

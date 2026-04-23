@@ -16,11 +16,11 @@
 import argparse
 import json
 import multiprocessing
-import threading
 import time
 import os
 import sys
 from datetime import datetime, timedelta
+from typing import Optional
 from utils.sandbox import Sandbox
 from agents.configuration import Configuration
 from utils.llm import set_api_key
@@ -42,6 +42,19 @@ from errors.seed_patterns import seed_if_empty
 from rules.engine import RuleEngine
 from learning.memory_provider import BuildMemoryProvider
 from learning.distiller import TrajectoryDistiller
+try:
+    from learning.mempalace_provider import RunMemory  # Stage 2 memory layer
+    _MEMPALACE_AVAILABLE = True
+except Exception as _mp_e:
+    print(f"[mempalace] not available ({_mp_e}); RunMemory will be disabled")
+    _MEMPALACE_AVAILABLE = False
+    class RunMemory:  # type: ignore[no-redef]
+        enabled = False
+        @classmethod
+        def create(cls, *a, **kw): return cls()
+        def __getattr__(self, n):
+            def _noop(*a, **kw): return None
+            return _noop
 
 def move_files_to_repo(source_folder):
     # Temporary staging directory to flatten the repo's top-level folder
@@ -125,6 +138,17 @@ def main():
                         help='Run Claude Code in full agentic mode where it drives the entire '
                              'configuration process autonomously with its built-in tools. '
                              'Only used when --use-claude-code is set.')
+    parser.add_argument('--reproduce-results', action='store_true', default=False,
+                        help='After ROCM_ENV_VERIFIED, also run the shortest paper experiment '
+                             'whose code exists in the repo and verify its results match the '
+                             "paper's reported metrics (hybrid numeric + LLM-judge). "
+                             "Works with the default Configuration loop; in --claude-code-agentic "
+                             "mode it additionally spins up the paper-reproducer sub-agent.")
+    parser.add_argument('--paper-url', type=str, default=None,
+                        help='Direct URL to the research paper PDF (e.g. an arXiv pdf link). '
+                             'Used by --reproduce-results. If omitted, auto-discovered from README.')
+    parser.add_argument('--paper-pdf', type=str, default=None,
+                        help='Local path to the research paper PDF. Overrides --paper-url.')
 
     args = parser.parse_args()
 
@@ -165,6 +189,13 @@ def main():
     rocm_base_image = args.rocm_base_image
     no_scale_down = args.no_scale_down
     optimize_kernels = args.optimize_kernels
+    reproduce_results = args.reproduce_results
+    paper_url = args.paper_url
+    paper_pdf_arg = args.paper_pdf
+
+    if reproduce_results and not paper_url and not paper_pdf_arg:
+        log_info("--reproduce-results: no --paper-url or --paper-pdf given; "
+                 "will auto-discover from README.")
 
     log_header("REPO2ROCM", f"Self-Evolving Multi-Agent System")
     log_phase("CONFIGURATION")
@@ -176,6 +207,14 @@ def main():
         log_info(f"No-Scale-Down: ON (will follow README as-is, no mock data)")
     if optimize_kernels:
         log_info(f"Kernel Optimization: ON (Phase 2 performance tuning enabled)")
+    if reproduce_results:
+        log_info(f"Reproduce-Results: ON (will run shortest paper experiment and verify)")
+        if paper_pdf_arg:
+            log_info(f"Paper PDF (local): {paper_pdf_arg}")
+        elif paper_url:
+            log_info(f"Paper URL: {paper_url}")
+        else:
+            log_info(f"Paper source: auto-discover from README")
     log_info(f"Root Path: {root_path}")
 
     # ── Initialize Intelligence Layer ──
@@ -216,23 +255,37 @@ def main():
     else:
         init_cmd = f"mkdir -p {root_path}/utils/repo/{full_name}"
     subprocess.run(init_cmd, check=True, shell=True)
-    
-    def timer():
-        time.sleep(3600*2)  # 2-hour timeout
-        print("Timeout for 2 hour!")
-        os._exit(1)  # force-kill the process
-
-    # Start the watchdog timer thread
-    timer_thread = threading.Thread(target=timer)
-    timer_thread.daemon = True
-    timer_thread.start()
+    # Watchdog timeout removed: paper-reproduction experiments (full benchmark
+    # harnesses such as MMLU/HumanEval/GSM8K) can legitimately take longer
+    # than 2 hours. Rely on the per-turn LLM cap and Docker timeouts instead.
 
     log_phase("CLONING REPOSITORY", f"{full_name} @ {sha[:12]}")
     download_repo(root_path, full_name, sha)
     log_success(f"Repository cloned: {full_name}")
 
-    # ── Upfront Planning Phase ──
+    # ── Per-run mempalace memory (Stage 2) ──
+    run_memory = RunMemory.create(full_name, sha)
+    log_info(f"Run memory: wing={getattr(run_memory, 'wing', '?')} "
+             f"palace={getattr(run_memory, 'palace_path', '?')}")
+
+    # ── Per-run graphify code graph (Stage 4) ──
     repo_path = f"{root_path}/utils/repo/{full_name}/repo"
+    try:
+        from learning.graphify_provider import GraphifyProvider
+        graphify_provider = GraphifyProvider.create(repo_path)
+        graphify_provider.build_or_refresh()
+        log_info(f"Graphify graph: {graphify_provider.stats()}")
+    except Exception as _gp_e:
+        log_info(f"Graphify provider disabled: {_gp_e}")
+        class _NG:
+            enabled = False
+            graph_json = ""
+            def __getattr__(self, n):
+                def _noop(*a, **kw): return ""
+                return _noop
+        graphify_provider = _NG()
+
+    # ── Upfront Planning Phase ──
 
     # Compute build fingerprint for KB queries
     log_phase("BUILD FINGERPRINT")
@@ -264,18 +317,88 @@ def main():
         log_info(f"KB returned {len(begin_memory.items)} memory items "
                  f"(confidence: {begin_memory.confidence:.2f})")
 
-    plan, recommended_image = generate_plan(
+    # ── Resolve paper PDF (for --reproduce-results) ──
+    paper_pdf_path: Optional[str] = None
+    if reproduce_results:
+        from agents.paper_agent import PaperAgent
+        paper_dest = os.path.join(repo_path, "paper.pdf")
+        paper_agent_for_dl = PaperAgent(llm=llm)
+        try:
+            if paper_pdf_arg and os.path.exists(paper_pdf_arg):
+                shutil.copyfile(paper_pdf_arg, paper_dest)
+                paper_pdf_path = paper_dest
+                log_info(f"Paper PDF copied from {paper_pdf_arg} to {paper_dest}")
+            elif paper_url:
+                paper_pdf_path = paper_agent_for_dl.download_paper(paper_url, paper_dest)
+                if paper_pdf_path:
+                    log_info(f"Paper PDF downloaded to {paper_pdf_path}")
+            else:
+                readme_text = ""
+                for rn in ("README.md", "readme.md", "README.rst", "README.txt", "README"):
+                    rp = os.path.join(repo_path, rn)
+                    if os.path.isfile(rp):
+                        try:
+                            with open(rp, "r", encoding="utf-8", errors="ignore") as rf:
+                                readme_text = rf.read()
+                            break
+                        except Exception:
+                            pass
+                arxiv_id = paper_agent_for_dl.extract_paper_link(readme_text) if readme_text else None
+                if arxiv_id:
+                    url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
+                    paper_pdf_path = paper_agent_for_dl.download_paper(url, paper_dest)
+                    if paper_pdf_path:
+                        log_info(f"Paper PDF auto-discovered from README (arXiv:{arxiv_id}) and saved to {paper_pdf_path}")
+                else:
+                    log_info("No paper URL provided and none found in README; paper reproduction will be skipped.")
+                    reproduce_results = False
+        except Exception as e:
+            log_info(f"Paper PDF resolution failed: {e}; paper reproduction will be skipped.")
+            reproduce_results = False
+            paper_pdf_path = None
+
+    # Stage 4: Pre-write paper extracts to mempalace BEFORE generate_plan
+    # so paper_agent.shortlist_experiments can retrieve from it instead of
+    # dumping the full 350K paper text into one prompt.
+    if reproduce_results and paper_pdf_path and os.path.exists(paper_pdf_path):
+        try:
+            from agents.paper_agent import extract_pdf_text as _ext_pdf
+            _ptxt = _ext_pdf(paper_pdf_path) or ""
+            if _ptxt:
+                log_info(f"Pre-writing paper to mempalace: {len(_ptxt):,} chars")
+                run_memory.write_paper_extracts(_ptxt)
+        except Exception as _ext_e:
+            log_info(f"PDF pre-extract for mempalace failed: {_ext_e}")
+
+    plan, recommended_image, paper_context = generate_plan(
         repo_path=repo_path,
         full_name=full_name,
         rocm_mode=rocm_mode,
         llm=llm,
         no_scale_down=no_scale_down,
+        paper_pdf_path=paper_pdf_path,
+        reproduce_results=reproduce_results,
+        run_memory=run_memory,
+        graphify_provider=graphify_provider,
     )
     print_plan(plan)
+    paper_experiments = paper_context.get("experiments", []) if reproduce_results else []
+    paper_title = paper_context.get("title", "") if reproduce_results else ""
 
     with open(f'{root_path}/output/{full_name}/plan.txt', 'w') as pf:
         pf.write(plan)
     log_success(f"Plan saved to output/{full_name}/plan.txt")
+
+    # Persist plan + paper-experiment shortlist + base-image decision into mempalace.
+    try:
+        run_memory.write_plan(plan)
+        if reproduce_results and paper_experiments:
+            run_memory.write_paper_extracts("", paper_experiments=paper_experiments)
+        if recommended_image:
+            run_memory.write_decision("recommended_base_image", recommended_image,
+                                      reason="planner")
+    except Exception as _mp_e:
+        log_info(f"Run memory write failed: {_mp_e}")
 
     # Register build attempt
     build_attempt = BuildAttempt(
@@ -295,15 +418,19 @@ def main():
         if rocm_base_image:
             base_image = rocm_base_image
             log_info(f"ROCm mode: using CLI-specified image: {base_image}")
+            run_memory.write_decision("base_image", base_image, reason="cli-override")
         elif recommended_image:
             base_image = recommended_image
             log_info(f"ROCm mode: using planner-recommended image: {base_image}")
+            run_memory.write_decision("base_image", base_image, reason="planner-recommended")
         else:
             base_image = 'rocm/pytorch:latest'
             log_info(f"ROCm mode: using default fallback image: {base_image}")
+            run_memory.write_decision("base_image", base_image, reason="default-fallback")
     else:
         base_image = 'python:3.10'
         log_info(f"Using base image: {base_image}")
+        run_memory.write_decision("base_image", base_image, reason="non-rocm")
 
     # ── Set up Claude Code project files (if enabled) ──
     if use_claude_code:
@@ -313,6 +440,8 @@ def main():
             plan=plan,
             kb_context=kb_context,
             rocm_mode=rocm_mode,
+            paper_pdf_path=paper_pdf_path if reproduce_results else None,
+            reproduce_results=reproduce_results,
         )
         log_info(f"Claude Code project files created at: {claude_dir}")
 
@@ -334,16 +463,40 @@ def main():
             no_scale_down=no_scale_down,
             plan=plan,
             kb_context=kb_context,
+            reproduce_results=reproduce_results,
         )
 
-        agentic_task = (
-            f"Configure the Docker container for repository '{full_name}' to run on AMD ROCm GPUs. "
-            f"Follow the strategic plan provided in the system prompt. "
-            f"All commands must be executed inside Docker container '{container_id}' using: "
-            f"docker exec -w /repo {container_id} bash -c '...'\n\n"
-            f"When the environment is fully configured and the project runs successfully, "
-            f"execute: docker exec {container_id} bash -c 'echo ROCM_ENV_VERIFIED'"
-        )
+        if reproduce_results:
+            agentic_task = (
+                f"Configure the Docker container for repository '{full_name}' to run on AMD ROCm GPUs "
+                f"and then reproduce one experiment from the paper.\n\n"
+                f"All commands must be executed inside Docker container '{container_id}' using:\n"
+                f"  docker exec -w /repo {container_id} bash -c '...'\n\n"
+                f"STAGE 1 - Environment verification:\n"
+                f"  Follow the strategic plan. When the environment is fully configured and the "
+                f"project's main script produces real output on the GPU, execute:\n"
+                f"    docker exec {container_id} bash -c 'echo ROCM_ENV_VERIFIED'\n\n"
+                f"STAGE 2 - Paper result reproduction:\n"
+                f"  After ROCM_ENV_VERIFIED, run the 'Chosen experiment' from the PAPER REPRODUCTION "
+                f"TARGET section of the plan, with the EXACT paper/README config (no scale-down). "
+                f"Capture its stdout to /repo/paper_experiment.log. Then invoke the 'paper-reproducer' "
+                f"sub-agent to compare the produced metric(s) against the paper's reported value(s) "
+                f"(paper.pdf is at /repo/paper.pdf inside the container — read it from the host copy "
+                f"at {paper_pdf_path}). Based on its JSON verdict, execute exactly ONE of:\n"
+                f"    echo PAPER_RESULT_REPRODUCED metric=<name> actual=<v> expected=<v> delta_pct=<x>\n"
+                f"    echo PAPER_RESULT_NOT_REPRODUCED <one-line reason>\n"
+                f"Do NOT fabricate numbers. If parsing fails, rerun once; if still unparseable, echo "
+                f"PAPER_RESULT_NOT_REPRODUCED with a parsing note."
+            )
+        else:
+            agentic_task = (
+                f"Configure the Docker container for repository '{full_name}' to run on AMD ROCm GPUs. "
+                f"Follow the strategic plan provided in the system prompt. "
+                f"All commands must be executed inside Docker container '{container_id}' using: "
+                f"docker exec -w /repo {container_id} bash -c '...'\n\n"
+                f"When the environment is fully configured and the project runs successfully, "
+                f"execute: docker exec {container_id} bash -c 'echo ROCM_ENV_VERIFIED'"
+            )
 
         agent_result = run_claude_code_agent(
             task_prompt=agentic_task,
@@ -359,9 +512,54 @@ def main():
                  f"turns={agent_result['total_turns']}, "
                  f"tokens={agent_result['usage']['total_tokens']}")
 
-        if "ROCM_ENV_VERIFIED" in agent_result.get("final_text", ""):
+        final_text = agent_result.get("final_text", "") or ""
+        rocm_verified = "ROCM_ENV_VERIFIED" in final_text
+        paper_reproduced = "PAPER_RESULT_REPRODUCED" in final_text
+        paper_not_reproduced = "PAPER_RESULT_NOT_REPRODUCED" in final_text
+
+        if rocm_verified:
+            test_lines = ['ROCM_ENV_VERIFIED']
+            if reproduce_results:
+                if paper_reproduced:
+                    test_lines.append('PAPER_RESULT_REPRODUCED')
+                elif paper_not_reproduced:
+                    test_lines.append('PAPER_RESULT_NOT_REPRODUCED')
             with open(f'{root_path}/output/{full_name}/test.txt', 'w') as w3:
-                w3.write('ROCM_ENV_VERIFIED\n')
+                w3.write('\n'.join(test_lines) + '\n')
+
+        if reproduce_results:
+            verdict = (
+                "reproduced" if paper_reproduced else
+                "not_reproduced" if paper_not_reproduced else
+                "unknown"
+            )
+
+            def _extract_marker_line(text: str, marker: str) -> str:
+                for line in text.splitlines():
+                    if marker in line:
+                        return line.strip()
+                return ""
+
+            repro_record = {
+                "verdict": verdict,
+                "rocm_env_verified": rocm_verified,
+                "paper_pdf_path": paper_pdf_path,
+                "paper_url": paper_url,
+                "reproduced_line": _extract_marker_line(final_text, "PAPER_RESULT_REPRODUCED"),
+                "not_reproduced_line": _extract_marker_line(final_text, "PAPER_RESULT_NOT_REPRODUCED"),
+                "final_text_tail": final_text[-4000:],
+            }
+            try:
+                with open(f'{root_path}/output/{full_name}/paper_reproduction.json', 'w') as w4:
+                    w4.write(json.dumps(repro_record, indent=2))
+                if verdict == "reproduced":
+                    log_success(f"Paper result reproduced: {repro_record['reproduced_line']}")
+                elif verdict == "not_reproduced":
+                    log_error(f"Paper result NOT reproduced: {repro_record['not_reproduced_line']}")
+                else:
+                    log_info("Paper reproduction verdict: unknown (no marker in final output)")
+            except Exception as e:
+                log_info(f"Failed to write paper_reproduction.json: {e}")
 
         msg = trajectory
         outer_commands = agent_result.get("tool_calls", [])
@@ -378,8 +576,27 @@ def main():
             kb_context=kb_context,
             optimize_kernels=optimize_kernels,
             use_claude_code=use_claude_code,
+            reproduce_results=reproduce_results,
+            paper_pdf_path=paper_pdf_path,
+            paper_experiments=paper_experiments,
+            paper_title=paper_title,
+            run_memory=run_memory,
         )
         msg, outer_commands = configuration_agent.run('/tmp', trajectory, waiting_list, conflict_list)
+        # Stage 1 / 3 compaction summary
+        try:
+            o = getattr(configuration_agent, "_compaction_orig_chars", 0)
+            s = getattr(configuration_agent, "_compaction_short_chars", 0)
+            if o:
+                log_info(f"Stage 1 compaction: observation original={o:,} chars, "
+                         f"compacted={s:,} chars ({(1 - s / o) * 100:.1f}% reduction)")
+            ao = getattr(configuration_agent, "_appendix_old_chars", 0)
+            an = getattr(configuration_agent, "_appendix_new_chars", 0)
+            if ao:
+                log_info(f"Stage 3 appendix: would-have-been={ao:,} chars, "
+                         f"actual={an:,} chars ({(1 - an / max(ao, 1)) * 100:.1f}% reduction)")
+        except Exception:
+            pass
     with open(f'{root_path}/output/{full_name.split("/")[0]}/{full_name.split("/")[1]}/track.json', 'w') as w1:
         w1.write(json.dumps(msg, indent=4))
     commands = configuration_sandbox.stop_container()
@@ -435,6 +652,19 @@ def main():
     kb_store.close()
     trajectory_store.close()
     memory_provider.reset_session()
+
+    # ── Cumulative knowledge base: distill DO/DON'T/PATTERN lessons ──
+    try:
+        if getattr(run_memory, "enabled", False):
+            counts = run_memory.distill_and_write_lessons(
+                trajectory_path=build_attempt.trajectory_file,
+                final_status=build_outcome,
+            )
+            log_info(f"Lessons distilled to global KB: {counts}")
+            log_info(f"Run memory stats: {run_memory.stats()}")
+            run_memory.close()
+    except Exception as _mp_e:
+        log_info(f"Lesson distillation failed: {_mp_e}")
 
     close_file_log()
     log_info(f"Debug log saved to: {output_dir}/agent_debug_log.txt")

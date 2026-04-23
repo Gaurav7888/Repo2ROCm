@@ -538,3 +538,45 @@ class ReproductionResult:
     metric_deltas: Dict[str, float] = field(default_factory=dict)
     scaled: bool = False
     scale_factor: float = 1.0
+
+
+@dataclass
+class ExperimentCandidate:
+    """A candidate paper experiment considered for reproduction."""
+    name: str = ""
+    section: str = ""
+    expected_metric_name: str = ""
+    expected_metric_value: str = ""
+    expected_metric_units: str = ""
+    hardware: str = ""
+    est_runtime_minutes: float = 0.0
+    runtime_bucket: str = ""  # "small" | "medium" | "large"
+    paper_config: Dict[str, Any] = field(default_factory=dict)
+    suggested_command: str = ""
+    code_available: bool = False
+    matched_files: List[str] = field(default_factory=list)
+    tolerance_rule: str = ""  # free-form, e.g. "<=15% for speedups"
+    notes: str = ""
+    rank_score: float = 0.0
+    # New fields for smarter ranking (all optional, default-preserving).
+    metric_class: str = ""  # ratio_speedup | accuracy | quality | absolute_perf | other
+    is_baseline: bool = False  # True if this looks like a no-method baseline row
+    # Precise configuration extracted from the paper/README (all non-default
+    # flags the entry script needs to exhibit the paper's reported metric).
+    caveats: List[str] = field(default_factory=list)
+    # Flags from paper_config that the repo's entry script does NOT expose as
+    # CLI args — the runtime agent must work around these (code-edit or skip).
+    missing_flags: List[str] = field(default_factory=list)
+    # Short citation of where in the paper/README the config was found.
+    config_source: str = ""
+    # Repo config files (yaml/toml/json/cfg) that govern this experiment's
+    # hyperparameters. The runtime agent should read/override these instead of
+    # guessing values when the paper is ambiguous.
+    codebase_config_files: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "ExperimentCandidate":
+        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
