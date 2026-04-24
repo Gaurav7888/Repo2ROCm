@@ -583,6 +583,122 @@ def _build_code_snippets_summary(py_file_contents: Dict[str, str], max_chars: in
     return "\n".join(summaries)
 
 
+def _candidate_workloads(import_counts: Dict[str, int]) -> List[str]:
+    """Pick 3-5 plausible workloads from the catalog based on imports.
+
+    The synthesis prompt will see the full catalog, but the evidence-gathering
+    phase only fetches `dockerhub_tags` for a small candidate set so we don't
+    spam Docker Hub with one request per workload.
+    """
+    imp = {k.lower(): v for k, v in (import_counts or {}).items()}
+    cands: List[str] = []
+    if any(p in imp for p in ("sglang",)):
+        cands.append("sglang")
+    if any(p in imp for p in ("vllm",)):
+        cands.append("vllm")
+    if any(p in imp for p in ("deepspeed", "lightning", "pytorch_lightning",
+                              "accelerate", "megatron", "megatron_core")):
+        cands.append("pytorch-training")
+    if any(p in imp for p in ("jax", "flax")):
+        cands.append("jax")
+    if any(p in imp for p in ("tensorflow", "keras")):
+        cands.append("tensorflow")
+    if "torch" in imp or "pytorch" in imp:
+        if "pytorch" not in cands:
+            cands.append("pytorch")
+    if "pytorch" not in cands and not cands:
+        cands.append("pytorch")
+    seen: set = set()
+    out: List[str] = []
+    for c in cands:
+        if c in ROCM_IMAGE_CATALOG and c not in seen:
+            out.append(c)
+            seen.add(c)
+        if len(out) >= 5:
+            break
+    return out
+
+
+def _gather_image_evidence(import_counts: Dict[str, int],
+                            config_contents: Dict[str, str],
+                            llm: Optional[str]) -> str:
+    """Phase 1 of the researcher pattern: deterministic evidence gathering.
+
+    Returns a compact text block listing, per candidate workload:
+      - the live `dockerhub_tags` for its image repo
+      - the live `pypi_versions` for the candidate's defining package
+    Optionally appends a single deep_research note for niche frameworks.
+    """
+    lines: List[str] = ["## Live evidence (deterministic tools)"]
+    workloads = _candidate_workloads(import_counts)
+    if not workloads:
+        return ""
+
+    for wl in workloads:
+        entry = ROCM_IMAGE_CATALOG.get(wl)
+        if not entry:
+            continue
+        repo = entry["image"]
+        lines.append(f"\n### Workload candidate: {wl}  (image repo: {repo})")
+        try:
+            from tools.external_lookups import dockerhub_tags
+            body, rc = dockerhub_tags(repo, limit=6)
+            if rc == 0 and body:
+                for ln in body.splitlines()[:8]:
+                    if ln.strip():
+                        lines.append(f"  dockerhub_tags: {ln.strip()}")
+            else:
+                lines.append(f"  dockerhub_tags: lookup failed (rc={rc})")
+        except Exception as e:
+            lines.append(f"  dockerhub_tags: error {e}")
+
+    primary_pkgs: List[str] = []
+    imp = {k.lower(): v for k, v in (import_counts or {}).items()}
+    for cand in ("torch", "jax", "tensorflow", "vllm", "sglang", "deepspeed",
+                 "transformers"):
+        if cand in imp:
+            primary_pkgs.append(cand)
+        if len(primary_pkgs) >= 3:
+            break
+    for pkg in primary_pkgs:
+        try:
+            from tools.external_lookups import pypi_versions
+            body, rc = pypi_versions(pkg, limit=5)
+            if rc == 0 and body:
+                lines.append(f"\npypi_versions {pkg}:")
+                for ln in body.splitlines()[:6]:
+                    if ln.strip():
+                        lines.append(f"  {ln.strip()}")
+        except Exception:
+            pass
+
+    if llm and os.environ.get("AMD_LLM_API_KEY") and primary_pkgs:
+        primary = primary_pkgs[0]
+        try:
+            from agents.researcher import research
+            note = research(
+                f"Best AMD ROCm Docker image for a repository whose primary "
+                f"framework is `{primary}` in 2026. Mention concrete tags from "
+                f"`rocm/{primary}` or `rocm/pytorch` and any known caveats.",
+                llm=llm, budget_s=30.0, use_cache=True,
+            )
+            ans = (note.get("answer") or "").strip()
+            if ans:
+                lines.append("\nResearcher note (one-shot):")
+                lines.append(f"  {ans[:400]}")
+        except Exception:
+            pass
+
+    bounded: List[str] = []
+    used = 0
+    for line in lines:
+        if used + len(line) > 3500:
+            break
+        bounded.append(line)
+        used += len(line) + 1
+    return "\n".join(bounded)
+
+
 def _llm_select_rocm_image(
     import_counts: Dict[str, int],
     config_contents: Dict[str, str],
@@ -591,17 +707,21 @@ def _llm_select_rocm_image(
     llm: str,
 ) -> dict:
     """
-    Use the LLM to analyze the repository and select the best ROCm Docker image.
+    Two-phase researcher selection of the ROCm base image.
 
-    The LLM sees the full picture: imports with frequencies, dependency files,
-    README context, and code-level import patterns. It picks from the available
-    ROCM_IMAGE_CATALOG entries and explains its reasoning.
+    Phase 1 (deterministic): `_gather_image_evidence` runs `dockerhub_tags` and
+    `pypi_versions` for the most plausible candidate workloads/frameworks so
+    the synthesiser never has to invent live registry state.
+
+    Phase 2 (LLM synthesis): one round-trip that picks a workload from the
+    catalog given the evidence + repo signals.
 
     Returns dict with: image, tag, workload, description, reasoning
     """
     catalog_desc = _build_image_catalog_description()
     import_summary = _build_import_summary(import_counts)
     code_summary = _build_code_snippets_summary(py_file_contents)
+    evidence = _gather_image_evidence(import_counts, config_contents, llm)
 
     config_section = ""
     for fname, content in config_contents.items():
@@ -611,8 +731,18 @@ def _llm_select_rocm_image(
     if readme_content:
         readme_snippet = f"\n--- README (first 1500 chars) ---\n{readme_content[:1500]}\n"
 
+    evidence_block = ""
+    if evidence:
+        evidence_block = (
+            "\n## Live registry evidence (tool output, trust over training data)\n"
+            f"{evidence}\n"
+        )
+
     prompt = f"""\
 You are an expert build engineer selecting the best ROCm Docker base image for a repository.
+You receive (a) the catalog of available images, (b) the repo signals, and
+(c) live registry evidence gathered by deterministic tools moments ago.
+**Treat the live evidence as ground truth. Prefer it over any prior knowledge.**
 
 ## Available ROCm Docker Images
 
@@ -628,7 +758,7 @@ You are an expert build engineer selecting the best ROCm Docker base image for a
 {readme_snippet}
 ### Import statements from source files
 {code_summary}
-
+{evidence_block}
 ## Task
 
 Analyze the repository's PRIMARY framework. Look at:
@@ -636,10 +766,11 @@ Analyze the repository's PRIMARY framework. Look at:
 2. What the requirements.txt / setup.py actually lists as dependencies
 3. What the README describes the project as
 4. Whether a specialized image (sglang, vllm, megatron) is needed, or a general one
+5. Which candidate's image actually has live tags on Docker Hub (live evidence above)
 
 A repo might import multiple frameworks (e.g. both torch and jax) but typically one is the
 PRIMARY framework used for the core logic, and others are secondary/utility imports.
-Choose the image that matches the PRIMARY framework.
+Choose the image that matches the PRIMARY framework AND has live tags.
 
 IMPORTANT rules:
 - If the repo primarily uses PyTorch (torch) for training/inference without DeepSpeed/Megatron,
@@ -651,13 +782,14 @@ IMPORTANT rules:
 - Only select "vllm-dev" if the repo IS a fork of vLLM itself
 
 Respond with ONLY a JSON object (no markdown fences, no extra text):
-{{"workload": "<key from the catalog>", "reasoning": "<one paragraph explaining why>"}}"""
+{{"workload": "<key from the catalog>", "reasoning": "<one paragraph explaining why; cite the live evidence you used>"}}"""
 
     messages = [{"role": "user", "content": prompt}]
     try:
         response, usage = get_llm_response(llm, messages, temperature=0.1, max_tokens=512)
         if response and response[0]:
-            log_info(f"LLM image selection: {usage.get('total_tokens', 0)} tokens used")
+            log_info(f"LLM image selection: {usage.get('total_tokens', 0)} tokens used "
+                     f"(evidence chars={len(evidence)})")
             return _parse_image_selection_response(response[0])
     except Exception as e:
         log_warning(f"LLM image selection failed ({e}), falling back to heuristic")
@@ -1001,6 +1133,78 @@ def _build_rocm_migration_section(cuda_deps: List[str]) -> str:
     return "\n".join(lines)
 
 
+# ── planner-side external notes (PR-A/B/C) ──────────────────────────────────
+
+def _planner_external_notes(cuda_deps: List[str],
+                            base_image_name: str,
+                            llm: Optional[str] = None) -> List[str]:
+    """
+    Lightweight planner-side external research.
+
+    The planner itself is a one-shot LLM call, not a multi-turn tool-calling
+    agent. To still expose the same knowledge surface in planning, we
+    pre-compute a compact note from:
+      - deterministic lookups: `pypi_versions`, `dockerhub_tags`
+      - optional deep_research for the riskiest CUDA-ish deps (cached)
+    """
+    notes: List[str] = []
+
+    if base_image_name:
+        try:
+            from tools.external_lookups import dockerhub_tags
+            image_repo = base_image_name.split(":")[0]
+            body, rc = dockerhub_tags(image_repo, limit=4)
+            if rc == 0 and body:
+                lines = [ln for ln in body.splitlines()[:6] if ln.strip()]
+                notes.append("Docker Hub tags for chosen base image:")
+                notes.extend(lines)
+        except Exception:
+            pass
+
+    for dep in cuda_deps[:2]:
+        dep_norm = dep.replace("-", "_").lower()
+        try:
+            from tools.external_lookups import pypi_versions
+            body, rc = pypi_versions(dep_norm, limit=4)
+            if rc == 0 and body:
+                lines = [ln for ln in body.splitlines()[:6] if ln.strip()]
+                notes.append(f"PyPI versions for {dep_norm}:")
+                notes.extend(lines)
+        except Exception:
+            pass
+
+        if (
+            llm
+            and dep_norm in {"flash_attn", "bitsandbytes", "xformers", "triton"}
+            and os.environ.get("AMD_LLM_API_KEY")
+        ):
+            try:
+                from agents.researcher import research
+                note = research(
+                    f"What is the safest AMD ROCm installation or fallback strategy for "
+                    f"`{dep_norm}` in a PyTorch repository on ROCm 7.x? Include exact "
+                    f"commands if known.",
+                    llm=llm, budget_s=45.0, use_cache=True,
+                )
+                ans = (note.get("answer") or "").strip()
+                cmds = note.get("suggested_commands") or []
+                if ans:
+                    notes.append(f"Deep research note for {dep_norm}: {ans[:320]}")
+                for c in cmds[:3]:
+                    notes.append(f"Suggested command: {str(c)[:220]}")
+            except Exception:
+                pass
+
+    bounded: List[str] = []
+    used = 0
+    for line in notes:
+        if used + len(line) > 2500:
+            break
+        bounded.append(line)
+        used += len(line) + 1
+    return bounded
+
+
 # ── main planner ─────────────────────────────────────────────────────────────
 
 def generate_plan(repo_path: str, full_name: str, rocm_mode: bool = False,
@@ -1228,6 +1432,19 @@ def generate_plan(repo_path: str, full_name: str, rocm_mode: bool = False,
     sections.append(f"Framework: {framework}")
     sections.append(f"Top Imports: {', '.join(pkg for pkg, _ in top_imports[:15])}")
     sections.append("")
+
+    # ── External lookup notes (PR-A/B/C, planner-side) ──────────────────────
+    # The planner is not a multi-turn tool-calling agent, but we can still give
+    # it access to the same knowledge surface by precomputing a compact note.
+    ext_notes = _planner_external_notes(
+        cuda_deps=sorted(cuda_deps),
+        base_image_name=base_image_name if rocm_mode else "",
+        llm=llm,
+    )
+    if ext_notes:
+        sections.append("External Lookup Notes (cached, planner-side):")
+        sections.extend(f"  {line}" for line in ext_notes)
+        sections.append("")
 
     # ── Filtered requirements ────────────────────────────────────────────────
 

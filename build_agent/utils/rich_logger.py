@@ -128,10 +128,13 @@ def log_prompt_sent(messages, label="MESSAGES TO LLM"):
 
 def log_llm_response(response_text, llm_time, usage, multi_action_count=0):
     """Log the raw LLM response and metadata."""
+    token_label = str(usage.get("total_tokens", "?"))
+    if usage.get("estimated"):
+        token_label = f"~{token_label} (est.)"
     console.print(Panel(
         f"[bold green]LLM Response[/]  |  "
         f"Time: [cyan]{llm_time:.1f}s[/]  |  "
-        f"Tokens: [cyan]{usage.get('total_tokens', '?')}[/]  |  "
+        f"Tokens: [cyan]{token_label}[/]  |  "
         f"Bash blocks found: [{'red' if multi_action_count > 1 else 'green'}]{multi_action_count}[/]",
         style="green",
         box=box.ROUNDED,

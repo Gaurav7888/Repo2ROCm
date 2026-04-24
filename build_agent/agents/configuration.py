@@ -18,8 +18,10 @@ from agents.agent import Agent
 from utils.llm import get_llm_response
 from utils.agent_util import safe_cmd, extract_commands, append_trajectory, TIME_OUT_LABEL, extract_diffs, save_diff_description, DIFF_FENCE, BASH_FENCE, INIT_PROMPT, EDIT_PROMPT, HEAD, DIVIDER, UPDATED
 from utils.parser.parse_command import (
-    match_mem_recall, match_graphify_query,
+    match_mem_recall, match_paper_recall, match_graphify_query,
     match_pypi_versions, match_dockerhub_tags,
+    match_web_search, match_visit_url,
+    match_deep_research, match_verify_paper_result,
 )
 from utils.tools_config import Tools
 from utils.split_cmd import split_cmd_statements
@@ -124,11 +126,16 @@ class Configuration(Agent):
         # Track Stage-1 compaction savings for diagnostics.
         self._compaction_orig_chars = 0
         self._compaction_short_chars = 0
-        # Stage 5b + PR-A: track in-loop retrieval-tool usage.
+        # Stage 5b + PR-A + PR-B + PR-C: track in-loop retrieval-tool usage.
         self._mem_recall_calls = 0
+        self._paper_recall_calls = 0
         self._graphify_query_calls = 0
         self._pypi_versions_calls = 0
         self._dockerhub_tags_calls = 0
+        self._web_search_calls = 0
+        self._visit_url_calls = 0
+        self._deep_research_calls = 0
+        self._verify_paper_calls = 0
         # Stage 3: track latest activity to use as retrieval query for the appendix.
         self._last_action_text = ""
         self._last_obs_short = ""
@@ -136,6 +143,24 @@ class Configuration(Agent):
         # Stage 3 diagnostics
         self._appendix_old_chars = 0
         self._appendix_new_chars = 0
+        # Stage 2 paper-discipline guard: require retrieval before raw PDF reads.
+        self._paper_retrieval_used = False
+        # ── Hard-guard state (PR: tool-calling is a constraint, not advice) ──
+        # `_verifier_records` keeps the most-recent structured JSON the
+        # `verify_paper_result` tool produced, keyed by log path. The paper
+        # marker handler refuses to emit a verdict that has not been backed by
+        # a verifier record from THIS run.
+        self._verifier_records: dict = {}
+        # `_dockerhub_tags_seen`: set of image repos for which we have already
+        # observed a successful `dockerhub_tags` lookup. The hard guard
+        # blocks `change_base_image <repo>:<tag>` until we've checked.
+        self._dockerhub_tags_seen: set = set()
+        # `_pypi_versions_seen`: same idea for `pip install` of CUDA-only wheels.
+        self._pypi_versions_seen: set = set()
+        # `_gpu_check_seen`: True after the agent ran a successful
+        # `torch.cuda.is_available()` / `rocm-smi` check. Required before
+        # echoing `ROCM_ENV_VERIFIED`.
+        self._gpu_check_seen: bool = False
 
         # ── STAGE 2 (paper reproduction) state ───────────────────────────────
         self.reproduce_results = bool(reproduce_results)
@@ -166,12 +191,30 @@ class Configuration(Agent):
         # Stage 5b: only advertise retrieval tools when their backends are wired.
         if self.run_memory is not None and getattr(self.run_memory, "enabled", False):
             self.tool_lib.append(Tools.mem_recall)
+            self.tool_lib.append(Tools.paper_recall)
         if self.graphify_provider is not None and getattr(self.graphify_provider, "enabled", False):
             self.tool_lib.append(Tools.graphify_query)
         # PR-A: external lookups always available (pure-stdlib HTTP, soft-fail).
         self.tool_lib.append(Tools.pypi_versions)
         self.tool_lib.append(Tools.dockerhub_tags)
+        # PR-B: web search + URL fetcher (uses `ddgs` when available, soft-fail).
+        self.tool_lib.append(Tools.web_search)
+        self.tool_lib.append(Tools.visit_url)
+        # PR-C: deep_research sub-agent (composes web_search + visit_url + …).
+        self.tool_lib.append(Tools.deep_research)
+        # Stage-2 deterministic verifier (only meaningful when reproducing a paper).
+        if self.reproduce_results:
+            self.tool_lib.append(Tools.verify_paper_result)
         self.image_name = image_name
+        # The planner already validated the initial image's tags; treat its
+        # repo as "seen" so the agent isn't asked to re-look it up just to
+        # change to a different tag of the same repo.
+        try:
+            init_repo = (image_name or "").split(":", 1)[0].strip().lower()
+            if init_repo:
+                self._dockerhub_tags_seen.add(init_repo)
+        except Exception:
+            pass
         self.outer_commands = list()
         tools_list = ""
         for tool in self.tool_lib:
@@ -205,7 +248,7 @@ class Configuration(Agent):
             try:
                 rooms = mr.get("rooms") or (
                     "commands_success", "commands_failed", "fixes",
-                    "decisions", "patches", "plan", "paper_extracts",
+                    "decisions", "patches", "plan", "experiment_state", "context_refs",
                 )
                 if isinstance(rooms, list):
                     rooms = tuple(rooms)
@@ -225,12 +268,62 @@ class Configuration(Agent):
                         "question. Either rephrase, broaden --rooms, or proceed "
                         "without memory hints.\n"
                     )
+                if self._stage2_active:
+                    self._paper_retrieval_used = True
                 msg = f"Running `{command}`...\n" + pack
                 return msg, 0
             except Exception as e:
                 return f"mem_recall failed: {e}\n", 1
 
-        # graphify_query
+        # paper_recall
+        pr = match_paper_recall(command)
+        if pr != -1:
+            self._paper_recall_calls += 1
+            try:
+                budget = int(pr.get("budget", 1500))
+                # 1) Static paper corpus from graphify
+                paper_pack = ""
+                if self.graphify_provider is not None and getattr(self.graphify_provider, "enabled", False):
+                    paper_pack = self.graphify_provider.query_paper(
+                        pr["question"],
+                        token_budget=max(800, (budget * 2) // 3),
+                        max_chunks=6,
+                        per_chunk_max_chars=1500,
+                    ) or ""
+                # 2) Dynamic run-state / references from mempalace
+                state_pack = ""
+                if self.run_memory is not None and getattr(self.run_memory, "enabled", False):
+                    state_pack = self.run_memory.recall_pack(
+                        pr["question"],
+                        rooms=("paper_experiments", "experiment_state", "context_refs", "plan", "decisions"),
+                        n_per_room=4,
+                        token_budget=max(400, budget // 2),
+                        header="PAPER RUN STATE (choices, refs, decisions)",
+                    ) or ""
+                pack = (paper_pack or "") + (state_pack or "")
+                if pr.get("use_global"):
+                    if self.run_memory is not None and getattr(self.run_memory, "enabled", False):
+                        g = self.run_memory.recall_global_lessons(
+                            pr["question"],
+                            rooms=("dont", "do", "pattern"),
+                            n_per_room=3,
+                            token_budget=max(400, budget // 3),
+                            header="CROSS-RUN PAPER/ROCm LESSONS",
+                        ) or ""
+                        pack = pack + g
+                if not pack.strip():
+                    pack = (
+                        "paper_recall: no relevant paper context found from graphify or run-state references. "
+                        "Try a more specific paper question (metric, experiment name, hyperparameter), "
+                        "or use `deep_research`.\n"
+                    )
+                self._paper_retrieval_used = True
+                msg = f"Running `{command}`...\n" + pack
+                return msg, 0
+            except Exception as e:
+                return f"paper_recall failed: {e}\n", 1
+
+        # graphify_query (now scope-aware: code | paper | both)
         gq = match_graphify_query(command)
         if gq != -1:
             self._graphify_query_calls += 1
@@ -241,14 +334,35 @@ class Configuration(Agent):
                     "grep/find on /repo.\n"
                 ), 1
             try:
-                snippet = self.graphify_provider.query(
-                    gq["question"], token_budget=int(gq.get("budget", 1500)),
-                ) or ""
-                if not snippet.strip():
+                budget = int(gq.get("budget", 1500))
+                scope = (gq.get("scope") or "code").lower()
+                question = gq["question"]
+                blocks: list = []
+                if scope in ("code", "both"):
+                    code_snip = self.graphify_provider.query(
+                        question, token_budget=(budget if scope == "code" else max(800, (budget * 2) // 3)),
+                    ) or ""
+                    if code_snip.strip():
+                        blocks.append(code_snip)
+                if scope in ("paper", "both"):
+                    paper_snip = self.graphify_provider.query_paper(
+                        question,
+                        token_budget=(budget if scope == "paper" else max(800, budget // 2)),
+                        max_chunks=6,
+                        per_chunk_max_chars=1500,
+                    ) or ""
+                    if paper_snip.strip():
+                        blocks.append(paper_snip)
+                snippet = "\n".join(blocks).strip()
+                if not snippet:
                     snippet = (
-                        "graphify_query: no nodes matched. Try different terms, "
-                        "or fall back to grep/find on /repo.\n"
+                        f"graphify_query (--scope {scope}): no nodes matched. "
+                        "Try different terms, change scope, or fall back to grep/find on /repo.\n"
                     )
+                # When the paper corpus was queried we satisfy the Stage 2
+                # paper-discipline guard. Pure-code queries don't.
+                if scope in ("paper", "both") and self._stage2_active:
+                    self._paper_retrieval_used = True
                 msg = f"Running `{command}`...\n" + snippet
                 return msg, 0
             except Exception as e:
@@ -278,6 +392,372 @@ class Configuration(Agent):
             except Exception as e:
                 return f"dockerhub_tags failed: {e}\n", 1
 
+        # PR-B: web_search
+        ws = match_web_search(command)
+        if ws != -1:
+            self._web_search_calls += 1
+            try:
+                from tools.web_search import web_search as _ws
+                body, rc = _ws(ws["query"], max_results=int(ws.get("max_results", 5)))
+                if self._stage2_active and rc == 0:
+                    self._paper_retrieval_used = True
+                msg = f"Running `{command}`...\n" + body
+                return msg, rc
+            except Exception as e:
+                return f"web_search failed: {e}\n", 1
+
+        # PR-B: visit_url
+        vu = match_visit_url(command)
+        if vu != -1:
+            self._visit_url_calls += 1
+            try:
+                from tools.web_search import visit_url as _vu
+                body, rc = _vu(vu["url"], max_chars=int(vu.get("max_chars", 8000)))
+                if self._stage2_active and rc == 0:
+                    self._paper_retrieval_used = True
+                msg = f"Running `{command}`...\n" + body
+                return msg, rc
+            except Exception as e:
+                return f"visit_url failed: {e}\n", 1
+
+        # Stage-2 deterministic verifier (called BEFORE the marker line).
+        vp = match_verify_paper_result(command)
+        if vp != -1:
+            self._verify_paper_calls += 1
+            try:
+                from tools.verify_paper_result import verify_paper_result as _vpr
+                # If the LLM did not pass --metric, fill from the chosen
+                # experiment's primary metrics (preferred) or the legacy single
+                # `expected_metric_name` / `expected_metric_value` fields.
+                metrics = list(vp.get("metrics") or [])
+                if not metrics and self.paper_experiments:
+                    chosen = self.paper_experiments[0]
+                    if not isinstance(chosen, dict):
+                        try:
+                            chosen = chosen.to_dict()
+                        except Exception:
+                            chosen = {}
+                    primary = chosen.get("primary_metrics") or []
+                    if primary:
+                        for pm in primary:
+                            if isinstance(pm, dict) and pm.get("name"):
+                                metrics.append({
+                                    "name": pm["name"],
+                                    "expected_value": pm.get("expected_value")
+                                        if pm.get("expected_value") is not None
+                                        else pm.get("value"),
+                                    "tolerance": pm.get("tolerance") or "",
+                                    "direction": pm.get("direction") or "",
+                                })
+                    elif chosen.get("expected_metric_name"):
+                        metrics.append({
+                            "name": chosen["expected_metric_name"],
+                            "expected_value": chosen.get("expected_metric_value"),
+                            "tolerance": chosen.get("tolerance_rule") or "",
+                            "direction": "",
+                        })
+
+                # Resolve /repo/<x> log paths to a host path so we can read
+                # them without a docker exec round-trip.
+                log_path = vp.get("log_path") or ""
+                if log_path.startswith("/repo/"):
+                    host_repo = (
+                        f"{self.root_dir}/utils/repo/{self.full_name}/repo"
+                    )
+                    os.environ["REPO2ROCM_HOST_REPO_PATH"] = host_repo
+                    # Try to copy the log out of the container first; the
+                    # sandbox is already running, so a docker cp is the
+                    # safest way to see it from the host.
+                    try:
+                        cont_id = getattr(self.sandbox, "container", None)
+                        cont_id = getattr(cont_id, "id", None) or ""
+                        host_target = os.path.join(
+                            host_repo, log_path[len("/repo/"):]
+                        )
+                        if cont_id:
+                            import subprocess as _sp
+                            _sp.run(
+                                ["docker", "cp",
+                                 f"{cont_id}:{log_path}",
+                                 host_target],
+                                check=False, capture_output=True, timeout=30,
+                            )
+                    except Exception:
+                        pass
+
+                body, rc, record = _vpr(
+                    log_path=log_path,
+                    metrics=metrics,
+                    tolerance=vp.get("tolerance") or "",
+                    direction=vp.get("direction") or "",
+                )
+                if log_path:
+                    self._verifier_records[log_path] = record
+                if self._stage2_active:
+                    self._paper_retrieval_used = True
+                msg = f"Running `{command}`...\n" + body
+                return msg, rc
+            except Exception as e:
+                return f"verify_paper_result failed: {e}\n", 1
+
+        # PR-C: deep_research (sub-agent)
+        dr = match_deep_research(command)
+        if dr != -1:
+            self._deep_research_calls += 1
+            try:
+                from agents.researcher import research, format_for_observation
+                note = research(
+                    dr["question"],
+                    llm=self.model,
+                    max_turns=int(dr.get("max_turns", 6)),
+                    budget_s=float(dr.get("budget_s", 90.0)),
+                    use_cache=bool(dr.get("use_cache", True)),
+                )
+                if self._stage2_active:
+                    self._paper_retrieval_used = True
+                msg = f"Running `{command}`...\n" + format_for_observation(note)
+                rc = 0 if (note.get("confidence", 0) > 0 or note.get("_cache_hit")) else 1
+                return msg, rc
+            except Exception as e:
+                return f"deep_research failed: {e}\n", 1
+
+        return None
+
+    # ── Hard guards: turn tool-calling from advice into a constraint ─────────
+    #
+    # Each guard returns (observation_text, return_code) just like
+    # `_maybe_run_retrieval_tool`. Returning None means "no guard fired,
+    # continue to sandbox dispatch".
+
+    # CUDA-only wheels we never want pip-installed without first checking
+    # PyPI. Maintained intentionally short — anything not on this list still
+    # passes through.
+    _CUDA_ONLY_WHEELS = (
+        "flash-attn", "flash_attn", "bitsandbytes", "xformers",
+        "nvidia-pyindex", "nvidia-cublas-cu11", "nvidia-cudnn-cu11",
+        "deepspeed", "apex", "cupy",
+    )
+
+    @staticmethod
+    def _command_first_token(command: str) -> str:
+        if not command:
+            return ""
+        return command.strip().split(None, 1)[0].lower()
+
+    @staticmethod
+    def _extract_pip_install_packages(command: str):
+        """Return the package names mentioned by a `pip install ...` command.
+
+        Best-effort: strips flags, version specifiers, URLs, and -r/-c file
+        forms. Returns lowercase short names.
+        """
+        if not command or "pip" not in command.lower():
+            return []
+        # only react to actual install verbs
+        m = re.search(r"\bpip\d?\s+install\b(.*)$", command, re.IGNORECASE)
+        if not m:
+            return []
+        rest = m.group(1)
+        out: list = []
+        for tok in re.split(r"\s+", rest.strip()):
+            if not tok or tok.startswith("-"):
+                continue
+            if tok.startswith(("http://", "https://", "git+", "file://", ".", "/")):
+                continue
+            # split off the version specifier
+            name = re.split(r"[<>=!~\[]", tok, maxsplit=1)[0].strip()
+            if name:
+                out.append(name.lower())
+        return out
+
+    def _maybe_run_hard_guard(self, command: str):
+        """Run the policy guards. Returns (obs, rc) or None to fall through."""
+        if not command:
+            return None
+        c = command.strip()
+        first = self._command_first_token(c)
+
+        # Guard A: change_base_image must be preceded by a successful
+        # `dockerhub_tags <repo>` lookup so the LLM can't invent a stale tag.
+        if first == "change_base_image":
+            target = c[len("change_base_image"):].strip().lower()
+            repo = target.split(":", 1)[0]
+            if repo and repo not in self._dockerhub_tags_seen:
+                return (
+                    "Hard guard: `change_base_image` requires a recent "
+                    f"`dockerhub_tags {repo}` lookup BEFORE switching, so the "
+                    "tag you pick is one Docker Hub actually serves. Run:\n"
+                    f"    dockerhub_tags {repo} --limit 8\n"
+                    "Then re-issue the change_base_image command with a tag "
+                    "from that list. (If the repo is one of the canonical "
+                    "rocm/* images, prefer `rocm/pytorch:latest` as a default.)"
+                ), 1
+
+        # Guard B: pip install <CUDA-only wheel> must be preceded by a
+        # `pypi_versions <pkg>` lookup so the agent picks an installable
+        # version rather than the latest CUDA-only build.
+        for pkg in self._extract_pip_install_packages(c):
+            for risky in self._CUDA_ONLY_WHEELS:
+                if pkg == risky.lower() and risky.lower() not in self._pypi_versions_seen:
+                    return (
+                        f"Hard guard: `pip install {pkg}` is high-risk on "
+                        "ROCm because PyPI ships CUDA-only wheels for it. "
+                        "Run `pypi_versions " + pkg + " --limit 8` first "
+                        "(zero LLM cost; cached) and pick a version that "
+                        "matches your ROCm torch, OR follow the CUDA-to-ROCm "
+                        "mapping in the system prompt (e.g. flash-attn "
+                        "Triton-AMD install)."
+                    ), 1
+
+        # Guard C: ROCM_ENV_VERIFIED requires that we have observed at least
+        # one successful GPU-availability check in this run. The check itself
+        # is detected opportunistically by `_maybe_record_gpu_check` after
+        # every sandbox execution.
+        if (self.rocm_mode and not self._stage2_active
+                and "ROCM_ENV_VERIFIED" in c
+                and not self._gpu_check_seen):
+            return (
+                "Hard guard: do NOT echo `ROCM_ENV_VERIFIED` until you have "
+                "verified GPU access in this run. Either run:\n"
+                "    rocm-smi\n"
+                "or:\n"
+                "    python -c \"import torch; assert torch.cuda.is_available(); "
+                "print('GPU OK', torch.cuda.get_device_name(0))\"\n"
+                "and confirm the output mentions a real device. Then re-issue "
+                "the ROCM_ENV_VERIFIED echo."
+            ), 1
+
+        # Guard D: PAPER_RESULT_* markers require a successful verify_paper_result
+        # in THIS run that covered the same log file the marker references.
+        if self._stage2_active and (
+            "PAPER_RESULT_REPRODUCED" in c or "PAPER_RESULT_NOT_REPRODUCED" in c
+        ):
+            if not self._verifier_records:
+                return (
+                    "Hard guard: do NOT echo a PAPER_RESULT_* marker until you "
+                    "have first run the deterministic verifier in this turn or "
+                    "a previous turn. Run:\n"
+                    "    verify_paper_result --log /repo/paper_experiment.log\n"
+                    "(metric/tolerance default to the chosen experiment's "
+                    "primary metrics). The verifier prints the JSON you must "
+                    "echo. Do NOT invent numbers."
+                ), 1
+
+        return None
+
+    def _maybe_record_gpu_check(self, command: str, observation: str,
+                                 return_code: int) -> None:
+        """Detect a successful GPU check and remember it for the env guard."""
+        if self._gpu_check_seen or return_code != 0:
+            return
+        c = (command or "").lower()
+        o = observation or ""
+        triggers = (
+            "rocm-smi" in c,
+            "torch.cuda.is_available" in c,
+            "torch.cuda.get_device_name" in c,
+        )
+        if not any(triggers):
+            return
+        positive = (
+            "True" in o
+            or re.search(r"GPU\s*\[\s*\d+\s*\]", o)
+            or "Device " in o
+            or "rocm-smi" in o.lower() and "no devices" not in o.lower()
+        )
+        if positive:
+            self._gpu_check_seen = True
+
+    def _maybe_record_external_lookup(self, command: str, return_code: int) -> None:
+        """Track `dockerhub_tags` / `pypi_versions` calls so the guard relaxes."""
+        if return_code != 0 or not command:
+            return
+        c = command.strip()
+        if c.lower().startswith("dockerhub_tags"):
+            m = re.match(r"^\s*dockerhub_tags\s+([A-Za-z0-9._\-/]+)", c, re.IGNORECASE)
+            if m:
+                self._dockerhub_tags_seen.add(m.group(1).strip().lower())
+        elif c.lower().startswith("pypi_versions"):
+            m = re.match(r"^\s*pypi_versions\s+([A-Za-z0-9._\-]+)", c, re.IGNORECASE)
+            if m:
+                self._pypi_versions_seen.add(m.group(1).strip().lower())
+
+    def _is_raw_paper_read_command(self, command: str) -> bool:
+        """Detect direct shell reads of `/repo/paper.pdf`.
+
+        Stage 2 should prefer `paper_recall`, `graphify_query`, `web_search`,
+        `visit_url`, or `deep_research` first. Direct PDF reads remain allowed
+        after at least one retrieval attempt, because sometimes the agent truly
+        needs a verbatim passage.
+        """
+        if not command:
+            return False
+        c = command.strip().lower()
+        if "/repo/paper.pdf" not in c:
+            return False
+        # Common raw-read patterns seen in logs
+        raw_read_markers = (
+            "pdftotext",          # pdftotext -layout /repo/paper.pdf - | head -c ...
+            "fitz.open(",         # python -c "import fitz; fitz.open('/repo/paper.pdf')..."
+            "open('/repo/paper.pdf'",
+            'open("/repo/paper.pdf"',
+            "python -c",          # broader, but gated by /repo/paper.pdf above
+            "python3 -c",
+        )
+        return any(m in c for m in raw_read_markers)
+
+    @staticmethod
+    def _extract_paper_marker(text: str):
+        """Extract a REAL `echo PAPER_RESULT_*` marker line from `text`.
+
+        Returns ``(verdict, line)`` where ``verdict`` is ``"reproduced"`` or
+        ``"not_reproduced"`` and ``line`` is the stripped echo invocation.
+        Returns ``None`` if no concrete marker is present.
+
+        We deliberately ignore lines that are clearly system-prompt or plan
+        templates (e.g. ``9. `echo PAPER_RESULT_REPRODUCED metric=<name>
+        actual=<v> ...```), shell help text (``echo PAPER_RESULT_REPRODUCED
+        metric=<name>``), or any line whose payload still contains
+        unsubstituted placeholders. This prevents a Stage-2 verdict from
+        firing on the LLM merely echoing the workflow template back to us.
+        """
+        if not text:
+            return None
+        # Match any `<...>` placeholder, including ones with spaces or
+        # hyphens (e.g. `<one-line reason>`, `<name>`, `<v>`). We also
+        # treat angle-bracketed `[...]` placeholders as templates.
+        placeholder_re = re.compile(r"<[^<>\n]{1,40}>|\[[A-Z][A-Z0-9_ -]{1,30}\]")
+        # We require an `echo` (or `printf`) at the start of a real shell
+        # command line. Strip common shell punctuation / list-item bullets.
+        bullet_re = re.compile(r"^\s*(?:[-*+>]|\d+[.)]|`{1,3})?\s*")
+        # Only accept lines that START with `echo` (or printf) followed by
+        # the marker, to filter out narrative / template references.
+        echo_re = re.compile(
+            r"""^\s*(?:echo|printf)\s+
+                (?:["']?)
+                (PAPER_RESULT_(?:REPRODUCED|NOT_REPRODUCED))
+                \b""",
+            re.IGNORECASE | re.VERBOSE,
+        )
+        for raw in text.splitlines():
+            # Peel off list-item bullets like "9.", "- ", "* ", "> ", etc.
+            stripped = bullet_re.sub("", raw, count=1)
+            # Some agents wrap the echo in backticks: `echo PAPER_RESULT_...`
+            stripped = stripped.lstrip("`").rstrip("`").strip()
+            m = echo_re.match(stripped)
+            if not m:
+                continue
+            payload = stripped[m.end():]
+            # Reject template echoes that still carry placeholders like
+            # `<name>`, `<v>`, `<x>`, `<reason>`.
+            if placeholder_re.search(payload):
+                continue
+            verdict = (
+                "reproduced"
+                if m.group(1).upper() == "PAPER_RESULT_REPRODUCED"
+                else "not_reproduced"
+            )
+            return verdict, stripped
         return None
 
     def _build_system_prompt(self, tools_list):
@@ -337,13 +817,18 @@ Use `pipdeptree -p <pkg>` to inspect dependencies. Use `pip index versions <pkg>
 For import errors, check if the module exists in /repo before pip installing externally.
 Do not use `git clone` or `wget` to download large files into /repo.
 
-WHEN TO USE RETRIEVAL TOOLS (mem_recall / graphify_query / pypi_versions / dockerhub_tags, if listed above):
-- BEFORE retrying a command that just failed, run `mem_recall "the failing command + error class"` to see if a previous turn (or a past run via --global) already solved this. Do NOT repeat a known-bad action.
-- BEFORE running `find -name`/`grep -r` to locate code, run `graphify_query "what you're looking for"` — it returns ranked symbols and file:line locations in one step.
-- BEFORE picking hyperparameters or env vars, run `mem_recall "<topic>" --rooms plan,paper_extracts,decisions` to ground in plan + paper.
-- BEFORE pinning a CUDA-only wheel (flash-attn, bitsandbytes, xformers, triton, etc.), run `pypi_versions <pkg>` to find the actual version that is currently installable. Pinning a stale version is a top failure mode.
-- BEFORE calling `change_base_image`, run `dockerhub_tags <image>` to pick a real currently-published tag. The static catalog can go stale; recently-updated tags reflect the AMD ROCm version + Python + PyTorch that is supported TODAY.
-- All four tools are free (local + cached). Use them whenever you would otherwise guess.
+WHEN TO USE RETRIEVAL TOOLS (in escalating order of cost; all cached):
+1. **mem_recall** "<failing command + error class>" — local memory; ~free. Always FIRST after a failure. Add `--global` to also pull cross-run lessons (do/dont/pattern).
+2. **graphify_query** "<symbol or behavior you need>" — local code graph; ~free. Use INSTEAD of `find -name` / `grep -r`. Returns ranked file:line locations.
+3. **paper_recall** "<question>" — graphify paper index + run-state references (`paper_experiments`, `experiment_state`, `context_refs`, `plan`, `decisions`). Use this BEFORE reading `/repo/paper.pdf` directly.
+4. **mem_recall "<topic>" --rooms plan,experiment_state,context_refs,decisions** — ground hyperparameters / env vars in the planner output and run-state references. ~free.
+5. **pypi_versions** <pkg> — local network ~1s. BEFORE pinning a CUDA-only wheel (flash-attn, bitsandbytes, xformers, triton). Returns currently-installable versions + dates.
+6. **dockerhub_tags** <image> — local network ~1s. BEFORE `change_base_image`. Returns the actually-published tags for `rocm/pytorch`, `rocm/vllm`, etc.
+7. **web_search** "<query>" — DDG search ~2s. Use AFTER (1)–(6) come up empty. Best for niche errors: SDPA tensor-shape mismatches, undefined-symbol HIP errors, transformers-vs-torch version dances. Returns top-N hits with snippets.
+8. **visit_url** <url> — fetch ~2s. Use AFTER `web_search` to read a specific GitHub issue / ROCm doc / blog post that promises an answer. Strips HTML to readable markdown.
+9. **deep_research** "<question>" — bounded sub-agent loop (~30–90s, 4–6 internal LLM calls). Use when single-round `web_search`+`visit_url` won't crack the problem in one round (multi-version dependency dances, deep stack traces from libraries you've never seen, "what's the right ROCm install for this repo+gpu" composite questions). The sub-agent itself runs `mem_recall --global`, `web_search`, `visit_url`, `pypi_versions`, `dockerhub_tags` iteratively and returns ONE compact answer + cited URLs + verified install commands. You spend exactly ONE turn; it does the rest. Cached 14 days.
+
+**Always prefer retrieval over guessing.** A `mem_recall` + `web_search` round costs <2 LLM tokens to invoke and saves ~5–25 turns of trial-and-error rollback. `deep_research` is the heavy hammer for problems that justify ~60s of background work.
 
 {INIT_PROMPT}
 {EDIT_PROMPT}
@@ -591,6 +1076,17 @@ STAGE 2 - PAPER RESULT REPRODUCTION (only after ROCM_ENV_VERIFIED):
             lines.append(f"Paper PDF: {self.paper_pdf_path} (also at /repo/paper.pdf inside the container)")
         lines.append("")
         lines.append("ROCm Stage 1 is complete. Do NOT echo ROCM_ENV_VERIFIED again.")
+        lines.append("IMPORTANT TOOL DISCIPLINE FOR STAGE 2:")
+        lines.append("  Do NOT read /repo/paper.pdf directly as your first move.")
+        lines.append("  Static paper content is indexed in graphify; dynamic experiment choices /")
+        lines.append("  references live in memory. `paper_recall` merges both.")
+        lines.append("  FIRST use retrieval tools in this order:")
+        lines.append("    1. paper_recall \"what metric / experiment / hyperparameters do I need?\"")
+        lines.append("    2. graphify_query \"where in the code/config is this experiment wired?\"")
+        lines.append("    3. web_search / visit_url for paper claims or niche runtime issues")
+        lines.append("    4. deep_research if a one-shot search will not be enough")
+        lines.append("  Only after at least one retrieval attempt may you read /repo/paper.pdf directly.")
+        lines.append("")
         lines.append("You MUST now run ONE paper experiment and verify its results match the")
         lines.append("paper's reported value. Then echo exactly ONE of:")
         lines.append("  echo PAPER_RESULT_REPRODUCED metric=<name> actual=<v> expected=<v> delta_pct=<x>")
@@ -811,35 +1307,87 @@ STAGE 2 - PAPER RESULT REPRODUCTION (only after ROCM_ENV_VERIFIED):
         """Record the STAGE 2 verdict, persist artefacts, and log it.
 
         `text` is the source string containing one of the PAPER_RESULT_* tokens
-        (either the LLM-produced command or the sandbox output)."""
-        reproduced_line = ""
-        not_reproduced_line = ""
-        for line in (text or "").splitlines():
-            if "PAPER_RESULT_REPRODUCED" in line and not reproduced_line:
-                reproduced_line = line.strip()
-            elif "PAPER_RESULT_NOT_REPRODUCED" in line and not not_reproduced_line:
-                not_reproduced_line = line.strip()
+        (either the LLM-produced command or the sandbox output).
 
-        if reproduced_line:
-            verdict = "reproduced"
-            marker_line = reproduced_line
-        elif not_reproduced_line:
-            verdict = "not_reproduced"
-            marker_line = not_reproduced_line
+        Trust hierarchy (strict):
+          1. `verifier` (deterministic `verify_paper_result`) — always wins.
+          2. LLM-issued marker — accepted as a DECLARATION, never as evidence.
+             - LLM `not_reproduced` without a verifier ⇒ accepted (admitting
+               failure does not need verification).
+             - LLM `reproduced` without a verifier ⇒ REFUSED. Downgraded to
+               `not_reproduced` with reason `verifier_never_called`. This is
+               the guard that prevents a Stage-2 success from being claimed
+               by simply echoing the workflow template.
+        """
+        marker = self._extract_paper_marker(text)
+        if marker is not None:
+            llm_verdict, marker_line = marker
         else:
-            verdict = "unknown"
+            llm_verdict = "unknown"
             marker_line = ""
 
-        self._paper_verdict = verdict
+        reproduced_line = marker_line if llm_verdict == "reproduced" else ""
+        not_reproduced_line = marker_line if llm_verdict == "not_reproduced" else ""
+
+        # Pick the most recent verifier record (we don't try to be clever
+        # about matching log paths because there is normally only one).
+        verifier_record = None
+        verifier_log_path = ""
+        if self._verifier_records:
+            verifier_log_path = list(self._verifier_records.keys())[-1]
+            verifier_record = self._verifier_records[verifier_log_path]
+
+        verifier_verdict = (verifier_record or {}).get("verdict", "")
+
+        # Reconcile LLM marker with the verifier under the strict trust
+        # hierarchy described in the docstring.
+        verdict_source = "llm_marker"
+        downgrade_reason = ""
+        if verifier_verdict in ("reproduced", "not_reproduced"):
+            if llm_verdict in ("reproduced", "not_reproduced") and llm_verdict != verifier_verdict:
+                # Marker disagrees with deterministic verifier. Trust the
+                # verifier — this is the EARTH-style "RMSE better but PCC much
+                # worse" failure mode the verifier exists to catch.
+                final_verdict = verifier_verdict
+                verdict_source = "verifier_overrode_llm"
+            else:
+                final_verdict = verifier_verdict
+                verdict_source = "verifier"
+        elif llm_verdict == "reproduced":
+            # SUCCESS without verifier evidence is not allowed. Downgrade.
+            final_verdict = "not_reproduced"
+            verdict_source = "downgraded_no_verifier"
+            downgrade_reason = (
+                "LLM emitted PAPER_RESULT_REPRODUCED but never called "
+                "verify_paper_result; success requires deterministic "
+                "verification of metric values against the paper."
+            )
+            # Surface the downgrade in the persisted not_reproduced_line so
+            # downstream success-report explanations are explicit.
+            not_reproduced_line = (
+                f"DOWNGRADED from REPRODUCED (no verifier): {marker_line}"
+                if marker_line else
+                "DOWNGRADED from REPRODUCED (no verifier and no concrete marker)"
+            )
+            reproduced_line = ""
+        elif llm_verdict == "not_reproduced":
+            # Admitting failure without a verifier is fine.
+            final_verdict = "not_reproduced"
+            verdict_source = "llm_marker_unverified"
+        else:
+            final_verdict = "unknown"
+            verdict_source = "no_marker_no_verifier"
+
+        self._paper_verdict = final_verdict
         self._paper_result_line = marker_line
 
         out_dir = f'{self.root_dir}/output/{self.full_name}'
         os.makedirs(out_dir, exist_ok=True)
 
         test_lines = ["ROCM_ENV_VERIFIED"]
-        if verdict == "reproduced":
+        if final_verdict == "reproduced":
             test_lines.append("PAPER_RESULT_REPRODUCED")
-        elif verdict == "not_reproduced":
+        elif final_verdict == "not_reproduced":
             test_lines.append("PAPER_RESULT_NOT_REPRODUCED")
         try:
             with open(f'{out_dir}/test.txt', 'w') as w:
@@ -855,7 +1403,11 @@ STAGE 2 - PAPER RESULT REPRODUCTION (only after ROCM_ENV_VERIFIED):
                 chosen = {}
 
         record = {
-            "verdict": verdict,
+            "verdict": final_verdict,
+            "verdict_source": verdict_source,
+            "downgrade_reason": downgrade_reason,
+            "llm_marker_verdict": llm_verdict,
+            "verifier_verdict": verifier_verdict,
             "paper_title": self.paper_title,
             "paper_pdf_path": self.paper_pdf_path,
             "chosen_experiment": chosen,
@@ -865,11 +1417,42 @@ STAGE 2 - PAPER RESULT REPRODUCTION (only after ROCM_ENV_VERIFIED):
             ] if self.paper_experiments else [],
             "reproduced_line": reproduced_line,
             "not_reproduced_line": not_reproduced_line,
+            "verifier": verifier_record or {},
+            "verifier_log_path": verifier_log_path,
             "source": "configuration_agent_stage2",
         }
+
+        # Build & embed the SuccessReport so downstream tooling has a single
+        # numeric handle for every run.
+        try:
+            from storage.success_report import build_success_report
+            sr = build_success_report(
+                final_verdict=final_verdict,
+                verifier_record=verifier_record,
+                chosen_experiment=chosen,
+                gpu_check_seen=self._gpu_check_seen,
+                stage1_marker_emitted=True,  # we only get here AFTER stage 1
+                turns_used=getattr(self, "_turns_used_so_far", 0),
+                tool_calls={
+                    "mem_recall": self._mem_recall_calls,
+                    "paper_recall": self._paper_recall_calls,
+                    "graphify_query": self._graphify_query_calls,
+                    "pypi_versions": self._pypi_versions_calls,
+                    "dockerhub_tags": self._dockerhub_tags_calls,
+                    "web_search": self._web_search_calls,
+                    "visit_url": self._visit_url_calls,
+                    "deep_research": self._deep_research_calls,
+                    "verify_paper_result": self._verify_paper_calls,
+                },
+                outer_commands=self.outer_commands,
+            )
+            record["success_report"] = sr
+        except Exception as _sr_e:
+            record["success_report_error"] = str(_sr_e)
+
         try:
             with open(f'{out_dir}/paper_reproduction.json', 'w') as w:
-                w.write(json.dumps(record, indent=2))
+                w.write(json.dumps(record, indent=2, default=str))
         except Exception:
             pass
 
@@ -878,12 +1461,21 @@ STAGE 2 - PAPER RESULT REPRODUCTION (only after ROCM_ENV_VERIFIED):
         except Exception:
             pass
 
-        if verdict == "reproduced":
-            log_success(f"PAPER_RESULT_REPRODUCED: {marker_line}")
-        elif verdict == "not_reproduced":
-            log_error(f"PAPER_RESULT_NOT_REPRODUCED: {marker_line}")
+        if final_verdict == "reproduced":
+            log_success(f"PAPER_RESULT_REPRODUCED ({verdict_source}): {marker_line}")
+        elif final_verdict == "not_reproduced":
+            display_line = not_reproduced_line or marker_line
+            if verdict_source == "downgraded_no_verifier":
+                log_error(
+                    f"PAPER_RESULT_NOT_REPRODUCED ({verdict_source}): "
+                    f"{downgrade_reason} | original_marker={marker_line!r}"
+                )
+            else:
+                log_error(
+                    f"PAPER_RESULT_NOT_REPRODUCED ({verdict_source}): {display_line}"
+                )
         else:
-            log_info("Paper reproduction verdict: unknown (no marker parsed)")
+            log_info(f"Paper reproduction verdict: unknown ({verdict_source})")
 
     def show_init_prompt(self):
         print(self.system_prompt)
@@ -986,6 +1578,7 @@ STAGE 2 - PAPER RESULT REPRODUCTION (only after ROCM_ENV_VERIFIED):
         while(turn < self.max_turn):
             turn += 1
             finish = False
+            self._turns_used_so_far = turn
 
             # ── LLM Call ──
             log_turn(turn, self.max_turn, self.model)
@@ -1151,10 +1744,10 @@ STAGE 2 - PAPER RESULT REPRODUCTION (only after ROCM_ENV_VERIFIED):
 
                     # ── STAGE 2 markers: check BEFORE Stage 1 marker so a combined ──
                     # bash block ending with PAPER_RESULT_* finishes cleanly.
-                    if self._stage2_active and (
-                        'PAPER_RESULT_REPRODUCED' in commands[i] or
-                        'PAPER_RESULT_NOT_REPRODUCED' in commands[i]
-                    ):
+                    # IMPORTANT: only fire on a REAL `echo PAPER_RESULT_*` line
+                    # with concrete values (not the workflow template that
+                    # appears verbatim inside the system prompt / plan / KB).
+                    if self._stage2_active and self._extract_paper_marker(commands[i]):
                         self._handle_paper_marker(commands[i], waiting_list, conflict_list)
                         self.outer_commands[-1]["returncode"] = 0
                         self.outer_commands[-1]["time"] = time.time() - start_time
@@ -1213,10 +1806,39 @@ STAGE 2 - PAPER RESULT REPRODUCTION (only after ROCM_ENV_VERIFIED):
                     intercepted = self._maybe_run_retrieval_tool(commands[i])
                     if intercepted is not None:
                         sandbox_res, return_code = intercepted
+                        # External-lookup successes relax the hard guards.
+                        self._maybe_record_external_lookup(commands[i], return_code)
                     else:
-                        # ── Execute normal command ──
-                        sandbox_res, return_code = self.sandbox_session.execute(commands[i], waiting_list, conflict_list)
-                        sandbox_res = res_truncate(sandbox_res)
+                        # Hard-guard layer: refuse risky actions that have not
+                        # been informed by the cheap, cached tools first.
+                        guard = self._maybe_run_hard_guard(commands[i])
+                        if guard is not None:
+                            sandbox_res, return_code = guard
+                        elif (
+                            self._stage2_active
+                            and not self._paper_retrieval_used
+                            and self._is_raw_paper_read_command(commands[i])
+                        ):
+                            # Stage 2 paper-discipline guard: do not raw-read
+                            # the paper until at least one retrieval tool has
+                            # been attempted.
+                            sandbox_res = (
+                                "Stage 2 paper-discipline guard: do NOT read "
+                                "`/repo/paper.pdf` directly yet. First use one of:\n"
+                                "  graphify_query \"...\" --scope paper\n"
+                                "  paper_recall \"what metric / experiment / hyperparameter do I need?\"\n"
+                                "  web_search \"<paper claim or error>\"\n"
+                                "  visit_url <best hit from web_search>\n"
+                                "  deep_research \"<paper or runtime question>\"\n"
+                                "After at least one retrieval attempt, raw PDF reads are allowed.\n"
+                            )
+                            return_code = 1
+                        else:
+                            # ── Execute normal command ──
+                            sandbox_res, return_code = self.sandbox_session.execute(commands[i], waiting_list, conflict_list)
+                            sandbox_res = res_truncate(sandbox_res)
+                            # Opportunistic GPU-check observation.
+                            self._maybe_record_gpu_check(commands[i], sandbox_res, return_code)
 
                     # ── Error Classification (IN phase) ──
                     classified_error = None
@@ -1333,9 +1955,15 @@ STAGE 2 - PAPER RESULT REPRODUCTION (only after ROCM_ENV_VERIFIED):
                         self.outer_commands[-1]["returncode"] = 1
 
                     # ── STAGE 2 markers in command output ──
-                    if self._stage2_active and return_code == 0 and (
-                        'PAPER_RESULT_REPRODUCED' in sandbox_res or
-                        'PAPER_RESULT_NOT_REPRODUCED' in sandbox_res
+                    # Only trigger on a REAL `echo PAPER_RESULT_*` invocation
+                    # with concrete values. The workflow template appears
+                    # verbatim inside `paper_recall` / `mem_recall` outputs
+                    # because the plan room contains it; substring matching
+                    # would otherwise treat that template as a verdict.
+                    if (
+                        self._stage2_active
+                        and return_code == 0
+                        and self._extract_paper_marker(sandbox_res)
                     ):
                         self._handle_paper_marker(sandbox_res, waiting_list, conflict_list)
                         finish = True

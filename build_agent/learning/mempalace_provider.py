@@ -19,7 +19,7 @@ API (kept minimal so callers don't have to know about chromadb/mempalace):
 
     mem = RunMemory.create(full_name, sha, root_path)
     mem.write_plan(plan_text)
-    mem.write_paper_extracts(paper_text, paper_experiments=[...])
+    mem.write_paper_experiments([...])
     mem.write_readme_run_cmds([...])
     mem.write_decision("base_image", "rocm/pytorch:latest", reason="...")
     mem.write_turn(traj_record_dict, full_observation_text,
@@ -30,6 +30,7 @@ API (kept minimal so callers don't have to know about chromadb/mempalace):
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -76,10 +77,13 @@ class RunMemory:
     enabled = True
 
     # Room schema, derived from observed Repo2ROCm artifacts.
+    # NOTE: the legacy `paper_extracts` room has been removed; raw paper text
+    # belongs to graphify's static corpus (`graphify-out/paper_chunks.jsonl`).
     ROOMS = {
         "plan": "Strategic plan sections (one drawer per ## header).",
-        "paper_extracts": "Verbatim paper text chunks tagged with section markers.",
         "paper_experiments": "Shortlisted experiments as JSON.",
+        "experiment_state": "Chosen experiment / target metric / tolerance / stage markers.",
+        "context_refs": "References to graphify paper/code nodes used during the run.",
         "readme_run_cmds": "Run commands extracted verbatim from the README.",
         "configs": "Verbatim config files (yaml/toml/json).",
         "decisions": "Top-level decisions (base image, python version, env vars).",
@@ -161,33 +165,73 @@ class RunMemory:
             self._add("plan", "## " + sec,
                       source_file=f"plan.txt:{_safe(header)}")
 
+    def write_paper_experiments(self, paper_experiments: Optional[list]) -> None:
+        """Persist the shortlisted experiments as a single JSON drawer.
+
+        This replaces the legacy `write_paper_extracts(paper_text, ...)` shim.
+        Raw paper text intentionally lives in the graphify static corpus, not
+        in mempalace; only run-state references and shortlists belong here.
+        """
+        if not paper_experiments:
+            return
+        try:
+            content = json.dumps(paper_experiments, indent=2, default=str)
+            self._add("paper_experiments", content,
+                      source_file="paper_experiments.json")
+        except Exception:
+            pass
+
     def write_paper_extracts(self, paper_text: str,
                               paper_experiments: Optional[list] = None,
                               chunk_chars: int = 4000) -> None:
-        """Chunk the paper PDF text and write to paper_extracts."""
-        if paper_text:
-            n = len(paper_text)
-            i = 0
-            chunk_id = 0
-            while i < n:
-                seg = paper_text[i:i + chunk_chars]
-                # try to break on a newline near the end
-                if i + chunk_chars < n:
-                    nl = seg.rfind("\n", chunk_chars // 2)
-                    if nl > 0:
-                        seg = seg[:nl]
-                self._add("paper_extracts", seg,
-                          source_file=f"paper.pdf:chunk_{chunk_id}",
-                          tags={"chunk_id": chunk_id, "char_offset": i})
-                i += len(seg) if seg else chunk_chars
-                chunk_id += 1
+        """Deprecated shim that forwards to `write_paper_experiments`.
+
+        Older callers may still pass `paper_text`; we drop it on the floor
+        because raw paper bytes belong in graphify, not mempalace.
+        """
         if paper_experiments:
-            try:
-                content = json.dumps(paper_experiments, indent=2, default=str)
-                self._add("paper_experiments", content,
-                          source_file="paper_experiments.json")
-            except Exception:
-                pass
+            self.write_paper_experiments(paper_experiments)
+
+    def write_experiment_state(self, name: str, payload: Dict[str, Any],
+                               source_file: str = "experiment_state.json") -> None:
+        """Store compact paper/run state, not the raw paper body."""
+        if not name:
+            return
+        try:
+            body = {
+                "name": name,
+                "payload": payload or {},
+            }
+            self._add(
+                "experiment_state",
+                json.dumps(body, indent=2, default=str),
+                source_file=f"{source_file}:{_safe(name)}",
+                tags={"name": name},
+            )
+        except Exception:
+            pass
+
+    def write_context_ref(self, kind: str, ref_id: str, source: str,
+                          why_relevant: str = "", extra: Optional[Dict[str, Any]] = None) -> None:
+        """
+        Store a reference to static corpus content (graphify paper/code node,
+        paper chunk id, file path, etc.), rather than duplicating the content.
+        """
+        if not kind or not ref_id:
+            return
+        body = {
+            "kind": kind,
+            "ref_id": ref_id,
+            "source": source,
+            "why_relevant": why_relevant,
+            "extra": extra or {},
+        }
+        self._add(
+            "context_refs",
+            json.dumps(body, indent=2, default=str),
+            source_file=f"context_ref:{_safe(kind)}:{_safe(ref_id)[:80]}",
+            tags={"kind": kind, "ref_id": ref_id, "source": source},
+        )
 
     def write_readme_run_cmds(self, cmds: list) -> None:
         for i, cmd in enumerate(cmds or []):
@@ -328,23 +372,32 @@ class RunMemory:
         ), n_per_query: int = 3, token_budget: int = 8000,
         per_chunk_max_chars: int = 1500,
     ) -> str:
-        """Multi-aspect recall over the `paper_extracts` room. Replaces the
-        ~155 KB paper-text dump in paper_agent.shortlist_experiments."""
+        """
+        Paper-related *run state* recall.
+
+        This no longer returns raw paper chunks. Instead it surfaces:
+          - shortlisted experiments
+          - experiment_state
+          - context_refs
+          - plan / decisions
+
+        The static paper corpus itself is queried via `GraphifyProvider.query_paper`.
+        """
         if not queries:
             return ""
         sections: List[str] = []
         for q in queries:
-            hits = self._search(q, self.palace_path, self.wing,
-                                "paper_extracts", n_per_query)
-            for h in hits:
-                t = (h.get("text") or "").strip()
-                if not t:
-                    continue
-                snippet = t.split("\n[META]")[0]
-                sections.append(f"  [paper:{q[:60]}] {snippet}")
+            for room in ("paper_experiments", "experiment_state", "context_refs", "plan", "decisions"):
+                hits = self._search(q, self.palace_path, self.wing, room, n_per_query)
+                for h in hits:
+                    t = (h.get("text") or "").strip()
+                    if not t:
+                        continue
+                    snippet = t.split("\n[META]")[0]
+                    sections.append(f"  [{room}:{q[:60]}] {snippet}")
         if not sections:
             return ""
-        return self._budget("PAPER EXCERPTS (retrieved by topic)",
+        return self._budget("PAPER RUN STATE (references, choices, decisions)",
                             sections, token_budget,
                             per_chunk_max_chars=per_chunk_max_chars)
 
@@ -352,9 +405,19 @@ class RunMemory:
                                rooms: tuple = ("dont", "do", "pattern"),
                                n_per_room: int = 3,
                                token_budget: int = 1000,
+                               min_confidence: float = 0.4,
+                               prefer_source: str = "llm_synthesis",
                                palace_base: str = _DEFAULT_PALACE_BASE,
                                header: str = "CROSS-RUN LESSONS (global KB)") -> str:
-        """Recall from the cumulative knowledge base (shared across all repos)."""
+        """Recall from the cumulative knowledge base (shared across all repos).
+
+        Filters:
+          * `min_confidence` drops low-confidence heuristic lessons (the new
+            distiller stamps a confidence; legacy lessons without one are
+            treated as 0.3 so they sink unless the caller relaxes the bar).
+          * `prefer_source` boosts lessons emitted by the LLM synthesiser over
+            the heuristic fallback (used for ordering, not hard filtering).
+        """
         if not query:
             return ""
         from mempalace.palace import get_collection  # ensure global palace exists
@@ -365,15 +428,36 @@ class RunMemory:
             get_collection(global_palace, create=False)
         except Exception:
             return ""
-        chunks: List[str] = []
+
+        scored: List[tuple] = []
         for room in rooms:
             hits = self._search(query, global_palace, _GLOBAL_WING, room, n_per_room)
             for h in hits:
                 t = (h.get("text") or "").strip()
                 if not t:
                     continue
-                snippet = t.split("\n[META]")[0]
-                chunks.append(f"  [{room}] {snippet}")
+                meta = ""
+                if "\n[META]" in t:
+                    snippet, _, meta = t.partition("\n[META]")
+                else:
+                    snippet = t
+                meta_dict = {}
+                try:
+                    meta_dict = json.loads(meta.strip()) if meta.strip() else {}
+                except Exception:
+                    meta_dict = {}
+                conf = float(meta_dict.get("confidence", 0.3))
+                source = meta_dict.get("source", "")
+                if conf + (0.0 if source == prefer_source else -0.05) < min_confidence:
+                    continue
+                rank = (
+                    -conf,
+                    0 if source == prefer_source else 1,
+                    -float(h.get("score") or 0.0),
+                )
+                scored.append((rank, f"  [{room} c={conf:.2f}] {snippet}"))
+        scored.sort(key=lambda kv: kv[0])
+        chunks = [s for _, s in scored]
         return self._budget(header, chunks, token_budget)
 
     def _budget(self, header: str, chunks: List[str], token_budget: int,
@@ -414,15 +498,28 @@ class RunMemory:
 
     def distill_and_write_lessons(self, trajectory_path: Optional[str] = None,
                                    palace_base: str = _DEFAULT_PALACE_BASE,
-                                   final_status: str = "unknown") -> Dict[str, int]:
+                                   final_status: str = "unknown",
+                                   llm: Optional[str] = None) -> Dict[str, int]:
         """
-        Read the per-run trajectory and emit DO/DONT/PATTERN/COMPAT lessons
-        into the GLOBAL wing so future runs can recall them.
+        Read the per-run trajectory and emit DO/DONT/PATTERN lessons into the
+        GLOBAL wing so future runs can recall them.
+
+        New strategy (much less noisy than the old per-failure dump):
+
+        1. Walk the trajectory and identify *causal* failure → recovery pairs:
+           a `failure` (or soft-failure) observation immediately followed by a
+           clearly related successful action on the same logical target.
+           Standalone failures are NOT written, because they are usually noise
+           that the agent recovered from in a way the regex heuristic can't see.
+        2. For each pair, ask the LLM (single, low-temperature call) to summarise
+           "what to do" and "what NOT to do" and emit *one* DO and *one* DON'T
+           lesson, plus an optional PATTERN.
+        3. If no LLM is available, emit at most one DO/DON'T per pair using a
+           strict heuristic, never per-failure.
 
         Returns counts of lessons written.
         """
         from mempalace.palace import get_collection
-        from mempalace.miner import add_drawer
 
         global_palace = os.path.join(palace_base, "_global")
         os.makedirs(global_palace, exist_ok=True)
@@ -437,10 +534,8 @@ class RunMemory:
                     except Exception:
                         continue
 
-        # Soft-failure detection: many trajectories report rc=0 because the
-        # action was piped (`cmd | tee log | tail`) which masks the upstream
-        # exit code. Re-classify as "soft_failure" if the observation body
-        # contains canonical failure markers.
+        # Re-classify rc=0 turns whose observation contains a canonical failure
+        # marker as "soft_failure" so they participate in pair detection.
         _soft_fail_re = re.compile(
             r"(Traceback \(most recent call last\)"
             r"|\bError:|\bException:|\bFAILED\b|\bfatal:"
@@ -463,62 +558,73 @@ class RunMemory:
                         m = _soft_class_re.search(obs)
                         r["error_class"] = m.group(1) if m else "SoftFailure"
 
-        counts = {"do": 0, "dont": 0, "pattern": 0, "compatibility": 0}
+        counts = {"do": 0, "dont": 0, "pattern": 0, "compatibility": 0,
+                  "pairs_seen": 0, "pairs_kept": 0}
 
-        # Group consecutive (failure → success) on the same logical action prefix
-        # to extract DO and DONT lessons.
-        last_fail: Optional[Dict[str, Any]] = None
-        for r in rows:
-            outcome = r.get("outcome")
-            action = (r.get("action_content") or "").strip()
-            ec = r.get("error_class") or ""
-            if outcome in ("failure", "soft_failure"):
-                # DON'T lesson — record the action that failed with this error class.
-                soft_tag = " (soft-failure inside rc=0 output)" if outcome == "soft_failure" else ""
-                lesson = (
-                    f"DON'T do this on ROCm{soft_tag} — failed with {ec or 'non-zero exit'}.\n"
-                    f"Repo: {self.full_name}@{self.sha[:7]}\n"
-                    f"Action:\n{action[:1200]}\n"
-                )
-                self._write_lesson(gcol, "dont", lesson, tags={
+        # ── Step 1: build causal pairs ─────────────────────────────────────
+        pairs = self._extract_recovery_pairs(rows, max_pairs=8)
+        counts["pairs_seen"] = len(pairs)
+
+        # ── Step 2: LLM-driven synthesis (preferred). ──────────────────────
+        wrote_via_llm = False
+        if pairs and llm:
+            try:
+                lessons = self._llm_summarise_pairs(pairs, llm=llm,
+                                                    final_status=final_status)
+            except Exception as _llm_e:
+                print(f"[mempalace-distill] LLM lesson synthesis failed: "
+                      f"{_llm_e}; falling back to heuristic")
+                lessons = []
+            for lesson in lessons or []:
+                kind = (lesson.get("kind") or "").lower()
+                body = (lesson.get("body") or "").strip()
+                if kind not in ("do", "dont", "pattern") or not body:
+                    continue
+                tags = {
                     "repo": self.full_name, "sha": self.sha[:7],
-                    "error_class": ec, "kind": "dont",
-                    "outcome": outcome,
+                    "kind": kind,
+                    "error_class": lesson.get("error_class") or "",
+                    "confidence": float(lesson.get("confidence") or 0.5),
+                    "source": "llm_synthesis",
+                }
+                self._write_lesson(gcol, kind, body, tags=tags)
+                counts[kind] = counts.get(kind, 0) + 1
+                counts["pairs_kept"] += 1
+                wrote_via_llm = True
+
+        # ── Step 3: heuristic fallback (one DO + one DON'T per kept pair). ─
+        if pairs and not wrote_via_llm:
+            for p in pairs:
+                fail = p["fail"]
+                fix = p["fix"]
+                fail_action = (fail.get("action_content") or "").strip()
+                fix_action = (fix.get("action_content") or "").strip()
+                ec = fail.get("error_class") or ""
+                dont_body = (
+                    f"DON'T: on ROCm, running `{(fail_action.splitlines() or [''])[0][:200]}` "
+                    f"failed with {ec or 'non-zero exit'}."
+                )
+                do_body = (
+                    f"DO: when you see `{ec or 'this failure mode'}`, try "
+                    f"`{(fix_action.splitlines() or [''])[0][:240]}` instead."
+                )
+                self._write_lesson(gcol, "dont", dont_body, tags={
+                    "repo": self.full_name, "sha": self.sha[:7],
+                    "kind": "dont", "error_class": ec, "source": "heuristic",
+                })
+                self._write_lesson(gcol, "do", do_body, tags={
+                    "repo": self.full_name, "sha": self.sha[:7],
+                    "kind": "do", "error_class": ec, "source": "heuristic",
                 })
                 counts["dont"] += 1
-                last_fail = r
-            elif outcome == "success" and last_fail is not None:
-                # DO / FIX lesson — this success followed a failure, likely fixed it.
-                fail_action = (last_fail.get("action_content") or "").strip()
-                fail_ec = last_fail.get("error_class") or ""
-                lesson = (
-                    f"DO this on ROCm to recover from {fail_ec or 'a failure'}.\n"
-                    f"Repo: {self.full_name}@{self.sha[:7]}\n"
-                    f"Failed action:\n{fail_action[:600]}\n"
-                    f"Recovery action (worked):\n{action[:1200]}\n"
-                )
-                self._write_lesson(gcol, "do", lesson, tags={
-                    "repo": self.full_name, "sha": self.sha[:7],
-                    "error_class": fail_ec, "kind": "do",
-                })
                 counts["do"] += 1
-                # Pattern: error_class → resolution
-                pat = (
-                    f"PATTERN: when you see `{fail_ec or 'failure'}` after running "
-                    f"`{(fail_action.splitlines() or [''])[0][:120]}`, try:\n"
-                    f"  {(action.splitlines() or [''])[0][:200]}"
-                )
-                self._write_lesson(gcol, "pattern", pat, tags={
-                    "repo": self.full_name, "sha": self.sha[:7],
-                    "error_class": fail_ec, "kind": "pattern",
-                })
-                counts["pattern"] += 1
-                last_fail = None
+                counts["pairs_kept"] += 1
 
-        # Final-status summary lesson (always written)
+        # ── Step 4: a single, compact summary lesson per run. ──────────────
         summary = (
             f"RUN_SUMMARY {self.full_name}@{self.sha[:7]} status={final_status}\n"
             f"turns={len(rows)} writes={self._writes} "
+            f"pairs={counts['pairs_seen']} kept={counts['pairs_kept']} "
             f"duration={time.time() - self._t0:.0f}s"
         )
         self._write_lesson(gcol, "summary", summary, tags={
@@ -528,9 +634,182 @@ class RunMemory:
 
         return counts
 
+    # ── Lesson-mining helpers ────────────────────────────────────────────────
+
+    @staticmethod
+    def _action_target(action: str) -> str:
+        """Return a coarse 'logical target' for an action so we can decide if
+        a later success belongs to the same recovery as an earlier failure.
+
+        Examples:
+            'pip install torch==2.3.0'   -> 'pip:torch'
+            'apt-get install -y libfoo'  -> 'apt:libfoo'
+            'python train.py --epoch 1'  -> 'py:train.py'
+            'change_base_image rocm/x:1' -> 'change_base_image:rocm/x'
+        """
+        if not action:
+            return "?"
+        a = action.strip()
+        first = a.split(None, 1)[0].lower()
+        m = re.search(r"\bpip\d?\s+install\s+(?:-[a-zA-Z]+\s+)*([A-Za-z0-9_.\-]+)", a)
+        if m:
+            return f"pip:{m.group(1).lower().split('[')[0]}"
+        m = re.search(r"\bapt(?:-get)?\s+install\s+(?:-[a-zA-Z]+\s+)*([A-Za-z0-9_.\-]+)", a)
+        if m:
+            return f"apt:{m.group(1).lower()}"
+        m = re.search(r"\bpython3?\s+(\S+\.py)\b", a)
+        if m:
+            return f"py:{os.path.basename(m.group(1))}"
+        if first in ("change_base_image", "change_python_version"):
+            target = a.split(None, 1)[1].strip().split(":", 1)[0] if " " in a else ""
+            return f"{first}:{target}"
+        return f"{first}:{a[:40].lower()}"
+
+    def _extract_recovery_pairs(self, rows: List[Dict[str, Any]],
+                                 max_pairs: int = 8) -> List[Dict[str, Any]]:
+        """Return up to `max_pairs` (failure, fix) pairs that share a target.
+
+        We require the fix to occur within `MAX_GAP` later turns AND share the
+        same coarse target (`_action_target`). This drops spurious pairs where
+        an unrelated success happens to follow an unrelated failure.
+        """
+        MAX_GAP = 12
+        pairs: List[Dict[str, Any]] = []
+        seen_keys: set = set()
+        for i, r in enumerate(rows):
+            if r.get("outcome") not in ("failure", "soft_failure"):
+                continue
+            fail_target = self._action_target(r.get("action_content") or "")
+            ec = r.get("error_class") or ""
+            for j in range(i + 1, min(i + 1 + MAX_GAP, len(rows))):
+                cand = rows[j]
+                if cand.get("outcome") != "success":
+                    continue
+                fix_target = self._action_target(cand.get("action_content") or "")
+                # Same target OR same error class continuation -> probable recovery.
+                if fix_target == fail_target or (ec and ec == cand.get("recovered_error_class")):
+                    key = (fail_target, ec)
+                    if key in seen_keys:
+                        break
+                    seen_keys.add(key)
+                    pairs.append({
+                        "fail": r, "fix": cand,
+                        "target": fail_target, "error_class": ec,
+                        "gap_turns": j - i,
+                    })
+                    break
+            if len(pairs) >= max_pairs:
+                break
+        return pairs
+
+    def _llm_summarise_pairs(self, pairs: List[Dict[str, Any]], llm: str,
+                              final_status: str) -> List[Dict[str, Any]]:
+        """One LLM call -> list of {kind, body, error_class, confidence} dicts.
+
+        We deliberately give the model the failure/fix pairs ONLY (not the full
+        trajectory) so it can't over-generalise from incidental noise. We ask
+        for at most 5 lessons total.
+        """
+        if not pairs:
+            return []
+        from utils.llm import get_llm_response
+
+        sketches: List[str] = []
+        for k, p in enumerate(pairs):
+            fail = p["fail"]
+            fix = p["fix"]
+            fail_obs = (fail.get("observation_raw") or "")[:600]
+            fail_act = (fail.get("action_content") or "")[:300]
+            fix_act = (fix.get("action_content") or "")[:300]
+            sketches.append(
+                f"PAIR {k+1}: target={p['target']} error_class={p['error_class']!r} "
+                f"gap={p['gap_turns']} turns\n"
+                f"  failed_action: {fail_act}\n"
+                f"  failure_excerpt: {fail_obs}\n"
+                f"  recovery_action: {fix_act}\n"
+            )
+        sketches_text = "\n".join(sketches)
+
+        prompt = (
+            "You are mining ONE Repo2ROCm build trajectory for cross-run "
+            "lessons. Each PAIR below is a moment where the agent did "
+            "something wrong on ROCm and then did the right thing.\n\n"
+            "Your job: for the WHOLE batch, propose at most 5 lessons that\n"
+            " - are GENERAL (apply to any repo with the same failure mode),\n"
+            " - are ACTIONABLE (a future agent can copy/paste the recovery),\n"
+            " - DROP repo-specific names, file paths, and version numbers,\n"
+            " - merge near-duplicates into a single lesson.\n\n"
+            "Return STRICT JSON of the form:\n"
+            '[{"kind":"do|dont|pattern", "error_class":"...", '
+            '"confidence":0.0-1.0, "body":"<<one paragraph>>"}]\n\n'
+            "Use kind=do for 'when you see X, do Y'.\n"
+            "Use kind=dont for 'do not do Z on ROCm because ...'.\n"
+            "Use kind=pattern for 'when error matches /regex/, the fix is ...'\n"
+            "Each body MUST be self-contained (a future agent will see it "
+            "without the rest of the trajectory).\n\n"
+            f"Final run status: {final_status}\n"
+            f"Repo: {self.full_name}@{self.sha[:7]}\n\n"
+            f"PAIRS:\n{sketches_text}\n"
+        )
+
+        messages = [{"role": "user", "content": prompt}]
+        try:
+            response, _usage = get_llm_response(
+                llm, messages, temperature=0.1, max_tokens=900,
+            )
+        except Exception as _e:
+            print(f"[mempalace-distill] llm call failed: {_e}")
+            return []
+        if not response or not response[0]:
+            return []
+        text = response[0].strip()
+        if text.startswith("```"):
+            text = re.sub(r"^```\w*\n?", "", text)
+            text = re.sub(r"\n?```$", "", text)
+        try:
+            data = json.loads(text)
+        except Exception:
+            m = re.search(r"\[.*\]", text, re.DOTALL)
+            if not m:
+                return []
+            try:
+                data = json.loads(m.group(0))
+            except Exception:
+                return []
+        if not isinstance(data, list):
+            return []
+        cleaned: List[Dict[str, Any]] = []
+        for item in data[:5]:
+            if not isinstance(item, dict):
+                continue
+            kind = str(item.get("kind") or "").strip().lower()
+            body = str(item.get("body") or "").strip()
+            if kind not in ("do", "dont", "pattern") or not body:
+                continue
+            try:
+                conf = float(item.get("confidence", 0.5))
+            except (TypeError, ValueError):
+                conf = 0.5
+            conf = max(0.0, min(1.0, conf))
+            cleaned.append({
+                "kind": kind,
+                "body": body[:1500],
+                "error_class": str(item.get("error_class") or "")[:80],
+                "confidence": conf,
+            })
+        return cleaned
+
     @staticmethod
     def _write_lesson(global_col, room: str, content: str,
                       tags: Optional[Dict[str, Any]] = None) -> None:
+        """
+        Append a lesson drawer to the global wing.
+
+        IMPORTANT: every drawer needs a unique (source_file, chunk_index) pair
+        because mempalace/Chroma dedupes by a hash derived from those. We
+        derive a deterministic unique id from the content so identical lessons
+        from re-runs collapse, but distinct lessons across runs accumulate.
+        """
         from mempalace.miner import add_drawer
         if tags:
             try:
@@ -539,8 +818,13 @@ class RunMemory:
             except Exception:
                 pass
         try:
+            cid = hashlib.sha256(content.encode("utf-8", errors="replace")).hexdigest()[:16]
+            repo_part = ""
+            if isinstance(tags, dict):
+                repo_part = "_" + str(tags.get("repo", "")).replace("/", "_")[:40]
+            source_file = f"lessons:{room}{repo_part}:{cid}"
             add_drawer(global_col, _GLOBAL_WING, room, content,
-                       source_file=f"lessons:{room}", chunk_index=0,
+                       source_file=source_file, chunk_index=0,
                        agent="repo2rocm-distiller")
         except Exception as e:
             print(f"[mempalace-global] add_drawer({room}) failed: {e}")

@@ -29,6 +29,23 @@ _CLAUDE_CODE_MODEL = None
 _CLAUDE_CODE_AVAILABLE = None
 
 
+def _estimate_usage(messages: List[Dict[str, str]],
+                    content: str = "",
+                    system_prompt: Optional[str] = None) -> Dict[str, int]:
+    """Fallback estimate when Claude SDK/CLI does not return usage."""
+    prompt_chars = len(system_prompt or "")
+    for msg in messages or []:
+        prompt_chars += len(str(msg.get("content", "")))
+    prompt_tokens = max(1, prompt_chars // 4) if prompt_chars else 0
+    completion_tokens = max(1, len(content or "") // 4) if content else 0
+    return {
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": prompt_tokens + completion_tokens,
+        "estimated": True,
+    }
+
+
 def set_claude_code_mode(enabled: bool, model: Optional[str] = None):
     """Enable/disable Claude Code mode globally."""
     global _USE_CLAUDE_CODE, _CLAUDE_CODE_MODEL
@@ -107,6 +124,9 @@ async def _query_agent_sdk(
             usage["prompt_tokens"] = getattr(u, "input_tokens", 0)
             usage["completion_tokens"] = getattr(u, "output_tokens", 0)
             usage["total_tokens"] = usage["prompt_tokens"] + usage["completion_tokens"]
+
+    if usage["total_tokens"] == 0:
+        usage = _estimate_usage(messages, result_text, system_prompt)
 
     return result_text, usage
 
@@ -292,7 +312,7 @@ def _get_claude_cli_response(
                     f"claude CLI failed (rc={result.returncode}): {error_msg[:500]}"
                 )
             content = output
-            usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+            usage = _estimate_usage(messages, content, system_prompt)
 
         return [content], usage
     except subprocess.TimeoutExpired:
@@ -694,6 +714,23 @@ def generate_claude_md(
     sections.append("- Do NOT modify test files")
     sections.append("- Use `pipdeptree -p <pkg>` to inspect dependency chains")
     sections.append("- Verify GPU availability: `python -c \"import torch; print(torch.cuda.is_available())\"` ")
+    sections.append("")
+
+    sections.append("## Retrieval / Research Tools\n")
+    sections.append(
+        "If this project is running under the Repo2ROCm configuration loop, the parent "
+        "agent exposes retrieval tools with these intents:\n"
+        "- `paper_recall \"<question>\"` → retrieve paper-only context from memory\n"
+        "- `mem_recall \"<question>\" --global` → retrieve this-run + cross-run lessons\n"
+        "- `graphify_query \"<question>\"` → query the code graph for file/symbol locations\n"
+        "- `pypi_versions <pkg>` / `dockerhub_tags <image>` → deterministic external lookups\n"
+        "- `web_search \"<query>\"` / `visit_url <url>` → cached internet search + page read\n"
+        "- `deep_research \"<question>\"` → bounded sub-agent that composes the above\n"
+        "\n"
+        "For paper reproduction, NEVER read `/repo/paper.pdf` directly as the first step; "
+        "prefer `paper_recall`, then `graphify_query`, then `deep_research`, and only then "
+        "raw PDF reads if needed.\n"
+    )
     sections.append("")
 
     if rocm_mode:

@@ -228,10 +228,35 @@ def match_mem_recall(command: str):
     }
 
 
+def match_paper_recall(command: str):
+    """
+    Parse:  paper_recall "<question>" [--budget N] [--global]
+    Returns dict with keys: question, budget (int), use_global (bool)
+    on success; -1 on no match.
+    """
+    s = command.strip()
+    if not re.match(r'^\s*paper_recall\b', s, re.IGNORECASE):
+        return -1
+    body = re.sub(r'^\s*paper_recall\s*', '', s, count=1, flags=re.IGNORECASE)
+    qm = re.match(r'^"([^"]+)"|^\'([^\']+)\'', body)
+    if not qm:
+        return -1
+    question = qm.group(1) or qm.group(2)
+    rest = body[qm.end():]
+    budget_m = re.search(r'--budget\s+(\d+)', rest)
+    use_global = bool(re.search(r'--global\b', rest))
+    return {
+        "question": question,
+        "budget": int(budget_m.group(1)) if budget_m else 1500,
+        "use_global": use_global,
+    }
+
+
 def match_graphify_query(command: str):
     """
-    Parse:  graphify_query "<question>" [--budget N]
-    Returns dict with keys: question, budget on success; -1 on no match.
+    Parse:  graphify_query "<question>" [--scope paper|code|both] [--budget N]
+    Returns dict with keys: question, scope, budget on success; -1 on no match.
+    `scope` defaults to "code" to preserve the historical behaviour of this tool.
     """
     s = command.strip()
     if not re.match(r'^\s*graphify_query\b', s, re.IGNORECASE):
@@ -243,9 +268,65 @@ def match_graphify_query(command: str):
     question = qm.group(1) or qm.group(2)
     rest = body[qm.end():]
     budget_m = re.search(r'--budget\s+(\d+)', rest)
+    scope_m = re.search(r'--scope\s+(paper|code|both)\b', rest, re.IGNORECASE)
+    scope = (scope_m.group(1).lower() if scope_m else "code")
     return {
         "question": question,
+        "scope": scope,
         "budget": int(budget_m.group(1)) if budget_m else 1500,
+    }
+
+
+def match_verify_paper_result(command: str):
+    """
+    Parse:  verify_paper_result --log <path>
+                                [--metric NAME=VALUE]...
+                                [--tolerance RULE]
+                                [--direction higher_is_better|lower_is_better|equal]
+
+    Returns dict {log_path, metrics: [{name, expected_value}], tolerance, direction}
+    on success; -1 on no match.
+
+    `--metric` may be repeated. The expected value is parsed as a float when
+    possible and otherwise kept verbatim so qualitative claims still get a
+    deterministic record. If no `--metric` is supplied, the dispatcher will
+    fall back to the chosen experiment's `expected_metric_name` /
+    `expected_metric_value` (and any `primary_metrics` list).
+    """
+    s = command.strip()
+    if not re.match(r'^\s*verify_paper_result\b', s, re.IGNORECASE):
+        return -1
+    body = re.sub(r'^\s*verify_paper_result\s*', '', s, count=1, flags=re.IGNORECASE)
+
+    log_m = re.search(r'--log\s+(\S+)', body)
+    if not log_m:
+        return -1
+    log_path = log_m.group(1).strip().strip('"').strip("'")
+
+    metrics: list = []
+    for m in re.finditer(r'--metric\s+([^\s=]+)\s*=\s*("[^"]+"|\'[^\']+\'|\S+)', body):
+        name = m.group(1).strip()
+        raw_val = m.group(2).strip().strip('"').strip("'")
+        try:
+            val: object = float(raw_val)
+        except (TypeError, ValueError):
+            val = raw_val
+        metrics.append({"name": name, "expected_value": val})
+
+    tol_m = re.search(r'--tolerance\s+("[^"]+"|\'[^\']+\'|\S.*?)(?:\s+--|$)', body)
+    tolerance = ""
+    if tol_m:
+        tolerance = tol_m.group(1).strip().strip('"').strip("'")
+
+    dir_m = re.search(r'--direction\s+(higher_is_better|lower_is_better|equal)\b',
+                      body, re.IGNORECASE)
+    direction = dir_m.group(1).lower() if dir_m else ""
+
+    return {
+        "log_path": log_path,
+        "metrics": metrics,
+        "tolerance": tolerance,
+        "direction": direction,
     }
 
 
@@ -286,6 +367,74 @@ def match_dockerhub_tags(command: str):
     return {
         "image": image,
         "limit": int(lim_m.group(1)) if lim_m else 12,
+    }
+
+
+# ── PR-B: web search + URL fetcher ───────────────────────────────────────────
+
+def match_web_search(command: str):
+    """
+    Parse:  web_search "<query>" [--max-results N]
+    Returns dict {query, max_results} on success; -1 on no match.
+    """
+    s = command.strip()
+    if not re.match(r'^\s*web_search\b', s, re.IGNORECASE):
+        return -1
+    body = re.sub(r'^\s*web_search\s*', '', s, count=1, flags=re.IGNORECASE)
+    qm = re.match(r'^"([^"]+)"|^\'([^\']+)\'', body)
+    if not qm:
+        return -1
+    question = qm.group(1) or qm.group(2)
+    rest = body[qm.end():]
+    n_m = re.search(r'--max-results\s+(\d+)', rest)
+    return {
+        "query": question,
+        "max_results": int(n_m.group(1)) if n_m else 5,
+    }
+
+
+def match_visit_url(command: str):
+    """
+    Parse:  visit_url <url> [--max-chars N]
+    Returns dict {url, max_chars} on success; -1 on no match.
+    """
+    s = command.strip()
+    m = re.match(r'^\s*visit_url\s+(\S+)\s*(.*)$', s, re.IGNORECASE)
+    if not m:
+        return -1
+    url = m.group(1)
+    rest = m.group(2) or ''
+    mc_m = re.search(r'--max-chars\s+(\d+)', rest)
+    return {
+        "url": url,
+        "max_chars": int(mc_m.group(1)) if mc_m else 8000,
+    }
+
+
+# ── PR-C: deep_research sub-agent ────────────────────────────────────────────
+
+def match_deep_research(command: str):
+    """
+    Parse:  deep_research "<question>" [--max-turns N] [--budget-s S] [--no-cache]
+    Returns dict {question, max_turns, budget_s, use_cache} on success; -1 on no match.
+    """
+    s = command.strip()
+    if not re.match(r'^\s*deep_research\b', s, re.IGNORECASE):
+        return -1
+    body = re.sub(r'^\s*deep_research\s*', '', s, count=1, flags=re.IGNORECASE)
+    qm = re.match(r'^"([^"]+)"|^\'([^\']+)\'', body)
+    if not qm:
+        return -1
+    question = qm.group(1) or qm.group(2)
+    rest = body[qm.end():]
+    mt_m = re.search(r'--max-turns\s+(\d+)', rest)
+    bs_m = re.search(r'--budget-s\s+(\d+)', rest)
+    no_cache = bool(re.search(r'--no-cache\b', rest))
+    return {
+        "question": question,
+        "max_turns": int(mt_m.group(1)) if mt_m else 6,
+        "budget_s": float(bs_m.group(1)) if bs_m else 90.0,
+        "use_cache": not no_cache,
     }
 
 if __name__ == '__main__':

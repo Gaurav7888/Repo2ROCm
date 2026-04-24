@@ -737,36 +737,40 @@ Return ONLY the JSON object, no markdown fences."""
         if effective_llm and (paper_text or readme_content):
             readme_slice = readme_content[:50000] if readme_content else ""
 
-            # ── Stage 4: paper text via mempalace retrieval (was 350K dump) ──
+            # ── Stage 4/6: paper text via graphify-owned paper index ──────────
             paper_block = ""
-            mempalace_used = False
-            if run_memory is not None and getattr(run_memory, "enabled", False):
+            paper_backend = "fallback"
+            if graphify_provider is not None and getattr(graphify_provider, "enabled", False):
                 try:
-                    paper_block = run_memory.recall_paper(
-                        queries=(
-                            "main results table headline metric accuracy F1 EM "
-                            "perplexity speedup",
-                            "hyperparameters learning rate batch size epochs seed "
-                            "lora rank alpha gamma weight decay warmup",
-                            "experimental setup datasets benchmarks model sizes "
-                            "evaluation protocol",
-                            "method algorithm initialization theorem proposition "
-                            "preconditioner gradient SVD",
-                        ),
-                        n_per_query=3,
+                    paper_block = graphify_provider.query_paper(
+                        "main results table headline metric accuracy F1 EM perplexity speedup "
+                        "hyperparameters learning rate batch size epochs seed lora rank alpha "
+                        "gamma weight decay warmup experimental setup datasets benchmarks "
+                        "model sizes evaluation protocol method algorithm initialization "
+                        "theorem proposition preconditioner gradient SVD",
                         token_budget=8000,
+                        max_chunks=8,
                         per_chunk_max_chars=1500,
                     ) or ""
                     if paper_block:
-                        mempalace_used = True
+                        paper_backend = "graphify"
+                        if run_memory is not None and getattr(run_memory, "enabled", False):
+                            run_memory.write_context_ref(
+                                kind="paper_query",
+                                ref_id="graphify:paper_chunks",
+                                source=getattr(graphify_provider, "paper_chunks_jsonl", ""),
+                                why_relevant="paper shortlist prompt",
+                                extra={"question": "paper shortlist multi-aspect query"},
+                            )
                 except Exception as _e:
-                    print(f"[paper_agent] mempalace recall_paper failed: {_e}")
+                    print(f"[paper_agent] graphify paper query failed: {_e}")
             if not paper_block and paper_text:
                 # Legacy fallback: the original 350K dump.
                 paper_block = (
                     "PAPER TEXT (full body, including tables and appendix):\n"
                     + paper_text[:350000]
                 )
+                paper_backend = "fallback-dump"
 
             # ── Stage 4: repo file list via graphify (deterministic, ranked) ──
             entry_scripts: List[str] = []
@@ -833,13 +837,56 @@ Return ONLY the JSON object, no markdown fences."""
                 else:
                     configs_block = "(no yaml/toml/json/cfg config files found in the repo)"
 
+            # ── Researcher pattern phase 1: deterministic evidence ─────────
+            # We pre-fetch a tiny amount of live evidence the synth call would
+            # otherwise have to guess at, namely:
+            #   * pypi_versions for common evaluation frameworks the LLM tends
+            #     to invoke as flags (transformers, datasets, lm-eval).
+            #   * a single deep_research snippet about the paper's headline
+            #     metric, when an llm/budget is available.
+            evidence_lines: List[str] = []
+            try:
+                from tools.external_lookups import pypi_versions as _pv
+                for pkg in ("transformers", "datasets", "lm-eval"):
+                    body, rc = _pv(pkg, limit=4)
+                    if rc == 0 and body:
+                        evidence_lines.append(f"pypi_versions {pkg}:")
+                        for ln in body.splitlines()[:5]:
+                            if ln.strip():
+                                evidence_lines.append(f"  {ln.strip()}")
+            except Exception:
+                pass
+            paper_hint = ""
+            if effective_llm and os.environ.get("AMD_LLM_API_KEY"):
+                try:
+                    from agents.researcher import research
+                    note = research(
+                        "Which metrics in this paper are most reliably "
+                        "reproducible across GPU vendors? Prefer accuracy / "
+                        "F1 / ratio metrics over absolute throughput. Be "
+                        "concise.",
+                        llm=effective_llm, budget_s=20.0, use_cache=True,
+                    )
+                    paper_hint = (note.get("answer") or "")[:300]
+                except Exception:
+                    paper_hint = ""
+            evidence_block = ""
+            if evidence_lines or paper_hint:
+                evidence_block = (
+                    "\nLIVE EVIDENCE (deterministic tools, prefer over training "
+                    "data):\n" + "\n".join(evidence_lines[:30])
+                )
+                if paper_hint:
+                    evidence_block += f"\nResearcher hint: {paper_hint}\n"
+
             print(
                 f"[paper_agent] Stage 4+5a prompt sources: "
                 f"paper_block={len(paper_block):,} chars "
-                f"(mempalace={'yes' if mempalace_used else 'fallback'}), "
+                f"(backend={paper_backend}), "
                 f"readme={len(readme_slice):,}, "
                 f"configs_block={len(configs_block):,} ({configs_method}), "
-                f"entry_scripts={len(files_for_prompt)}"
+                f"entry_scripts={len(files_for_prompt)}, "
+                f"evidence={len(evidence_block):,}"
             )
 
             prompt = f"""\
@@ -863,6 +910,7 @@ REPO CONFIG FILES (yaml/toml/json/cfg/ini — these are the codebase's actual
 default hyperparameters; treat them as authoritative when the paper is silent
 or specifies a sweep without picking a value):
 {configs_block}
+{evidence_block}
 
 INSTRUCTIONS:
 1. READ THE FULL PAPER AND FULL README END-TO-END before answering. Also READ
@@ -913,10 +961,18 @@ Return a STRICT JSON object with this shape (no markdown fences, no prose):
       "name": "<short descriptive name; include the method name if applicable>",
       "section": "<paper section, table, or figure reference, e.g. 'Table 1, Sec 4.2'>",
       "expected_metric": {{
-        "name": "<e.g. speedup, accuracy, F1, PPL, throughput, latency>",
+        "name": "<headline metric, e.g. speedup, accuracy, F1, PPL>",
         "value": "<numeric value as string, e.g. '2.5', '3x', '78.4'>",
         "units": "<e.g. x, %, tokens/s, ms, '' >"
       }},
+      "primary_metrics": [
+        {{
+          "name": "<EXACT metric name as it would appear in the run log>",
+          "expected_value": "<numeric value the verifier should compare against>",
+          "tolerance": "<per-metric rule, e.g. '<=15%' or '<=3 abs pts'>",
+          "direction": "<higher_is_better | lower_is_better | equal>"
+        }}
+      ],
       "is_baseline": <true only if this row is a NO-METHOD baseline (vanilla /
         no-cache / --origin / naive / reference). False if it exercises the
         paper's proposed method — even if the metric is reported *relative to*
@@ -966,6 +1022,20 @@ Return a STRICT JSON object with this shape (no markdown fences, no prose):
     }}
   ]
 }}
+
+RULES for primary_metrics (the deterministic verifier reads this list):
+- Always populate `primary_metrics` with EVERY headline metric the paper
+  reports for the chosen experiment. If the paper claims "RMSE 0.123 / PCC
+  0.987", you MUST list BOTH — otherwise the verifier cannot detect the
+  classic "RMSE better but PCC much worse" failure mode.
+- `name` MUST match the spelling used in the run log (case-insensitive). If
+  unsure, prefer the paper's spelling and include common aliases via the
+  `notes` field.
+- `direction` is mandatory: pick from higher_is_better, lower_is_better, or
+  equal. RMSE/MSE/MAE/loss/PPL → lower_is_better. Accuracy/F1/PCC/AUC →
+  higher_is_better. Speedups → higher_is_better.
+- `tolerance` is per-metric and overrides the experiment's coarse
+  `tolerance_rule` when the verifier is invoked with no explicit override.
 
 RULES for choosing and ordering experiments:
 - Reproducing the paper means demonstrating the paper's CONTRIBUTION, not just
@@ -1032,6 +1102,33 @@ RULES for choosing and ordering experiments:
                         codebase_cfg_files = [
                             str(p)[:200] for p in raw_cfg_files if p
                         ][:15]
+                        # Multi-metric verdicts (NEW): tolerate either an
+                        # explicit `primary_metrics` list, OR fall back to a
+                        # single-entry list from `expected_metric`.
+                        raw_primary = exp.get("primary_metrics") or []
+                        if isinstance(raw_primary, dict):
+                            raw_primary = [raw_primary]
+                        primary_metrics_list: List[Dict[str, Any]] = []
+                        for pm in raw_primary[:6]:
+                            if not isinstance(pm, dict) or not pm.get("name"):
+                                continue
+                            primary_metrics_list.append({
+                                "name": str(pm.get("name", ""))[:60],
+                                "expected_value": str(
+                                    pm.get("expected_value")
+                                    if pm.get("expected_value") is not None
+                                    else pm.get("value", "")
+                                )[:60],
+                                "tolerance": str(pm.get("tolerance", ""))[:160],
+                                "direction": str(pm.get("direction", ""))[:30],
+                            })
+                        if not primary_metrics_list and em.get("name"):
+                            primary_metrics_list.append({
+                                "name": str(em.get("name", ""))[:60],
+                                "expected_value": str(em.get("value", ""))[:60],
+                                "tolerance": str(exp.get("tolerance_rule", ""))[:160],
+                                "direction": "",
+                            })
                         cand = ExperimentCandidate(
                             name=str(exp.get("name", ""))[:200],
                             section=str(exp.get("section", ""))[:120],
@@ -1051,6 +1148,7 @@ RULES for choosing and ordering experiments:
                             missing_flags=missing_list,
                             config_source=str(exp.get("config_source", ""))[:400],
                             codebase_config_files=codebase_cfg_files,
+                            primary_metrics=primary_metrics_list,
                         )
                         candidates.append(cand)
             except Exception:

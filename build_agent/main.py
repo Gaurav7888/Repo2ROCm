@@ -157,11 +157,23 @@ def main():
         set_verbose(True)
 
     # ── Claude Code mode ──
+    # IMPORTANT:
+    #   - When `--use-claude-code` is set, normal planner / configuration LLM
+    #     calls should route through Claude Code (Agent SDK / CLI).
+    #   - We still set the AMD gateway key when present so the system can fall
+    #     back cleanly if Claude Code is unavailable.
+    #   - Agentic mode remains an extra switch on top of Claude Code mode.
     use_claude_code = args.use_claude_code
     claude_code_agentic = args.claude_code_agentic
 
+    # Always set the AMD gateway key if present so fallback remains available.
+    if args.api_key:
+        set_api_key(args.api_key)
+    elif os.environ.get("AMD_LLM_API_KEY"):
+        set_api_key(os.environ["AMD_LLM_API_KEY"])
+
+    from utils.claude_code_client import set_claude_code_mode
     if use_claude_code:
-        from utils.claude_code_client import set_claude_code_mode
         set_claude_code_mode(enabled=True, model=args.claude_code_model)
         log_info("Claude Code mode ENABLED — using Agent SDK / CLI instead of AMD LLM API Gateway")
         if args.claude_code_model:
@@ -169,10 +181,7 @@ def main():
         if claude_code_agentic:
             log_info("Claude Code agentic mode: ON (autonomous execution with built-in tools)")
     else:
-        if args.api_key:
-            set_api_key(args.api_key)
-        elif os.environ.get("AMD_LLM_API_KEY"):
-            set_api_key(os.environ["AMD_LLM_API_KEY"])
+        set_claude_code_mode(enabled=False, model=args.claude_code_model)
 
     waiting_list = WaitingList()
     conflict_list = ConflictList()
@@ -357,18 +366,34 @@ def main():
             reproduce_results = False
             paper_pdf_path = None
 
-    # Stage 4: Pre-write paper extracts to mempalace BEFORE generate_plan
-    # so paper_agent.shortlist_experiments can retrieve from it instead of
-    # dumping the full 350K paper text into one prompt.
+    # Stage 4/6: Index the paper into graphify BEFORE generate_plan.
+    # Static paper content belongs to graphify-out/, not mempalace.
+    # Mempalace stores only references / experiment state.
     if reproduce_results and paper_pdf_path and os.path.exists(paper_pdf_path):
         try:
             from agents.paper_agent import extract_pdf_text as _ext_pdf
             _ptxt = _ext_pdf(paper_pdf_path) or ""
             if _ptxt:
-                log_info(f"Pre-writing paper to mempalace: {len(_ptxt):,} chars")
-                run_memory.write_paper_extracts(_ptxt)
+                log_info(f"Indexing paper into graphify: {len(_ptxt):,} chars")
+                graphify_provider.index_paper_text(_ptxt, source_file=paper_pdf_path)
+                run_memory.write_experiment_state(
+                    "paper_index",
+                    {
+                        "backend": "graphify",
+                        "paper_pdf_path": paper_pdf_path,
+                        "indexed_chars": len(_ptxt),
+                    },
+                    source_file="paper_index.json",
+                )
+                run_memory.write_context_ref(
+                    kind="paper_index",
+                    ref_id="graphify:paper_chunks",
+                    source=graphify_provider.paper_chunks_jsonl,
+                    why_relevant="static paper corpus for planner/stage2 retrieval",
+                    extra={"paper_pdf_path": paper_pdf_path, "indexed_chars": len(_ptxt)},
+                )
         except Exception as _ext_e:
-            log_info(f"PDF pre-extract for mempalace failed: {_ext_e}")
+            log_info(f"Paper indexing into graphify failed: {_ext_e}")
 
     plan, recommended_image, paper_context = generate_plan(
         repo_path=repo_path,
@@ -390,10 +415,20 @@ def main():
     log_success(f"Plan saved to output/{full_name}/plan.txt")
 
     # Persist plan + paper-experiment shortlist + base-image decision into mempalace.
+    # NOTE: raw paper text is no longer stored in mempalace; only references/state.
     try:
         run_memory.write_plan(plan)
         if reproduce_results and paper_experiments:
-            run_memory.write_paper_extracts("", paper_experiments=paper_experiments)
+            run_memory.write_paper_experiments(paper_experiments)
+            run_memory.write_experiment_state(
+                "chosen_experiment_shortlist",
+                {
+                    "title": paper_title,
+                    "num_candidates": len(paper_experiments),
+                    "top_candidate": paper_experiments[0] if paper_experiments else {},
+                },
+                source_file="paper_experiment_state.json",
+            )
         if recommended_image:
             run_memory.write_decision("recommended_base_image", recommended_image,
                                       reason="planner")
@@ -663,6 +698,7 @@ def main():
             counts = run_memory.distill_and_write_lessons(
                 trajectory_path=build_attempt.trajectory_file,
                 final_status=build_outcome,
+                llm=llm,
             )
             log_info(f"Lessons distilled to global KB: {counts}")
             log_info(f"Run memory stats: {run_memory.stats()}")

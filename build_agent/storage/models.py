@@ -573,6 +573,13 @@ class ExperimentCandidate:
     # hyperparameters. The runtime agent should read/override these instead of
     # guessing values when the paper is ambiguous.
     codebase_config_files: List[str] = field(default_factory=list)
+    # Multi-metric verdicts: when an experiment has more than one headline
+    # metric (e.g. EARTH reports both RMSE and PCC), the verifier needs each
+    # one with its own tolerance/direction so it can flag the "RMSE better
+    # but PCC much worse" case. Each entry should be:
+    #   {"name": "RMSE", "expected_value": "0.123",
+    #    "tolerance": "<=15%", "direction": "lower_is_better"}
+    primary_metrics: List[Dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

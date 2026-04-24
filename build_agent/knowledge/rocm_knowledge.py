@@ -775,6 +775,75 @@ You MUST follow the ROCm-specific workflow below. Do NOT skip steps.
 **CRITICAL RULE: Do NOT use `runtest` or `poetryruntest` in ROCm mode. They are DISABLED.**
 **CRITICAL RULE: Output EXACTLY ONE ```bash``` block per response. Wait for the real result before your next action.**
 
+### TOOL-CALLING DISCIPLINE (the rule that wraps every other step)
+
+You have a palette of cheap, deterministic tools. They cost ~0 LLM tokens and
+their answers are far more reliable than your training data, which is months
+out of date. **Use them BEFORE acting, not after a failure.** The agent runtime
+will hard-block several risky actions until you've consulted the right tool —
+those are listed below as guards.
+
+**Standard order of operations on every non-trivial decision:**
+
+1. `mem_recall "<question>"` — what did THIS run already learn?
+2. `mem_recall "<question>" --use-global` — what did past runs learn?
+   *(skip if the question is repo-specific and one-off)*
+3. `graphify_query "<question>" --scope code` — what does the code actually do?
+   Use this instead of `find -name` / `grep -r` for "where is the entry point /
+   model factory / config loader / dataloader" questions.
+4. `graphify_query "<question>" --scope paper` *(only when reproducing a paper)*
+   — what does the paper actually say about this metric / experiment / hyper-
+   parameter? Use this BEFORE `cat /repo/paper.pdf`.
+5. `pypi_versions <pkg> --limit 8` — what versions of `<pkg>` are *currently*
+   installable from PyPI? **Required before `pip install <pkg>` of any
+   CUDA-leaning wheel** (`flash-attn`, `bitsandbytes`, `xformers`,
+   `deepspeed`, `apex`, `cupy`, `nvidia-*`).  The runtime will block the
+   `pip install` until you have called this.
+6. `dockerhub_tags <repo> --limit 8` — what tags does Docker Hub actually
+   serve? **Required before `change_base_image <repo>:<tag>`.** The runtime
+   will block the image switch until you have called this.
+7. `web_search "<query>"` — for new errors / unfamiliar libraries / version
+   matrices that aren't covered by the rules below.
+8. `visit_url <best_hit>` — pull the actual page content (release notes,
+   issue thread, README) instead of guessing from the snippet.
+9. `deep_research "<focused question>"` — multi-turn researcher sub-agent
+   that composes web_search + visit_url and returns a synthesised answer.
+   Use sparingly; it's the most expensive tool.
+
+**Hard guards the runtime enforces (these are not suggestions):**
+
+- `change_base_image <repo>:<tag>` is **blocked** unless you have called
+  `dockerhub_tags <repo>` in this run. Pick a tag from the live list, not
+  from memory.
+- `pip install <cuda_only_wheel>` is **blocked** unless you have called
+  `pypi_versions <pkg>` in this run, OR you follow the explicit
+  CUDA-to-ROCm mapping section below (e.g. flash-attn Triton-AMD install).
+- `echo ROCM_ENV_VERIFIED` is **blocked** until the run has actually
+  observed `rocm-smi` or `python -c "import torch; torch.cuda.is_available()"`
+  succeed in the sandbox. You cannot claim the environment works without
+  proof in the log.
+- `PAPER_RESULT_REPRODUCED` / `PAPER_RESULT_NOT_REPRODUCED` markers are
+  **blocked** until you have called `verify_paper_result --log <path>` and
+  the verifier has produced its STRUCTURED_VERDICT_JSON. The verifier is
+  the ONLY trusted source of numbers — do not invent metric values, do not
+  copy them from the paper text, copy them from the verifier output.
+
+**Anti-patterns the runtime will punish:**
+
+- "I think `rocm/pytorch:6.2` exists" → call `dockerhub_tags rocm/pytorch`
+  and copy the real tag.
+- "`flash-attn==2.6.3` should work" → call `pypi_versions flash-attn` first,
+  then follow the FlashAttention-for-ROCm section below.
+- Reading `/repo/paper.pdf` directly during paper reproduction without first
+  trying `graphify_query "..." --scope paper` or `paper_recall "..."`.
+- Echoing a `PAPER_RESULT_*` marker without a preceding `verify_paper_result`
+  call — the marker handler will down-grade the verdict to whatever the
+  verifier says, and your run will be scored on that, not on what you typed.
+
+**Treat every tool call as cheaper than one wrong sandbox command.** A wrong
+`pip install` triggers a multi-minute rollback; `pypi_versions` returns in a
+second.
+
 ### MANDATORY STEP 1: Read the README and understand the project FIRST
 Before doing ANYTHING else, your FIRST action MUST be:
 ```bash
@@ -1518,6 +1587,41 @@ You are configuring this repository to run on **AMD GPUs with ROCm** (not NVIDIA
 
 **CRITICAL RULE: Do NOT use `runtest` or `poetryruntest` in ROCm mode. They are DISABLED.**
 **CRITICAL RULE: Output EXACTLY ONE ```bash``` block per response.**
+
+### TOOL-CALLING DISCIPLINE (the rule that wraps every other step)
+
+A strategic plan has already been generated, but you still have a palette of
+deterministic tools that are far more reliable than your training data. Use
+them BEFORE acting, especially before any irreversible sandbox change. The
+runtime enforces several hard guards.
+
+**Standard order of operations:**
+
+1. `mem_recall "<question>"` — what did this run already learn?
+2. `mem_recall "<question>" --use-global` — what did past runs learn?
+3. `graphify_query "<question>" --scope code` — instead of `find` / `grep`.
+4. `graphify_query "<question>" --scope paper` *(paper-reproduction only)* —
+   before reading `/repo/paper.pdf` directly.
+5. `pypi_versions <pkg>` — required before `pip install` of any CUDA-leaning
+   wheel (`flash-attn`, `bitsandbytes`, `xformers`, `deepspeed`, `apex`,
+   `cupy`, `nvidia-*`).
+6. `dockerhub_tags <repo>` — required before `change_base_image`.
+7. `web_search` / `visit_url` — for unfamiliar errors and version matrices.
+8. `deep_research "<question>"` — for multi-source synthesis. Use sparingly.
+
+**Hard guards the runtime enforces (these are not suggestions):**
+
+- `change_base_image <repo>:<tag>` is blocked unless `dockerhub_tags <repo>`
+  has been called in this run.
+- `pip install <cuda_only_wheel>` is blocked unless `pypi_versions <pkg>`
+  has been called.
+- `echo ROCM_ENV_VERIFIED` is blocked until `rocm-smi` or
+  `torch.cuda.is_available()` has succeeded in the sandbox in this run.
+- `PAPER_RESULT_REPRODUCED` / `PAPER_RESULT_NOT_REPRODUCED` is blocked
+  until `verify_paper_result --log <path>` has produced a
+  STRUCTURED_VERDICT_JSON. **Use the verifier's numbers — do not invent
+  metric values.** If you echo a verdict that disagrees with the verifier,
+  the runtime will overwrite your verdict with the verifier's.
 
 ### IMPORTANT: A STRATEGIC PLAN HAS BEEN GENERATED
 A comprehensive plan has already analyzed the repository's README, directory structure,
