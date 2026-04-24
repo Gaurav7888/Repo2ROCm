@@ -257,11 +257,12 @@ class Configuration(Agent):
                     token_budget=int(mr.get("budget", 1500)),
                 ) or ""
                 if mr.get("use_global"):
-                    g = self.run_memory.recall_global_lessons(
-                        mr["question"], n_per_room=3,
-                        token_budget=max(400, int(mr.get("budget", 1500)) // 3),
-                    ) or ""
-                    pack = pack + g
+                    pack += (
+                        "\n[note] cross-run natural-language lesson recall is "
+                        "disabled. Use the structured KB guidance already in the "
+                        "system prompt, or verify against the current repo and "
+                        "tool output.\n"
+                    )
                 if not pack.strip():
                     pack = (
                         "mem_recall: no relevant prior context found for this "
@@ -302,15 +303,11 @@ class Configuration(Agent):
                     ) or ""
                 pack = (paper_pack or "") + (state_pack or "")
                 if pr.get("use_global"):
-                    if self.run_memory is not None and getattr(self.run_memory, "enabled", False):
-                        g = self.run_memory.recall_global_lessons(
-                            pr["question"],
-                            rooms=("dont", "do", "pattern"),
-                            n_per_room=3,
-                            token_budget=max(400, budget // 3),
-                            header="CROSS-RUN PAPER/ROCm LESSONS",
-                        ) or ""
-                        pack = pack + g
+                    pack += (
+                        "\n[note] cross-run natural-language lesson recall is "
+                        "disabled. Prefer the current paper evidence, current "
+                        "run-state, and deterministic verifier outputs.\n"
+                    )
                 if not pack.strip():
                     pack = (
                         "paper_recall: no relevant paper context found from graphify or run-state references. "
@@ -818,7 +815,7 @@ For import errors, check if the module exists in /repo before pip installing ext
 Do not use `git clone` or `wget` to download large files into /repo.
 
 WHEN TO USE RETRIEVAL TOOLS (in escalating order of cost; all cached):
-1. **mem_recall** "<failing command + error class>" — local memory; ~free. Always FIRST after a failure. Add `--global` to also pull cross-run lessons (do/dont/pattern).
+1. **mem_recall** "<failing command + error class>" — this-run memory only; ~free. Always FIRST after a failure.
 2. **graphify_query** "<symbol or behavior you need>" — local code graph; ~free. Use INSTEAD of `find -name` / `grep -r`. Returns ranked file:line locations.
 3. **paper_recall** "<question>" — graphify paper index + run-state references (`paper_experiments`, `experiment_state`, `context_refs`, `plan`, `decisions`). Use this BEFORE reading `/repo/paper.pdf` directly.
 4. **mem_recall "<topic>" --rooms plan,experiment_state,context_refs,decisions** — ground hyperparameters / env vars in the planner output and run-state references. ~free.
@@ -826,7 +823,7 @@ WHEN TO USE RETRIEVAL TOOLS (in escalating order of cost; all cached):
 6. **dockerhub_tags** <image> — local network ~1s. BEFORE `change_base_image`. Returns the actually-published tags for `rocm/pytorch`, `rocm/vllm`, etc.
 7. **web_search** "<query>" — DDG search ~2s. Use AFTER (1)–(6) come up empty. Best for niche errors: SDPA tensor-shape mismatches, undefined-symbol HIP errors, transformers-vs-torch version dances. Returns top-N hits with snippets.
 8. **visit_url** <url> — fetch ~2s. Use AFTER `web_search` to read a specific GitHub issue / ROCm doc / blog post that promises an answer. Strips HTML to readable markdown.
-9. **deep_research** "<question>" — bounded sub-agent loop (~30–90s, 4–6 internal LLM calls). Use when single-round `web_search`+`visit_url` won't crack the problem in one round (multi-version dependency dances, deep stack traces from libraries you've never seen, "what's the right ROCm install for this repo+gpu" composite questions). The sub-agent itself runs `mem_recall --global`, `web_search`, `visit_url`, `pypi_versions`, `dockerhub_tags` iteratively and returns ONE compact answer + cited URLs + verified install commands. You spend exactly ONE turn; it does the rest. Cached 14 days.
+9. **deep_research** "<question>" — bounded sub-agent loop (~30–90s, 4–6 internal LLM calls). Use when single-round `web_search`+`visit_url` won't crack the problem in one round (multi-version dependency dances, deep stack traces from libraries you've never seen, "what's the right ROCm install for this repo+gpu" composite questions). The sub-agent composes live web evidence with deterministic lookups and returns ONE compact answer + cited URLs + verified install commands. You spend exactly ONE turn; it does the rest. Cached 14 days.
 
 **Always prefer retrieval over guessing.** A `mem_recall` + `web_search` round costs <2 LLM tokens to invoke and saves ~5–25 turns of trial-and-error rollback. `deep_research` is the heavy hammer for problems that justify ~60s of background work.
 
@@ -2101,7 +2098,8 @@ The edit format is as follows:
             #   (a) instruction prefix (unchanged, drives the agent's behavior)
             #   (b) tiny recency tail = last 5 success commands (orientation only)
             #   (c) per-run recall pack from mempalace (relevant prior context)
-            #   (d) cross-run lessons from the global wing (DO/DON'T/PATTERN)
+            #   (d) no second long-term lesson layer here; durable learning
+            #       lives in the structured KB instead
             # Old behavior dumped ALL success_cmds verbatim → grew linearly each turn.
 
             if self._stage2_active:
@@ -2144,9 +2142,8 @@ The edit format is as follows:
             else:
                 recency = "The container remains in its original state.\n"
 
-            # Per-run + global recall, only if mempalace is enabled.
+            # Per-run recall only. Long-term learning lives in the structured KB.
             recall_block = ""
-            global_block = ""
             if self.run_memory is not None and getattr(self.run_memory, "enabled", False):
                 # Build a focused query from the most recent activity.
                 query_parts = []
@@ -2168,17 +2165,8 @@ The edit format is as follows:
                         ) or ""
                     except Exception as _e:
                         log_info(f"[mempalace] recall_pack failed: {_e}")
-                    try:
-                        global_block = self.run_memory.recall_global_lessons(
-                            query,
-                            rooms=("dont", "do", "pattern"),
-                            n_per_room=3,
-                            token_budget=800,
-                        ) or ""
-                    except Exception as _e:
-                        log_info(f"[mempalace] recall_global_lessons failed: {_e}")
 
-            appendix = instr + "\n" + recency + recall_block + global_block
+            appendix = instr + "\n" + recency + recall_block
 
             # Preserve the legacy normalization of pip_download wrapper paths.
             pattern = r'python\s+/home/tools/pip_download.py\s+-p\s+(\S+)\s+-v\s+""([^""]+)""'

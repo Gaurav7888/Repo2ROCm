@@ -322,6 +322,7 @@ def main():
     )
     begin_memory = memory_provider.provide_memory(begin_request)
     kb_context = memory_provider.format_begin_for_prompt(begin_memory)
+    learned_context = memory_provider.format_begin_for_planner(begin_memory)
     if kb_context:
         log_info(f"KB returned {len(begin_memory.items)} memory items "
                  f"(confidence: {begin_memory.confidence:.2f})")
@@ -405,6 +406,7 @@ def main():
         reproduce_results=reproduce_results,
         run_memory=run_memory,
         graphify_provider=graphify_provider,
+        learned_context=learned_context,
     )
     print_plan(plan)
     paper_experiments = paper_context.get("experiments", []) if reproduce_results else []
@@ -474,6 +476,7 @@ def main():
             repo_root=repo_path,
             plan=plan,
             kb_context=kb_context,
+            learned_context=learned_context,
             rocm_mode=rocm_mode,
             paper_pdf_path=paper_pdf_path if reproduce_results else None,
             reproduce_results=reproduce_results,
@@ -692,19 +695,15 @@ def main():
     trajectory_store.close()
     memory_provider.reset_session()
 
-    # ── Cumulative knowledge base: distill DO/DON'T/PATTERN lessons ──
+    # ── Per-run memory is runtime-only: keep the trace, but do not turn it
+    # into a second long-term natural-language KB. Structured KB/trajectory
+    # learning above remains the single durable learning path.
     try:
         if getattr(run_memory, "enabled", False):
-            counts = run_memory.distill_and_write_lessons(
-                trajectory_path=build_attempt.trajectory_file,
-                final_status=build_outcome,
-                llm=llm,
-            )
-            log_info(f"Lessons distilled to global KB: {counts}")
             log_info(f"Run memory stats: {run_memory.stats()}")
             run_memory.close()
     except Exception as _mp_e:
-        log_info(f"Lesson distillation failed: {_mp_e}")
+        log_info(f"Run memory shutdown failed: {_mp_e}")
 
     close_file_log()
     log_info(f"Debug log saved to: {output_dir}/agent_debug_log.txt")

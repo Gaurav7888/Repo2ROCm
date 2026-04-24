@@ -26,6 +26,7 @@ from knowledge.rocm_knowledge import (
     CUDA_TO_ROCM_MAPPING,
     BANNED_NVIDIA_PACKAGES,
 )
+from utils.json_utils import load_json_loose
 from utils.llm import get_llm_response
 from utils.rich_logger import log_phase, log_info, log_success, log_warning, console
 
@@ -704,6 +705,7 @@ def _llm_select_rocm_image(
     config_contents: Dict[str, str],
     readme_content: Optional[str],
     py_file_contents: Dict[str, str],
+    learned_context: str,
     llm: str,
 ) -> dict:
     """
@@ -738,6 +740,15 @@ def _llm_select_rocm_image(
             f"{evidence}\n"
         )
 
+    learned_block = ""
+    if learned_context:
+        learned_block = (
+            "\n## Learned prior from previous runs\n"
+            "Use this as a strong prior when it matches the current repo, but let "
+            "live registry evidence and current repo files win if there is a conflict.\n"
+            f"{learned_context}\n"
+        )
+
     prompt = f"""\
 You are an expert build engineer selecting the best ROCm Docker base image for a repository.
 You receive (a) the catalog of available images, (b) the repo signals, and
@@ -758,6 +769,7 @@ You receive (a) the catalog of available images, (b) the repo signals, and
 {readme_snippet}
 ### Import statements from source files
 {code_summary}
+{learned_block}
 {evidence_block}
 ## Task
 
@@ -799,23 +811,11 @@ Respond with ONLY a JSON object (no markdown fences, no extra text):
 
 def _parse_image_selection_response(response_text: str) -> dict:
     """Parse the LLM JSON response into a structured image selection result."""
-    import json as _json
-
-    text = response_text.strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```\w*\n?", "", text)
-        text = re.sub(r"\n?```$", "", text)
-        text = text.strip()
-
     try:
-        result = _json.loads(text)
-    except _json.JSONDecodeError:
-        json_match = re.search(r"\{[^{}]*\}", text, re.DOTALL)
-        if json_match:
-            result = _json.loads(json_match.group())
-        else:
-            log_warning(f"Could not parse LLM image selection response, falling back")
-            return _fallback_image_selection({})
+        result = load_json_loose(response_text, expected="object")
+    except ValueError:
+        log_warning("Could not parse LLM image selection response, falling back")
+        return _fallback_image_selection({})
 
     workload = result.get("workload", "pytorch")
     reasoning = result.get("reasoning", "")
@@ -1213,7 +1213,8 @@ def generate_plan(repo_path: str, full_name: str, rocm_mode: bool = False,
                   paper_pdf_path: Optional[str] = None,
                   reproduce_results: bool = False,
                   run_memory: Optional[Any] = None,
-                  graphify_provider: Optional[Any] = None) -> Tuple[str, Optional[str]]:
+                  graphify_provider: Optional[Any] = None,
+                  learned_context: str = "") -> Tuple[str, Optional[str], Dict[str, Any]]:
     """
     Deep-analyze the repository and produce a comprehensive strategic plan.
 
@@ -1389,6 +1390,7 @@ def generate_plan(repo_path: str, full_name: str, rocm_mode: bool = False,
                 config_contents=config_contents,
                 readme_content=readme_content,
                 py_file_contents=py_file_contents,
+                learned_context=learned_context,
                 llm=llm,
             )
         else:
@@ -1432,6 +1434,11 @@ def generate_plan(repo_path: str, full_name: str, rocm_mode: bool = False,
     sections.append(f"Framework: {framework}")
     sections.append(f"Top Imports: {', '.join(pkg for pkg, _ in top_imports[:15])}")
     sections.append("")
+
+    if learned_context:
+        sections.append("Learned Prior For Planning:")
+        sections.append(learned_context.strip())
+        sections.append("")
 
     # ── External lookup notes (PR-A/B/C, planner-side) ──────────────────────
     # The planner is not a multi-turn tool-calling agent, but we can still give
@@ -1759,13 +1766,13 @@ def _refine_plan_with_llm(raw_analysis: str, full_name: str, rocm_mode: bool, ll
             "exactly as written, with the original parameters and real data."
         )
         run_instruction = (
-            "10. The agent must run the EXACT commands from the README with original arguments. "
+            "11. The agent must run the EXACT commands from the README with original arguments. "
             "Do NOT scale down any parameters. Do NOT create mock data."
         )
     else:
         scale_down_instruction = "7. List training parameters that must be scaled down with exact sed commands."
         run_instruction = (
-            f"10. {'Describe how to create mock data and run with scaled-down parameters.' if rocm_mode else 'Describe how to run tests.'}"
+            f"11. {'Describe how to create mock data and run with scaled-down parameters.' if rocm_mode else 'Describe how to run tests.'}"
         )
 
     prompt = f"""\
@@ -1787,6 +1794,9 @@ The plan MUST:
 9. **If the README specifies which model to use, state it explicitly** (e.g., "The README
    recommends model `longchat-v1.5-7b-32k`"). If the analysis shows which models are
    gated vs ungated, include that information and recommend the ungated model.
+10. If the raw analysis contains a section called "Learned Prior For Planning",
+   preserve the actionable structured guidance that matches the current repo.
+   Do not drop it unless it clearly conflicts with current repo evidence.
 {run_instruction}
 
 CRITICAL: The execution agent will NOT re-read the README, directory listing, or config files.

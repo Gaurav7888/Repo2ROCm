@@ -97,26 +97,24 @@ class Tools(Enum):
     }
     # ── Stage 5b: in-loop retrieval tools (graphify code + mempalace memory) ──
     mem_recall = {
-        "command": 'mem_recall "<question>" [--rooms r1,r2,...] [--budget N] [--global]',
+        "command": 'mem_recall "<question>" [--rooms r1,r2,...] [--budget N]',
         "description": (
             "Query this run's memory (mempalace) for the slice most relevant to "
             "<question> instead of guessing. Default rooms: "
             "commands_success,commands_failed,fixes,decisions,patches,plan,"
-            "experiment_state,context_refs. Use --global to additionally pull cross-run lessons "
-            "(do/dont/pattern). --budget is a token budget (default 1500). Use "
+            "experiment_state,context_refs. --budget is a token budget (default 1500). Use "
             "this BEFORE retrying a failed install or rerunning the same command."
         ),
     }
     paper_recall = {
-        "command": 'paper_recall "<question>" [--budget N] [--global]',
+        "command": 'paper_recall "<question>" [--budget N]',
         "description": (
             "Query paper-related context using graphify's static paper index PLUS "
             "run-state references from memory (`paper_experiments`, "
             "`experiment_state`, `context_refs`, `plan`, `decisions`). Use this "
             "BEFORE reading `/repo/paper.pdf` directly. Best for: 'what metric "
             "should I target?', 'what hyperparameters did the paper use?', "
-            "'which experiment did the planner choose?', 'what tolerance applies?'. "
-            "`--global` additionally pulls cross-run lessons from the cumulative KB."
+            "'which experiment did the planner choose?', 'what tolerance applies?'."
         ),
     }
     graphify_query = {

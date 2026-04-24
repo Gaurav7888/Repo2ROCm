@@ -786,27 +786,25 @@ those are listed below as guards.
 **Standard order of operations on every non-trivial decision:**
 
 1. `mem_recall "<question>"` — what did THIS run already learn?
-2. `mem_recall "<question>" --use-global` — what did past runs learn?
-   *(skip if the question is repo-specific and one-off)*
-3. `graphify_query "<question>" --scope code` — what does the code actually do?
+2. `graphify_query "<question>" --scope code` — what does the code actually do?
    Use this instead of `find -name` / `grep -r` for "where is the entry point /
    model factory / config loader / dataloader" questions.
-4. `graphify_query "<question>" --scope paper` *(only when reproducing a paper)*
+3. `graphify_query "<question>" --scope paper` *(only when reproducing a paper)*
    — what does the paper actually say about this metric / experiment / hyper-
    parameter? Use this BEFORE `cat /repo/paper.pdf`.
-5. `pypi_versions <pkg> --limit 8` — what versions of `<pkg>` are *currently*
+4. `pypi_versions <pkg> --limit 8` — what versions of `<pkg>` are *currently*
    installable from PyPI? **Required before `pip install <pkg>` of any
    CUDA-leaning wheel** (`flash-attn`, `bitsandbytes`, `xformers`,
    `deepspeed`, `apex`, `cupy`, `nvidia-*`).  The runtime will block the
    `pip install` until you have called this.
-6. `dockerhub_tags <repo> --limit 8` — what tags does Docker Hub actually
+5. `dockerhub_tags <repo> --limit 8` — what tags does Docker Hub actually
    serve? **Required before `change_base_image <repo>:<tag>`.** The runtime
    will block the image switch until you have called this.
-7. `web_search "<query>"` — for new errors / unfamiliar libraries / version
+6. `web_search "<query>"` — for new errors / unfamiliar libraries / version
    matrices that aren't covered by the rules below.
-8. `visit_url <best_hit>` — pull the actual page content (release notes,
+7. `visit_url <best_hit>` — pull the actual page content (release notes,
    issue thread, README) instead of guessing from the snippet.
-9. `deep_research "<focused question>"` — multi-turn researcher sub-agent
+8. `deep_research "<focused question>"` — multi-turn researcher sub-agent
    that composes web_search + visit_url and returns a synthesised answer.
    Use sparingly; it's the most expensive tool.
 
@@ -1598,16 +1596,15 @@ runtime enforces several hard guards.
 **Standard order of operations:**
 
 1. `mem_recall "<question>"` — what did this run already learn?
-2. `mem_recall "<question>" --use-global` — what did past runs learn?
-3. `graphify_query "<question>" --scope code` — instead of `find` / `grep`.
-4. `graphify_query "<question>" --scope paper` *(paper-reproduction only)* —
+2. `graphify_query "<question>" --scope code` — instead of `find` / `grep`.
+3. `graphify_query "<question>" --scope paper` *(paper-reproduction only)* —
    before reading `/repo/paper.pdf` directly.
-5. `pypi_versions <pkg>` — required before `pip install` of any CUDA-leaning
+4. `pypi_versions <pkg>` — required before `pip install` of any CUDA-leaning
    wheel (`flash-attn`, `bitsandbytes`, `xformers`, `deepspeed`, `apex`,
    `cupy`, `nvidia-*`).
-6. `dockerhub_tags <repo>` — required before `change_base_image`.
-7. `web_search` / `visit_url` — for unfamiliar errors and version matrices.
-8. `deep_research "<question>"` — for multi-source synthesis. Use sparingly.
+5. `dockerhub_tags <repo>` — required before `change_base_image`.
+6. `web_search` / `visit_url` — for unfamiliar errors and version matrices.
+7. `deep_research "<question>"` — for multi-source synthesis. Use sparingly.
 
 **Hard guards the runtime enforces (these are not suggestions):**
 

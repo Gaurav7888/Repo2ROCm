@@ -9,7 +9,7 @@ palette of free, cached tools:
     visit    (urllib + html2text) -> readable page text
     pypi     (PyPI JSON)         -> package versions
     docker   (Docker Hub)        -> image tags
-    recall   (mempalace --global) -> prior cross-run lessons
+    recall   (compat shim)        -> explains that cross-run lesson recall is disabled
     finish   (JSON ResearchNote)  -> terminate
 
 The point: the parent agent spends ZERO turns reading search snippets. It just
@@ -48,6 +48,8 @@ import os
 import re
 import time
 from typing import Any, Dict, List, Optional, Tuple
+
+from utils.json_utils import load_json_loose
 
 
 # ── Defaults ─────────────────────────────────────────────────────────────────
@@ -187,22 +189,12 @@ def _tool_docker(image: str) -> Tuple[str, str]:
 
 
 def _tool_recall(question: str) -> Tuple[str, str]:
-    try:
-        from learning.mempalace_provider import RunMemory
-        # Use a transient run-memory instance scoped to a "researcher" pseudo-wing
-        # so we can hit the global lessons. We don't want to write to a real wing.
-        try:
-            mem = RunMemory.create("researcher/anon", "0000000")
-            pack = mem.recall_global_lessons(
-                question, n_per_room=3, token_budget=800,
-            ) or ""
-            if not pack.strip():
-                return f"[recall] no global lessons for {question!r}", "recall"
-            return pack, "recall"
-        except Exception as e:
-            return f"[error] recall failed: {e}", "recall"
-    except Exception as e:
-        return f"[error] recall import failed: {e}", "recall"
+    return (
+        "[recall] Cross-run natural-language lesson recall is disabled. "
+        "Use live repo evidence, deterministic lookups, and current web results "
+        "instead of relying on free-form lessons from prior repos.",
+        "recall",
+    )
 
 
 # ── LLM-driven loop ──────────────────────────────────────────────────────────
@@ -217,7 +209,7 @@ Tools (each call = ONE tool, exactly one line, no quotes around the tool name):
     visit <url>             Fetch a URL, returns extracted text (max 4000 chars).
     pypi <pkg>              List recent PyPI versions + dates.
     docker <image>          List recent Docker Hub tags + dates.
-    recall <question>       Query the cumulative ROCm knowledge base for prior do/dont/pattern lessons.
+    recall <question>       Compatibility shim that explains cross-run lesson recall is disabled.
     finish <json>           Emit the final ResearchNote and terminate. JSON shape:
         {"answer": "...",
          "suggested_commands": ["cmd1", "cmd2"],
@@ -225,16 +217,13 @@ Tools (each call = ONE tool, exactly one line, no quotes around the tool name):
          "confidence": 0.0..1.0}
 
 Strategy:
-1. ALWAYS start with `recall <question>`. Most ROCm problems have already been
-   solved in a prior run; if a confident answer comes back, you can finish in
-   2-3 turns.
-2. If recall is empty/weak, use `search` with terms that include both the
+1. Start with `search` terms that include both the
    error class and the ROCm/AMD context.
-3. Pick ONE high-signal hit (prefer github.com/pytorch, github.com/ROCm,
+2. Pick ONE high-signal hit (prefer github.com/pytorch, github.com/ROCm,
    rocm.docs.amd.com, huggingface.co/transformers issues). `visit` it.
-4. If you need a second source (dependency version, image tag), use `pypi` or
+3. If you need a second source (dependency version, image tag), use `pypi` or
    `docker`.
-5. Synthesize. `finish` with a 1-3 paragraph answer + the actual commands the
+4. Synthesize. `finish` with a 1-3 paragraph answer + the actual commands the
    parent should try, plus citations. Be HONEST about confidence.
 
 Constraints:
@@ -277,11 +266,7 @@ def _format_observation(tool_name: str, output: str, max_chars: int = 3500) -> s
 def _safe_finish(arg: str, ctx: Dict[str, Any]) -> Dict[str, Any]:
     """Parse the LLM's finish JSON; on failure, fall back to a partial note."""
     try:
-        # Strip leading "finish" residue if any & accept stray text around JSON
-        m = re.search(r"\{.*\}", arg, flags=re.DOTALL)
-        if not m:
-            raise ValueError("no JSON object found in finish arg")
-        note = json.loads(m.group(0))
+        note = load_json_loose(arg, expected="object")
     except Exception as e:
         note = {
             "answer": "Researcher could not produce a structured answer "

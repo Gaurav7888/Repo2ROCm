@@ -24,6 +24,54 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from storage.models import ExperimentCandidate, PaperMetadata, ReproductionResult
 from utils.llm import get_llm_response
+from utils.rich_logger import log_info, log_warning
+
+
+def _extract_largest_json_object(text: str) -> Optional[str]:
+    """Best-effort recovery of a top-level JSON object from a noisy LLM reply.
+
+    Walks the string with a brace-depth counter (respecting strings and
+    escapes) and returns the substring of the largest balanced ``{ ... }``.
+    Returns ``None`` if no balanced object is found. Used when the LLM wraps
+    the JSON in prose or truncates the trailing braces.
+    """
+    if not text:
+        return None
+    best: Optional[str] = None
+    n = len(text)
+    i = 0
+    while i < n:
+        if text[i] != "{":
+            i += 1
+            continue
+        depth = 0
+        in_str = False
+        esc = False
+        j = i
+        while j < n:
+            ch = text[j]
+            if in_str:
+                if esc:
+                    esc = False
+                elif ch == "\\":
+                    esc = True
+                elif ch == '"':
+                    in_str = False
+            else:
+                if ch == '"':
+                    in_str = True
+                elif ch == "{":
+                    depth += 1
+                elif ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        candidate = text[i : j + 1]
+                        if best is None or len(candidate) > len(best):
+                            best = candidate
+                        break
+            j += 1
+        i = max(i + 1, j + 1)
+    return best
 
 
 _DEFAULT_ENTRY_SCRIPT_PATTERNS = [
@@ -743,31 +791,33 @@ Return ONLY the JSON object, no markdown fences."""
             if graphify_provider is not None and getattr(graphify_provider, "enabled", False):
                 try:
                     paper_block = graphify_provider.query_paper(
-                        "main results table headline metric accuracy F1 EM perplexity speedup "
-                        "hyperparameters learning rate batch size epochs seed lora rank alpha "
-                        "gamma weight decay warmup experimental setup datasets benchmarks "
-                        "model sizes evaluation protocol method algorithm initialization "
-                        "theorem proposition preconditioner gradient SVD",
+                        "main paper body experiments methods setup evaluation results "
+                        "tables table footnotes figure captions headline metric "
+                        "accuracy F1 EM perplexity speedup datasets benchmarks "
+                        "model sizes evaluation protocol method algorithm",
                         token_budget=8000,
                         max_chunks=8,
                         per_chunk_max_chars=1500,
                     ) or ""
                     if paper_block:
-                        paper_backend = "graphify"
+                        paper_backend = "graphify-pass1"
                         if run_memory is not None and getattr(run_memory, "enabled", False):
                             run_memory.write_context_ref(
                                 kind="paper_query",
                                 ref_id="graphify:paper_chunks",
                                 source=getattr(graphify_provider, "paper_chunks_jsonl", ""),
-                                why_relevant="paper shortlist prompt",
-                                extra={"question": "paper shortlist multi-aspect query"},
+                                why_relevant="paper shortlist pass1 main-body evidence",
+                                extra={"question": "paper shortlist main-body-first query"},
                             )
                 except Exception as _e:
-                    print(f"[paper_agent] graphify paper query failed: {_e}")
+                    log_warning(
+                        f"  Paper shortlist: graphify paper query failed: {_e}"
+                    )
             if not paper_block and paper_text:
-                # Legacy fallback: the original 350K dump.
+                # Fallback dump: the prompt below tells the LLM to treat this as
+                # main-body-first evidence and consult appendix only on ambiguity.
                 paper_block = (
-                    "PAPER TEXT (full body, including tables and appendix):\n"
+                    "PAPER TEXT DUMP (main body first; appendix only if config/metric/setup remains ambiguous):\n"
                     + paper_text[:350000]
                 )
                 paper_backend = "fallback-dump"
@@ -780,7 +830,9 @@ Return ONLY the JSON object, no markdown fences."""
                         graphify_provider.build_or_refresh()
                     entry_scripts = graphify_provider.list_entry_scripts(max_files=12)
                 except Exception as _e:
-                    print(f"[paper_agent] graphify lookup failed: {_e}")
+                    log_warning(
+                        f"  Paper shortlist: graphify entry-script lookup failed: {_e}"
+                    )
             files_for_prompt = entry_scripts if entry_scripts else repo_files[:200]
 
             # ── Stage 5a: configs_block via graphify keyword query (was 65K dump) ──
@@ -804,14 +856,18 @@ Return ONLY the JSON object, no markdown fences."""
                         depth=1, top_seeds=8,
                     ) or ""
                 except Exception as _e:
-                    print(f"[paper_agent] graphify configs query failed: {_e}")
+                    log_warning(
+                        f"  Paper shortlist: graphify configs query failed: {_e}"
+                    )
             try:
                 relevant_paths = self._select_relevant_configs(
                     cfg_snippet, repo_configs, max_paths=4,
                     query_terms=cfg_query_terms,
                 )
             except Exception as _e:
-                print(f"[paper_agent] _select_relevant_configs failed: {_e}")
+                log_warning(
+                    f"  Paper shortlist: _select_relevant_configs failed: {_e}"
+                )
                 relevant_paths = []
             if relevant_paths:
                 chunks = [
@@ -879,8 +935,8 @@ Return ONLY the JSON object, no markdown fences."""
                 if paper_hint:
                     evidence_block += f"\nResearcher hint: {paper_hint}\n"
 
-            print(
-                f"[paper_agent] Stage 4+5a prompt sources: "
+            log_info(
+                f"  Paper shortlist prompt sources: "
                 f"paper_block={len(paper_block):,} chars "
                 f"(backend={paper_backend}), "
                 f"readme={len(readme_slice):,}, "
@@ -889,70 +945,59 @@ Return ONLY the JSON object, no markdown fences."""
                 f"evidence={len(evidence_block):,}"
             )
 
-            prompt = f"""\
-You are analyzing a research paper to pick ONE experiment we can reproduce on
-different GPU hardware than the paper used (e.g. the paper used NVIDIA
-A100/A6000/H100 but we will run on AMD MI250X/MI300X). Your goal: choose an
-experiment that captures the paper's CORE CONTRIBUTION, whose metric is
-MEANINGFUL across different GPUs, AND whose EXACT configuration (all
-hyperparameters) is unambiguously determined by RECONCILING the paper with
-the codebase's actual config files.
+            def _run_shortlist_prompt(prompt_text: str, label: str) -> Tuple[Optional[Dict[str, Any]], str]:
+                raw_text = ""
+                parsed_obj: Optional[Dict[str, Any]] = None
+                try:
+                    messages = [{"role": "user", "content": prompt_text}]
+                    response, _ = get_llm_response(
+                        effective_llm, messages, temperature=0.1, max_tokens=16384
+                    )
+                    if response and response[0]:
+                        raw_text = response[0].strip()
+                        if raw_text.startswith("```"):
+                            raw_text = re.sub(r"^```\w*\n?", "", raw_text)
+                            raw_text = re.sub(r"\n?```\s*$", "", raw_text)
+                        try:
+                            parsed_obj = json.loads(raw_text)
+                        except json.JSONDecodeError as je:
+                            recovered = _extract_largest_json_object(raw_text)
+                            if recovered is not None:
+                                try:
+                                    parsed_obj = json.loads(recovered)
+                                    log_warning(
+                                        f"  Paper shortlist {label}: JSON recovered after "
+                                        f"parse error ({je.msg} at line {je.lineno} col "
+                                        f"{je.colno}); used {len(recovered):,}/"
+                                        f"{len(raw_text):,} chars."
+                                    )
+                                except json.JSONDecodeError as je2:
+                                    log_warning(
+                                        f"  Paper shortlist {label}: JSON recovery also "
+                                        f"failed: {je2.msg} at line {je2.lineno} col "
+                                        f"{je2.colno}; raw response len={len(raw_text):,} "
+                                        f"chars; head={raw_text[:300]!r} ... tail="
+                                        f"{raw_text[-300:]!r}"
+                                    )
+                            else:
+                                log_warning(
+                                    f"  Paper shortlist {label}: JSON parse failed "
+                                    f"({je.msg} at line {je.lineno} col {je.colno}); "
+                                    f"raw response len={len(raw_text):,} chars; head="
+                                    f"{raw_text[:300]!r} ... tail={raw_text[-300:]!r}"
+                                )
+                    else:
+                        log_warning(
+                            f"  Paper shortlist {label}: LLM returned an empty response."
+                        )
+                except Exception as e:
+                    log_warning(
+                        f"  Paper shortlist {label}: prompt call failed: "
+                        f"{type(e).__name__}: {e}"
+                    )
+                return parsed_obj, raw_text
 
-{paper_block}
-
-README (full):
-{readme_slice}
-
-REPO FILES (candidate entry scripts):
-{json.dumps(files_for_prompt, indent=2)}
-
-REPO CONFIG FILES (yaml/toml/json/cfg/ini — these are the codebase's actual
-default hyperparameters; treat them as authoritative when the paper is silent
-or specifies a sweep without picking a value):
-{configs_block}
-{evidence_block}
-
-INSTRUCTIONS:
-1. READ THE FULL PAPER AND FULL README END-TO-END before answering. Also READ
-   THE REPO CONFIG FILES end-to-end. In particular scan Experiments/Methods/
-   Ablations sections, ALL Tables (including captions and footnotes), ALL
-   Figure captions, the Setup subsection, and the Appendix/Supplementary —
-   hyperparameters are often buried there.
-2. RECONCILE paper and codebase. The codebase config files are usually the
-   exact values the paper authors used; the paper may quote them generically
-   ("we tune the learning rate via grid search") while the yaml/toml file
-   ships with the actual chosen value. Reconciliation rules:
-   - If the paper FIXES a value (e.g. "lr=2e-4") and the codebase ALSO has it,
-     they should agree — use that value. If they disagree, prefer the PAPER's
-     value (it is the authoritative reproduction target) and add a caveat
-     citing the conflict.
-   - If the paper is AMBIGUOUS (e.g. "grid search over {{1e-3, 5e-4, 2e-4,
-     1e-4}}", "see appendix") but the codebase has a hardcoded value, USE
-     THE CODEBASE VALUE — that is what the authors actually ran. Cite the
-     yaml/toml path in `config_source`.
-   - If neither paper nor codebase specifies a value, fall back to the
-     entry-script default and note that in `caveats`.
-3. For EACH candidate experiment, extract the FULL configuration. Include:
-   - model name (exact HuggingFace repo id when possible)
-   - batch_size, sequence length, steps/epochs, learning_rate, optimizer,
-     lr_scheduler, warmup_ratio, weight_decay, block_length, temperature,
-     cfg_scale, sampling algorithm, cache_steps, window_size, precision
-     (fp16/bf16/int8), decoding algorithm, peft/lora hyperparams
-   - dataset / benchmark name (MMLU, GSM8K, HumanEval, MRPC, etc.)
-   - any environment variables the paper/README calls out
-4. PRECISELY include every non-default flag in `suggested_command`. Do NOT
-   rely on script defaults — spell them out, even if the value matches the
-   yaml default (so the experiment is reproducible without depending on
-   environment). If the paper's config cannot be expressed through the
-   script's CLI (e.g. the script hardcodes batch_size=1), list the
-   unreachable flags in `missing_flags`.
-5. List every yaml/toml/json/cfg file that governs this experiment's
-   hyperparameters in `codebase_config_files` (relative paths). The runtime
-   agent will use these to override values rather than guessing.
-6. Check the paper AND the README for DISCLAIMERS about the config, e.g.
-   "speedup not significant at batch_size=1", "requires H100 for 10x claim",
-   "accuracy measured on MMLU only". Put every disclaimer in `caveats`.
-
+            schema_prompt = f"""\
 Return a STRICT JSON object with this shape (no markdown fences, no prose):
 {{
   "title": "<paper title if you can tell, else empty string>",
@@ -995,31 +1040,25 @@ Return a STRICT JSON object with this shape (no markdown fences, no prose):
         "num_samples": "<value>",
         "<any other paper-reported hyperparam>": "<value>"
       }},
-      "config_source": "<verbatim phrase / table cell / yaml path where you
-        found each value, e.g. 'paper Table 2 + conf/model/t5base.yaml lr=1e-4
-        + Appendix G.4 stable_gamma=64'>",
+      "config_source": "<verbatim phrase / table cell / yaml path where you found each value>",
       "codebase_config_files": [
-        "<relative path of every yaml/toml/json/cfg file that governs this
-         experiment's hyperparameters, e.g. 'conf/model/t5base.yaml'>"
+        "<relative path of every yaml/toml/json/cfg file that governs this experiment's hyperparameters>"
       ],
-      "suggested_command": "<shell command with EVERY non-default flag spelled
-        out explicitly, taken from the README verbatim when possible, extended
-        with flags from the paper's config and codebase yaml — do NOT invent
-        flags the script doesn't support; put those in missing_flags instead.
-        Use Hydra-style overrides like '++model.learning_rate=1e-4' if the
-        codebase uses Hydra/OmegaConf>",
+      "suggested_command": "<shell command with EVERY non-default flag spelled out explicitly, taken from the README verbatim when possible, extended with flags from the paper's config and codebase yaml — do NOT invent flags the script doesn't support; put those in missing_flags instead. Use Hydra-style overrides if the codebase uses Hydra/OmegaConf>",
       "missing_flags": ["<flag the paper used but the script can't accept>"],
       "caveats": [
-        "<paper/README disclaimer verbatim, e.g. 'README: speedup not
-          significant at batch_size=1, can sometimes be slower'>",
-        "<e.g. 'Paper: 10x claim requires prefill length >= 2048'>"
+        "<paper/README disclaimer verbatim>",
+        "<another caveat if relevant>"
       ],
-      "tolerance_rule": "<e.g. '<=15% relative for speedup', '<=3 absolute
-        points for accuracy', '<=25% relative for absolute throughput on
-        different GPU'>",
-      "notes": "<anything else, e.g. 'compute speedup = method_tok/s /
-        baseline_tok/s locally'>"
+      "tolerance_rule": "<e.g. '<=15% relative for speedup', '<=3 absolute points for accuracy'>",
+      "notes": "<anything else, e.g. 'compute speedup = method_tok/s / baseline_tok/s locally'>"
     }}
+  ],
+  "unresolved_items": [
+    "<config / metric / setup detail that remains ambiguous after the main-body-first pass>"
+  ],
+  "followup_questions": [
+    "<targeted question a second paper retrieval pass should answer; mention appendix/supplementary only if needed>"
   ]
 }}
 
@@ -1064,17 +1103,180 @@ RULES for choosing and ordering experiments:
   rather than inventing them.
 - `est_runtime_minutes` is your estimate for a single run on one modern GPU.
 """
+
+            phase1_prompt = f"""\
+You are analyzing a research paper to pick ONE experiment we can reproduce on
+different GPU hardware than the paper used (e.g. the paper used NVIDIA
+A100/A6000/H100 but we will run on AMD MI250X/MI300X). Your goal: choose an
+experiment that captures the paper's CORE CONTRIBUTION, whose metric is
+MEANINGFUL across different GPUs, AND whose EXACT configuration (all
+hyperparameters) is unambiguously determined by RECONCILING the paper with
+the codebase's actual config files.
+
+{paper_block}
+
+README (full):
+{readme_slice}
+
+REPO FILES (candidate entry scripts):
+{json.dumps(files_for_prompt, indent=2)}
+
+REPO CONFIG FILES (yaml/toml/json/cfg/ini — these are the codebase's actual
+default hyperparameters; treat them as authoritative when the paper is silent
+or specifies a sweep without picking a value):
+{configs_block}
+{evidence_block}
+
+PHASE 1 WORKFLOW:
+1. MAIN BODY FIRST: prioritize the paper's main body, experiments/results
+   sections, tables, table footnotes, figure captions, README, and repo config
+   files.
+2. RECONCILE paper and codebase. The codebase config files are usually the
+   exact values the paper authors used; the paper may quote them generically
+   ("we tune the learning rate via grid search") while the yaml/toml file
+   ships with the actual chosen value.
+   - If the paper FIXES a value (e.g. "lr=2e-4") and the codebase ALSO has it,
+     they should agree — use that value. If they disagree, prefer the PAPER's
+     value and add a caveat citing the conflict.
+   - If the paper is AMBIGUOUS (e.g. a sweep, or "see appendix") but the
+     codebase has a hardcoded value, USE THE CODEBASE VALUE and cite the
+     yaml/toml path in `config_source`.
+   - If neither paper nor codebase specifies a value, fall back to the
+     entry-script default and note that in `caveats`.
+3. Use Appendix/Supplementary ONLY if a config / metric / setup detail remains
+   ambiguous after the main-body-first reconciliation.
+4. If anything remains ambiguous after this first pass, keep the best current
+   experiment list but record the gap in `unresolved_items` and write precise
+   `followup_questions` for a second retrieval pass.
+5. For EACH candidate experiment, extract the FULL configuration. Include:
+   - model name (exact HuggingFace repo id when possible)
+   - batch_size, sequence length, steps/epochs, learning_rate, optimizer,
+     lr_scheduler, warmup_ratio, weight_decay, block_length, temperature,
+     cfg_scale, sampling algorithm, cache_steps, window_size, precision
+     (fp16/bf16/int8), decoding algorithm, peft/lora hyperparams
+   - dataset / benchmark name (MMLU, GSM8K, HumanEval, MRPC, etc.)
+   - any environment variables the paper/README calls out
+6. PRECISELY include every non-default flag in `suggested_command`. Do NOT
+   rely on script defaults — spell them out, even if the value matches the
+   yaml default (so the experiment is reproducible without depending on
+   environment). If the paper's config cannot be expressed through the
+   script's CLI (e.g. the script hardcodes batch_size=1), list the
+   unreachable flags in `missing_flags`.
+7. Check the paper AND the README for DISCLAIMERS about the config, e.g.
+   "speedup not significant at batch_size=1", "requires H100 for 10x claim",
+   "accuracy measured on MMLU only". Put every disclaimer in `caveats`.
+
+{schema_prompt}
+"""
+
+            phase1_parsed, phase1_text = _run_shortlist_prompt(phase1_prompt, "pass1")
+            parsed: Optional[Dict[str, Any]] = phase1_parsed
+            text = phase1_text
+
+            phase1_unresolved: List[str] = []
+            phase1_followups: List[str] = []
+            if isinstance(phase1_parsed, dict):
+                raw_unresolved = phase1_parsed.get("unresolved_items") or []
+                if isinstance(raw_unresolved, str):
+                    raw_unresolved = [raw_unresolved]
+                phase1_unresolved = [str(x)[:220] for x in raw_unresolved if x][:6]
+
+                raw_followups = phase1_parsed.get("followup_questions") or []
+                if isinstance(raw_followups, str):
+                    raw_followups = [raw_followups]
+                phase1_followups = [str(x)[:260] for x in raw_followups if x][:4]
+
+            if phase1_followups or phase1_unresolved:
+                followup_block = ""
+                followup_backend = ""
+                followup_query = "Resolve remaining config / metric / setup ambiguity: "
+                if phase1_followups:
+                    followup_query += " ; ".join(phase1_followups)
+                else:
+                    followup_query += " ; ".join(phase1_unresolved)
+
+                if graphify_provider is not None and getattr(graphify_provider, "enabled", False):
+                    try:
+                        followup_block = graphify_provider.query_paper(
+                            followup_query,
+                            token_budget=4500,
+                            max_chunks=5,
+                            per_chunk_max_chars=1200,
+                        ) or ""
+                        if followup_block:
+                            followup_backend = "graphify-pass2"
+                            if run_memory is not None and getattr(run_memory, "enabled", False):
+                                run_memory.write_context_ref(
+                                    kind="paper_query",
+                                    ref_id="graphify:paper_chunks",
+                                    source=getattr(graphify_provider, "paper_chunks_jsonl", ""),
+                                    why_relevant="paper shortlist pass2 ambiguity follow-up",
+                                    extra={"question": followup_query},
+                                )
+                    except Exception as _e:
+                        log_warning(
+                            f"  Paper shortlist: graphify pass2 follow-up failed: {_e}"
+                        )
+                elif paper_text:
+                    followup_block = (
+                        "FOLLOW-UP PAPER DUMP (use only to resolve remaining "
+                        "config/metric/setup ambiguity; appendix/supplementary "
+                        "may help here):\n" + paper_text[:250000]
+                    )
+                    followup_backend = "fallback-dump-pass2"
+
+                if followup_block:
+                    log_info(
+                        "  Paper shortlist pass2 follow-up: "
+                        f"unresolved={len(phase1_unresolved)}, "
+                        f"questions={len(phase1_followups)}, "
+                        f"backend={followup_backend}, "
+                        f"evidence={len(followup_block):,}"
+                    )
+                    unresolved_block = (
+                        "\n".join(f"- {x}" for x in phase1_unresolved)
+                        if phase1_unresolved else "- (none listed)"
+                    )
+                    followup_q_block = (
+                        "\n".join(f"- {x}" for x in phase1_followups)
+                        if phase1_followups else "- (none listed)"
+                    )
+                    phase2_prompt = f"""\
+You are in PASS 2 of experiment selection.
+
+PASS 1 was intentionally MAIN-BODY-FIRST: it reconciled the paper's main body,
+tables, footnotes, figure captions, README, and repo config files before
+looking for extra evidence.
+
+Only use the follow-up evidence below to resolve REMAINING ambiguity in
+config / metric / setup details. If the follow-up evidence includes
+Appendix/Supplementary material, use it only to fill missing or ambiguous
+fields. Do NOT let appendix details override a clear main-body claim or a
+repo config file unless they explicitly resolve that ambiguity.
+
+PASS 1 OUTPUT (JSON):
+{json.dumps(phase1_parsed or {}, indent=2, default=str)}
+
+UNRESOLVED ITEMS:
+{unresolved_block}
+
+FOLLOW-UP QUESTIONS:
+{followup_q_block}
+
+FOLLOW-UP PAPER EVIDENCE:
+{followup_block}
+
+Return the SAME JSON SHAPE as PASS 1 (`title`, `experiments`,
+`unresolved_items`, `followup_questions`). Keep already-well-specified
+experiments unchanged. Update only fields clarified by the follow-up evidence.
+"""
+                    phase2_parsed, phase2_text = _run_shortlist_prompt(phase2_prompt, "pass2")
+                    if phase2_parsed is not None:
+                        parsed = phase2_parsed
+                        text = phase2_text
+
             try:
-                messages = [{"role": "user", "content": prompt}]
-                response, _ = get_llm_response(
-                    effective_llm, messages, temperature=0.1, max_tokens=4096
-                )
-                if response and response[0]:
-                    text = response[0].strip()
-                    if text.startswith("```"):
-                        text = re.sub(r"^```\w*\n?", "", text)
-                        text = re.sub(r"\n?```$", "", text)
-                    parsed = json.loads(text)
+                if parsed is not None:
                     paper_title = (parsed.get("title") or "").strip()
                     for exp in parsed.get("experiments", [])[:max_candidates]:
                         em = exp.get("expected_metric") or {}
@@ -1083,7 +1285,6 @@ RULES for choosing and ordering experiments:
                             runtime_f = float(runtime_min)
                         except (TypeError, ValueError):
                             runtime_f = 0.0
-                        # Normalize optional list fields (LLM may omit or return non-lists)
                         raw_caveats = exp.get("caveats") or []
                         if isinstance(raw_caveats, str):
                             raw_caveats = [raw_caveats]
@@ -1102,9 +1303,6 @@ RULES for choosing and ordering experiments:
                         codebase_cfg_files = [
                             str(p)[:200] for p in raw_cfg_files if p
                         ][:15]
-                        # Multi-metric verdicts (NEW): tolerate either an
-                        # explicit `primary_metrics` list, OR fall back to a
-                        # single-entry list from `expected_metric`.
                         raw_primary = exp.get("primary_metrics") or []
                         if isinstance(raw_primary, dict):
                             raw_primary = [raw_primary]
@@ -1151,7 +1349,20 @@ RULES for choosing and ordering experiments:
                             primary_metrics=primary_metrics_list,
                         )
                         candidates.append(cand)
-            except Exception:
+            except Exception as e:
+                import traceback as _tb
+                log_warning(
+                    "  Paper shortlist: unexpected error while parsing "
+                    f"experiments: {type(e).__name__}: {e}"
+                )
+                log_warning(
+                    "  Paper shortlist traceback:\n" + _tb.format_exc()
+                )
+                if text:
+                    log_warning(
+                        f"  Paper shortlist response head ({len(text):,} "
+                        f"chars): {text[:500]!r}"
+                    )
                 candidates = []
 
         # ── Post-process: classify metrics, match code, fill tolerance ──

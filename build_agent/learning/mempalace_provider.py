@@ -3,17 +3,16 @@ Mempalace provider — Stage 2 of the memory layer.
 
 Two responsibilities:
 
-1. **Per-run memory** (one palace per repo+sha). Persists every meaningful
-   event of a build attempt as a verbatim drawer with rich metadata so that
-   later turns / runs can do selective retrieval instead of "append everything".
+1. **Per-run memory** (one palace per repo+sha). Persists the current run's
+   plan, decisions, failures, fixes, and compacted observations so the agent
+   can retrieve the most relevant slice later in the same run.
 
-2. **Cumulative knowledge base** (a single shared palace across all runs).
-   At the end of every run we distill the trajectory into "DO" / "DON'T" /
-   "PATTERN" / "COMPATIBILITY" lessons and write them to the global wing.
-   Future runs can query this wing as a growing experience base.
+2. **No long-term free-form lesson store by default.** Durable learning now
+   lives in the structured KB / trajectory pipeline, which is less prone to
+   storing repo-specific prose that only worked once.
 
-This file is **write-only** for Stage 2. Retrieval (Stage 3) will plug into
-`Configuration.run`'s per-turn loop later.
+This file is therefore a runtime trace store, not a second long-term
+knowledge base.
 
 API (kept minimal so callers don't have to know about chromadb/mempalace):
 
@@ -24,7 +23,6 @@ API (kept minimal so callers don't have to know about chromadb/mempalace):
     mem.write_decision("base_image", "rocm/pytorch:latest", reason="...")
     mem.write_turn(traj_record_dict, full_observation_text,
                    action_content, compacted_observation)
-    mem.distill_and_write_lessons(trajectory_iter)   # called at end of run
     mem.close()
 """
 
@@ -72,9 +70,10 @@ class _NoopMemory:
 
 
 class RunMemory:
-    """Per-run mempalace store. Wing = repo+sha. Rooms = memory categories."""
+    """Per-run mempalace store. Wing = repo+sha. Rooms = runtime state categories."""
 
     enabled = True
+    ENABLE_GLOBAL_LESSONS = False
 
     # Room schema, derived from observed Repo2ROCm artifacts.
     # NOTE: the legacy `paper_extracts` room has been removed; raw paper text
@@ -409,15 +408,9 @@ class RunMemory:
                                prefer_source: str = "llm_synthesis",
                                palace_base: str = _DEFAULT_PALACE_BASE,
                                header: str = "CROSS-RUN LESSONS (global KB)") -> str:
-        """Recall from the cumulative knowledge base (shared across all repos).
-
-        Filters:
-          * `min_confidence` drops low-confidence heuristic lessons (the new
-            distiller stamps a confidence; legacy lessons without one are
-            treated as 0.3 so they sink unless the caller relaxes the bar).
-          * `prefer_source` boosts lessons emitted by the LLM synthesiser over
-            the heuristic fallback (used for ordering, not hard filtering).
-        """
+        """Deprecated: long-term free-form lesson recall is disabled by default."""
+        if not self.ENABLE_GLOBAL_LESSONS:
+            return ""
         if not query:
             return ""
         from mempalace.palace import get_collection  # ensure global palace exists
@@ -501,24 +494,22 @@ class RunMemory:
                                    final_status: str = "unknown",
                                    llm: Optional[str] = None) -> Dict[str, int]:
         """
-        Read the per-run trajectory and emit DO/DONT/PATTERN lessons into the
-        GLOBAL wing so future runs can recall them.
-
-        New strategy (much less noisy than the old per-failure dump):
-
-        1. Walk the trajectory and identify *causal* failure → recovery pairs:
-           a `failure` (or soft-failure) observation immediately followed by a
-           clearly related successful action on the same logical target.
-           Standalone failures are NOT written, because they are usually noise
-           that the agent recovered from in a way the regex heuristic can't see.
-        2. For each pair, ask the LLM (single, low-temperature call) to summarise
-           "what to do" and "what NOT to do" and emit *one* DO and *one* DON'T
-           lesson, plus an optional PATTERN.
-        3. If no LLM is available, emit at most one DO/DON'T per pair using a
-           strict heuristic, never per-failure.
-
-        Returns counts of lessons written.
+        Deprecated: long-term free-form lesson distillation is disabled by
+        default. Durable learning now happens through the structured KB.
         """
+        if not self.ENABLE_GLOBAL_LESSONS:
+            return {
+                "do": 0,
+                "dont": 0,
+                "pattern": 0,
+                "compatibility": 0,
+                "pairs_seen": 0,
+                "pairs_kept": 0,
+                "disabled": 1,
+            }
+
+        # Legacy implementation kept behind ENABLE_GLOBAL_LESSONS for
+        # compatibility and experiments only.
         from mempalace.palace import get_collection
 
         global_palace = os.path.join(palace_base, "_global")
@@ -712,6 +703,7 @@ class RunMemory:
         """
         if not pairs:
             return []
+        from utils.json_utils import load_json_loose
         from utils.llm import get_llm_response
 
         sketches: List[str] = []
@@ -762,20 +754,10 @@ class RunMemory:
             return []
         if not response or not response[0]:
             return []
-        text = response[0].strip()
-        if text.startswith("```"):
-            text = re.sub(r"^```\w*\n?", "", text)
-            text = re.sub(r"\n?```$", "", text)
         try:
-            data = json.loads(text)
-        except Exception:
-            m = re.search(r"\[.*\]", text, re.DOTALL)
-            if not m:
-                return []
-            try:
-                data = json.loads(m.group(0))
-            except Exception:
-                return []
+            data = load_json_loose(response[0], expected="array")
+        except ValueError:
+            return []
         if not isinstance(data, list):
             return []
         cleaned: List[Dict[str, Any]] = []

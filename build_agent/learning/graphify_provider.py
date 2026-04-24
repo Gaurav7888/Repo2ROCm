@@ -12,7 +12,6 @@ Mempalace owns *dynamic* run state:
   - failures / fixes
   - decisions
   - metrics
-  - cross-run lessons
 
 This provider therefore exposes two retrieval surfaces:
 

@@ -1,16 +1,10 @@
 """
 Learning Pipeline — distils build trajectories into structured KB updates.
 
-After every build attempt (success or failure), the distiller:
-1. Loads the full trajectory.
-2. Identifies which actions were necessary vs incidental (causal attribution).
-3. Generalises patterns: replaces specific versions with ranges, specific
-   repo names with dependency fingerprints.
-4. Proposes candidate rules and error patterns for the KB.
-5. Runs consistency checks before applying updates.
-
-Inspired by MemEvolve's take_in_memory pattern, but adapted: we produce
-executable rules, not text memories.
+After every build attempt, the distiller should keep only structured knowledge
+that is likely to transfer across repositories. Repo-specific prose, one-off
+commands, and free-form rules learned from a single run are intentionally
+excluded because they tend to overfit.
 """
 
 from __future__ import annotations
@@ -51,22 +45,14 @@ class TrajectoryDistiller:
         """
         proposals: List[KBUpdateProposal] = []
 
-        # 1. Extract novel error patterns
-        proposals.extend(self._extract_novel_errors(attempt, trajectory))
-
-        # 2. Extract successful fix sequences
-        if attempt.outcome == BuildOutcome.SUCCESS.value:
-            proposals.extend(self._extract_fix_sequences(attempt, trajectory))
-
-        # 3. Extract install path discoveries
+        # Keep durable learning intentionally narrow:
+        #   * package install paths / compatibility hints
+        #   * confidence updates for existing structured rules
+        # Avoid storing one-off regexes or free-form "generalized" rules mined
+        # from a single repo trajectory.
         proposals.extend(self._extract_install_paths(attempt, trajectory))
 
-        # 4. Update existing rule confidence based on outcome
         proposals.extend(self._update_rule_confidence(attempt, trajectory))
-
-        # 5. LLM-based pattern generalisation (if LLM available)
-        if self.llm and trajectory:
-            proposals.extend(self._llm_generalise(attempt, trajectory))
 
         return proposals
 

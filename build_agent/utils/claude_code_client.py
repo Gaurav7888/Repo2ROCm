@@ -720,8 +720,8 @@ def generate_claude_md(
     sections.append(
         "If this project is running under the Repo2ROCm configuration loop, the parent "
         "agent exposes retrieval tools with these intents:\n"
-        "- `paper_recall \"<question>\"` → retrieve paper-only context from memory\n"
-        "- `mem_recall \"<question>\" --global` → retrieve this-run + cross-run lessons\n"
+        "- `paper_recall \"<question>\"` → retrieve paper-only context plus this-run state\n"
+        "- `mem_recall \"<question>\"` → retrieve this-run context (decisions, failures, fixes)\n"
         "- `graphify_query \"<question>\"` → query the code graph for file/symbol locations\n"
         "- `pypi_versions <pkg>` / `dockerhub_tags <image>` → deterministic external lookups\n"
         "- `web_search \"<query>\"` / `visit_url <url>` → cached internet search + page read\n"
@@ -804,6 +804,7 @@ def setup_claude_code_project(
     repo_root: str,
     plan: str = "",
     kb_context: str = "",
+    learned_context: str = "",
     rocm_mode: bool = True,
     paper_pdf_path: Optional[str] = None,
     reproduce_results: bool = False,
@@ -811,7 +812,7 @@ def setup_claude_code_project(
     """
     Set up Claude Code project files (.claude/) for the repository.
 
-    Creates CLAUDE.md, sub-agent definitions, and skill files.
+    Creates CLAUDE.md, sub-agent definitions, and the core ROCm skill.
 
     When `reproduce_results` is True and `paper_pdf_path` points to a valid
     PDF, the file is (re)copied to `<repo_root>/paper.pdf` so Claude's Read
@@ -819,9 +820,10 @@ def setup_claude_code_project(
     """
     claude_dir = os.path.join(repo_root, ".claude")
     agents_dir = os.path.join(claude_dir, "agents")
-    skills_dir = os.path.join(claude_dir, "skills", "rocm-migration")
+    skills_root = os.path.join(claude_dir, "skills")
+    rocm_skills_dir = os.path.join(skills_root, "rocm-migration")
     os.makedirs(agents_dir, exist_ok=True)
-    os.makedirs(skills_dir, exist_ok=True)
+    os.makedirs(rocm_skills_dir, exist_ok=True)
 
     if paper_pdf_path and os.path.isfile(paper_pdf_path):
         target = os.path.join(repo_root, "paper.pdf")
@@ -858,7 +860,7 @@ def setup_claude_code_project(
             f.write(agent_md)
 
     skill_md = _generate_rocm_skill()
-    with open(os.path.join(skills_dir, "SKILL.md"), "w") as f:
+    with open(os.path.join(rocm_skills_dir, "SKILL.md"), "w") as f:
         f.write(skill_md)
 
     return claude_dir

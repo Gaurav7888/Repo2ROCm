@@ -314,6 +314,62 @@ class BuildMemoryProvider:
         sections.append("=" * 60)
         return "\n".join(sections)
 
+    def format_begin_for_planner(self, response: MemoryResponse,
+                                 max_items: int = 6) -> str:
+        """
+        Produce a short planner-facing brief from BEGIN memory.
+
+        The planner needs only the highest-signal prior, not the full KB dump
+        used in the configuration agent's system prompt.
+        """
+        if not response.items:
+            return ""
+
+        priority = {"rule": 0, "pattern": 1, "guidance": 2, "fix": 3}
+        ranked = sorted(
+            response.items,
+            key=lambda item: (
+                priority.get(item.item_type, 9),
+                -float(item.confidence),
+                item.id,
+            ),
+        )
+
+        lines = []
+        seen = set()
+        for item in ranked:
+            content = (item.content or "").strip()
+            if not content:
+                continue
+            norm = " ".join(content.lower().split())
+            if norm in seen:
+                continue
+            seen.add(norm)
+
+            label = {
+                "rule": "rule",
+                "pattern": "compat",
+                "guidance": "lesson",
+                "fix": "fix",
+            }.get(item.item_type, "note")
+            line = f"  - [{label} {item.confidence:.0%}] {content}"
+            if item.commands:
+                line += f" | command hint: {item.commands[0]}"
+            lines.append(line)
+            if len(lines) >= max_items:
+                break
+
+        if not lines:
+            return ""
+
+        return (
+            "\n========================================\n"
+            "LEARNED PRIOR FOR PLANNING\n"
+            "========================================\n"
+            + "\n".join(lines)
+            + "\n"
+        )
+
     def format_in_for_observation(self, response: MemoryResponse) -> str:
         """Format IN-phase memory as text to append to the observation."""
         if not response.items:

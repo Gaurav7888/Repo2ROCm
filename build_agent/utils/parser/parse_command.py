@@ -14,6 +14,7 @@
 
 
 import re
+import shlex
 from .parse_dialogue import extract_dialogue_warnings
 
 BASH_FENCE = ['```bash', '```']
@@ -200,31 +201,96 @@ def match_clear_configuration(command):
 
 # ── Stage 5b: in-loop retrieval tools ────────────────────────────────────────
 
+
+def _split_tool_command(command: str, tool_name: str):
+    """Tokenize a tool command using shell rules and verify the tool name."""
+    try:
+        tokens = shlex.split(command or "")
+    except ValueError:
+        return None
+    if not tokens or tokens[0].lower() != tool_name.lower():
+        return None
+    return tokens[1:]
+
+
+def _parse_known_flags(tokens, value_flags=(), boolean_flags=(), multi_value_flags=()):
+    """Parse a small shell-style flag set without regexes."""
+    value_flags = set(value_flags)
+    boolean_flags = set(boolean_flags)
+    multi_value_flags = set(multi_value_flags)
+
+    positionals = []
+    options = {flag: [] for flag in multi_value_flags}
+    i = 0
+    while i < len(tokens):
+        token = tokens[i]
+        if token in value_flags:
+            if i + 1 >= len(tokens):
+                return None
+            options[token] = tokens[i + 1]
+            i += 2
+        elif token in multi_value_flags:
+            if i + 1 >= len(tokens):
+                return None
+            options[token].append(tokens[i + 1])
+            i += 2
+        elif token in boolean_flags:
+            options[token] = True
+            i += 1
+        elif token.startswith("--"):
+            return None
+        else:
+            positionals.append(token)
+            i += 1
+    return positionals, options
+
+
+def _parse_int(value, default=None):
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_float(value, default=None):
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
 def match_mem_recall(command: str):
     """
     Parse:  mem_recall "<question>" [--rooms r1,r2] [--budget N] [--global]
     Returns dict with keys: question, rooms (list|None), budget (int), use_global (bool)
     on success; -1 on no match.
     """
-    s = command.strip()
-    if not re.match(r'^\s*mem_recall\b', s, re.IGNORECASE):
+    tokens = _split_tool_command(command, "mem_recall")
+    if tokens is None:
         return -1
-    body = re.sub(r'^\s*mem_recall\s*', '', s, count=1, flags=re.IGNORECASE)
-    qm = re.match(r'^"([^"]+)"|^\'([^\']+)\'', body)
-    if not qm:
+    parsed = _parse_known_flags(
+        tokens,
+        value_flags=("--rooms", "--budget"),
+        boolean_flags=("--global",),
+    )
+    if parsed is None:
         return -1
-    question = qm.group(1) or qm.group(2)
-    rest = body[qm.end():]
-    rooms_m = re.search(r'--rooms\s+([A-Za-z0-9_,]+)', rest)
-    budget_m = re.search(r'--budget\s+(\d+)', rest)
-    use_global = bool(re.search(r'--global\b', rest))
-    rooms = [r.strip() for r in rooms_m.group(1).split(',')] if rooms_m else None
-    budget = int(budget_m.group(1)) if budget_m else 1500
+    positionals, options = parsed
+    if len(positionals) != 1:
+        return -1
+    rooms_raw = options.get("--rooms")
+    rooms = [r.strip() for r in rooms_raw.split(",") if r.strip()] if rooms_raw else None
+    budget = _parse_int(options.get("--budget"), default=1500)
+    if budget is None:
+        return -1
     return {
-        "question": question,
+        "question": positionals[0],
         "rooms": rooms,
         "budget": budget,
-        "use_global": use_global,
+        "use_global": bool(options.get("--global")),
     }
 
 
@@ -234,21 +300,26 @@ def match_paper_recall(command: str):
     Returns dict with keys: question, budget (int), use_global (bool)
     on success; -1 on no match.
     """
-    s = command.strip()
-    if not re.match(r'^\s*paper_recall\b', s, re.IGNORECASE):
+    tokens = _split_tool_command(command, "paper_recall")
+    if tokens is None:
         return -1
-    body = re.sub(r'^\s*paper_recall\s*', '', s, count=1, flags=re.IGNORECASE)
-    qm = re.match(r'^"([^"]+)"|^\'([^\']+)\'', body)
-    if not qm:
+    parsed = _parse_known_flags(
+        tokens,
+        value_flags=("--budget",),
+        boolean_flags=("--global",),
+    )
+    if parsed is None:
         return -1
-    question = qm.group(1) or qm.group(2)
-    rest = body[qm.end():]
-    budget_m = re.search(r'--budget\s+(\d+)', rest)
-    use_global = bool(re.search(r'--global\b', rest))
+    positionals, options = parsed
+    if len(positionals) != 1:
+        return -1
+    budget = _parse_int(options.get("--budget"), default=1500)
+    if budget is None:
+        return -1
     return {
-        "question": question,
-        "budget": int(budget_m.group(1)) if budget_m else 1500,
-        "use_global": use_global,
+        "question": positionals[0],
+        "budget": budget,
+        "use_global": bool(options.get("--global")),
     }
 
 
@@ -258,22 +329,25 @@ def match_graphify_query(command: str):
     Returns dict with keys: question, scope, budget on success; -1 on no match.
     `scope` defaults to "code" to preserve the historical behaviour of this tool.
     """
-    s = command.strip()
-    if not re.match(r'^\s*graphify_query\b', s, re.IGNORECASE):
+    tokens = _split_tool_command(command, "graphify_query")
+    if tokens is None:
         return -1
-    body = re.sub(r'^\s*graphify_query\s*', '', s, count=1, flags=re.IGNORECASE)
-    qm = re.match(r'^"([^"]+)"|^\'([^\']+)\'', body)
-    if not qm:
+    parsed = _parse_known_flags(tokens, value_flags=("--scope", "--budget"))
+    if parsed is None:
         return -1
-    question = qm.group(1) or qm.group(2)
-    rest = body[qm.end():]
-    budget_m = re.search(r'--budget\s+(\d+)', rest)
-    scope_m = re.search(r'--scope\s+(paper|code|both)\b', rest, re.IGNORECASE)
-    scope = (scope_m.group(1).lower() if scope_m else "code")
+    positionals, options = parsed
+    if len(positionals) != 1:
+        return -1
+    budget = _parse_int(options.get("--budget"), default=1500)
+    if budget is None:
+        return -1
+    scope = str(options.get("--scope") or "code").lower()
+    if scope not in ("paper", "code", "both"):
+        return -1
     return {
-        "question": question,
+        "question": positionals[0],
         "scope": scope,
-        "budget": int(budget_m.group(1)) if budget_m else 1500,
+        "budget": budget,
     }
 
 
@@ -293,34 +367,42 @@ def match_verify_paper_result(command: str):
     fall back to the chosen experiment's `expected_metric_name` /
     `expected_metric_value` (and any `primary_metrics` list).
     """
-    s = command.strip()
-    if not re.match(r'^\s*verify_paper_result\b', s, re.IGNORECASE):
+    tokens = _split_tool_command(command, "verify_paper_result")
+    if tokens is None:
         return -1
-    body = re.sub(r'^\s*verify_paper_result\s*', '', s, count=1, flags=re.IGNORECASE)
-
-    log_m = re.search(r'--log\s+(\S+)', body)
-    if not log_m:
+    parsed = _parse_known_flags(
+        tokens,
+        value_flags=("--log", "--tolerance", "--direction"),
+        multi_value_flags=("--metric",),
+    )
+    if parsed is None:
         return -1
-    log_path = log_m.group(1).strip().strip('"').strip("'")
+    positionals, options = parsed
+    if positionals:
+        return -1
+    log_path = options.get("--log")
+    if not log_path:
+        return -1
 
     metrics: list = []
-    for m in re.finditer(r'--metric\s+([^\s=]+)\s*=\s*("[^"]+"|\'[^\']+\'|\S+)', body):
-        name = m.group(1).strip()
-        raw_val = m.group(2).strip().strip('"').strip("'")
+    for metric_spec in options.get("--metric", []):
+        if "=" not in metric_spec:
+            return -1
+        name, raw_val = metric_spec.split("=", 1)
+        name = name.strip()
+        raw_val = raw_val.strip()
+        if not name:
+            return -1
         try:
             val: object = float(raw_val)
         except (TypeError, ValueError):
             val = raw_val
         metrics.append({"name": name, "expected_value": val})
 
-    tol_m = re.search(r'--tolerance\s+("[^"]+"|\'[^\']+\'|\S.*?)(?:\s+--|$)', body)
-    tolerance = ""
-    if tol_m:
-        tolerance = tol_m.group(1).strip().strip('"').strip("'")
-
-    dir_m = re.search(r'--direction\s+(higher_is_better|lower_is_better|equal)\b',
-                      body, re.IGNORECASE)
-    direction = dir_m.group(1).lower() if dir_m else ""
+    tolerance = options.get("--tolerance") or ""
+    direction = str(options.get("--direction") or "").lower()
+    if direction and direction not in ("higher_is_better", "lower_is_better", "equal"):
+        return -1
 
     return {
         "log_path": log_path,
@@ -338,16 +420,21 @@ def match_pypi_versions(command: str):
     Package name allows letters, digits, dots, hyphens, underscores.
     Returns dict with keys: package, limit on success; -1 on no match.
     """
-    s = command.strip()
-    m = re.match(r'^\s*pypi_versions\s+([A-Za-z0-9._\-]+)\s*(.*)$', s, re.IGNORECASE)
-    if not m:
+    tokens = _split_tool_command(command, "pypi_versions")
+    if tokens is None:
         return -1
-    pkg = m.group(1)
-    rest = m.group(2) or ''
-    lim_m = re.search(r'--limit\s+(\d+)', rest)
+    parsed = _parse_known_flags(tokens, value_flags=("--limit",))
+    if parsed is None:
+        return -1
+    positionals, options = parsed
+    if len(positionals) != 1:
+        return -1
+    limit = _parse_int(options.get("--limit"), default=12)
+    if limit is None:
+        return -1
     return {
-        "package": pkg,
-        "limit": int(lim_m.group(1)) if lim_m else 12,
+        "package": positionals[0],
+        "limit": limit,
     }
 
 
@@ -357,16 +444,21 @@ def match_dockerhub_tags(command: str):
     Image is `repo/name` or just `name`.
     Returns dict with keys: image, limit on success; -1 on no match.
     """
-    s = command.strip()
-    m = re.match(r'^\s*dockerhub_tags\s+([A-Za-z0-9._\-/]+)\s*(.*)$', s, re.IGNORECASE)
-    if not m:
+    tokens = _split_tool_command(command, "dockerhub_tags")
+    if tokens is None:
         return -1
-    image = m.group(1)
-    rest = m.group(2) or ''
-    lim_m = re.search(r'--limit\s+(\d+)', rest)
+    parsed = _parse_known_flags(tokens, value_flags=("--limit",))
+    if parsed is None:
+        return -1
+    positionals, options = parsed
+    if len(positionals) != 1:
+        return -1
+    limit = _parse_int(options.get("--limit"), default=12)
+    if limit is None:
+        return -1
     return {
-        "image": image,
-        "limit": int(lim_m.group(1)) if lim_m else 12,
+        "image": positionals[0],
+        "limit": limit,
     }
 
 
@@ -377,19 +469,21 @@ def match_web_search(command: str):
     Parse:  web_search "<query>" [--max-results N]
     Returns dict {query, max_results} on success; -1 on no match.
     """
-    s = command.strip()
-    if not re.match(r'^\s*web_search\b', s, re.IGNORECASE):
+    tokens = _split_tool_command(command, "web_search")
+    if tokens is None:
         return -1
-    body = re.sub(r'^\s*web_search\s*', '', s, count=1, flags=re.IGNORECASE)
-    qm = re.match(r'^"([^"]+)"|^\'([^\']+)\'', body)
-    if not qm:
+    parsed = _parse_known_flags(tokens, value_flags=("--max-results",))
+    if parsed is None:
         return -1
-    question = qm.group(1) or qm.group(2)
-    rest = body[qm.end():]
-    n_m = re.search(r'--max-results\s+(\d+)', rest)
+    positionals, options = parsed
+    if len(positionals) != 1:
+        return -1
+    max_results = _parse_int(options.get("--max-results"), default=5)
+    if max_results is None:
+        return -1
     return {
-        "query": question,
-        "max_results": int(n_m.group(1)) if n_m else 5,
+        "query": positionals[0],
+        "max_results": max_results,
     }
 
 
@@ -398,16 +492,21 @@ def match_visit_url(command: str):
     Parse:  visit_url <url> [--max-chars N]
     Returns dict {url, max_chars} on success; -1 on no match.
     """
-    s = command.strip()
-    m = re.match(r'^\s*visit_url\s+(\S+)\s*(.*)$', s, re.IGNORECASE)
-    if not m:
+    tokens = _split_tool_command(command, "visit_url")
+    if tokens is None:
         return -1
-    url = m.group(1)
-    rest = m.group(2) or ''
-    mc_m = re.search(r'--max-chars\s+(\d+)', rest)
+    parsed = _parse_known_flags(tokens, value_flags=("--max-chars",))
+    if parsed is None:
+        return -1
+    positionals, options = parsed
+    if len(positionals) != 1:
+        return -1
+    max_chars = _parse_int(options.get("--max-chars"), default=8000)
+    if max_chars is None:
+        return -1
     return {
-        "url": url,
-        "max_chars": int(mc_m.group(1)) if mc_m else 8000,
+        "url": positionals[0],
+        "max_chars": max_chars,
     }
 
 
@@ -418,23 +517,28 @@ def match_deep_research(command: str):
     Parse:  deep_research "<question>" [--max-turns N] [--budget-s S] [--no-cache]
     Returns dict {question, max_turns, budget_s, use_cache} on success; -1 on no match.
     """
-    s = command.strip()
-    if not re.match(r'^\s*deep_research\b', s, re.IGNORECASE):
+    tokens = _split_tool_command(command, "deep_research")
+    if tokens is None:
         return -1
-    body = re.sub(r'^\s*deep_research\s*', '', s, count=1, flags=re.IGNORECASE)
-    qm = re.match(r'^"([^"]+)"|^\'([^\']+)\'', body)
-    if not qm:
+    parsed = _parse_known_flags(
+        tokens,
+        value_flags=("--max-turns", "--budget-s"),
+        boolean_flags=("--no-cache",),
+    )
+    if parsed is None:
         return -1
-    question = qm.group(1) or qm.group(2)
-    rest = body[qm.end():]
-    mt_m = re.search(r'--max-turns\s+(\d+)', rest)
-    bs_m = re.search(r'--budget-s\s+(\d+)', rest)
-    no_cache = bool(re.search(r'--no-cache\b', rest))
+    positionals, options = parsed
+    if len(positionals) != 1:
+        return -1
+    max_turns = _parse_int(options.get("--max-turns"), default=6)
+    budget_s = _parse_float(options.get("--budget-s"), default=90.0)
+    if max_turns is None or budget_s is None:
+        return -1
     return {
-        "question": question,
-        "max_turns": int(mt_m.group(1)) if mt_m else 6,
-        "budget_s": float(bs_m.group(1)) if bs_m else 90.0,
-        "use_cache": not no_cache,
+        "question": positionals[0],
+        "max_turns": max_turns,
+        "budget_s": budget_s,
+        "use_cache": not bool(options.get("--no-cache")),
     }
 
 if __name__ == '__main__':
