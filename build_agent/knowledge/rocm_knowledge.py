@@ -808,6 +808,11 @@ those are listed below as guards.
    that composes web_search + visit_url and returns a synthesised answer.
    Use sparingly; it's the most expensive tool.
 
+**Live-evidence rule:** for AMD/ROCm/HIP/gfx/miopen/rocBLAS/libamdhip64 issues,
+or for fast-moving packages/images (flash-attn, xformers, bitsandbytes,
+triton, deepspeed, rocm/* tags), trust live web/package/tag lookups over
+static prompt knowledge.
+
 **Hard guards the runtime enforces (these are not suggestions):**
 
 - `change_base_image <repo>:<tag>` is **blocked** unless you have called
@@ -1605,6 +1610,9 @@ runtime enforces several hard guards.
 5. `dockerhub_tags <repo>` — required before `change_base_image`.
 6. `web_search` / `visit_url` — for unfamiliar errors and version matrices.
 7. `deep_research "<question>"` — for multi-source synthesis. Use sparingly.
+
+For AMD/ROCm/HIP-specific failures, prefer live web/package/image evidence over
+static knowledge before making another risky change.
 
 **Hard guards the runtime enforces (these are not suggestions):**
 

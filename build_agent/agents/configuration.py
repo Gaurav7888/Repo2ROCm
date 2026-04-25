@@ -145,6 +145,11 @@ class Configuration(Agent):
         self._appendix_new_chars = 0
         # Stage 2 paper-discipline guard: require retrieval before raw PDF reads.
         self._paper_retrieval_used = False
+        self._graphify_code_lookup_used = False
+        # When an AMD/ROCm-specific failure happens, require at least one live
+        # internet-backed lookup before the next high-impact action.
+        self._needs_live_amd_research = False
+        self._amd_live_research_hint = ""
         # ── Hard-guard state (PR: tool-calling is a constraint, not advice) ──
         # `_verifier_records` keeps the most-recent structured JSON the
         # `verify_paper_result` tool produced, keyed by log path. The paper
@@ -360,6 +365,8 @@ class Configuration(Agent):
                 # paper-discipline guard. Pure-code queries don't.
                 if scope in ("paper", "both") and self._stage2_active:
                     self._paper_retrieval_used = True
+                if scope in ("code", "both"):
+                    self._graphify_code_lookup_used = True
                 msg = f"Running `{command}`...\n" + snippet
                 return msg, 0
             except Exception as e:
@@ -372,6 +379,9 @@ class Configuration(Agent):
             try:
                 from tools.external_lookups import pypi_versions as _pv
                 body, rc = _pv(pv["package"], limit=int(pv.get("limit", 12)))
+                if rc == 0:
+                    self._needs_live_amd_research = False
+                    self._amd_live_research_hint = ""
                 msg = f"Running `{command}`...\n" + body
                 return msg, rc
             except Exception as e:
@@ -384,6 +394,9 @@ class Configuration(Agent):
             try:
                 from tools.external_lookups import dockerhub_tags as _dt
                 body, rc = _dt(dt["image"], limit=int(dt.get("limit", 12)))
+                if rc == 0:
+                    self._needs_live_amd_research = False
+                    self._amd_live_research_hint = ""
                 msg = f"Running `{command}`...\n" + body
                 return msg, rc
             except Exception as e:
@@ -398,6 +411,9 @@ class Configuration(Agent):
                 body, rc = _ws(ws["query"], max_results=int(ws.get("max_results", 5)))
                 if self._stage2_active and rc == 0:
                     self._paper_retrieval_used = True
+                if rc == 0:
+                    self._needs_live_amd_research = False
+                    self._amd_live_research_hint = ""
                 msg = f"Running `{command}`...\n" + body
                 return msg, rc
             except Exception as e:
@@ -412,6 +428,9 @@ class Configuration(Agent):
                 body, rc = _vu(vu["url"], max_chars=int(vu.get("max_chars", 8000)))
                 if self._stage2_active and rc == 0:
                     self._paper_retrieval_used = True
+                if rc == 0:
+                    self._needs_live_amd_research = False
+                    self._amd_live_research_hint = ""
                 msg = f"Running `{command}`...\n" + body
                 return msg, rc
             except Exception as e:
@@ -512,6 +531,8 @@ class Configuration(Agent):
                 )
                 if self._stage2_active:
                     self._paper_retrieval_used = True
+                self._needs_live_amd_research = False
+                self._amd_live_research_hint = ""
                 msg = f"Running `{command}`...\n" + format_for_observation(note)
                 rc = 0 if (note.get("confidence", 0) > 0 or note.get("_cache_hit")) else 1
                 return msg, rc
@@ -566,6 +587,50 @@ class Configuration(Agent):
             if name:
                 out.append(name.lower())
         return out
+
+    @staticmethod
+    def _looks_like_repo_discovery_command(command: str) -> bool:
+        """Detect broad repo-search commands that graphify should replace."""
+        if not command:
+            return False
+        c = command.strip().lower()
+        return any(marker in c for marker in (
+            "find /repo",
+            "find . -name",
+            "find . -path",
+            "grep -r /repo",
+            "grep -r .",
+            "grep -r \"",
+            "grep -r '",
+            "grep -r ",
+            "grep -R /repo",
+            "ls -r /repo",
+            "ls -R /repo",
+            "tree /repo",
+        ))
+
+    @staticmethod
+    def _looks_like_stage2_execution(command: str) -> bool:
+        """Detect substantive paper-stage execution before evidence gathering."""
+        if not command:
+            return False
+        c = command.strip().lower()
+        if "paper_experiment.log" in c:
+            return True
+        return bool(re.search(r"\bpython\d?\s+\S+\.py\b", c))
+
+    @staticmethod
+    def _looks_like_amd_specific_issue(*texts: str) -> bool:
+        """Best-effort detector for failures that need live AMD/ROCm research."""
+        hay = " ".join((t or "") for t in texts).lower()
+        markers = (
+            "rocm", "hip", "amd", "gfx", "miopen", "rocblas", "rccl",
+            "libamdhip64", "hiperror", "amdgpu", "hsa", "composable_kernel",
+            "flash-attn", "flash_attn", "bitsandbytes", "xformers",
+            "deepspeed", "triton", "sdpa", "torch.version.hip",
+            "mi250", "mi300", "undefined symbol", "ck_tile",
+        )
+        return any(m in hay for m in markers)
 
     def _maybe_run_hard_guard(self, command: str):
         """Run the policy guards. Returns (obs, rc) or None to fall through."""
@@ -639,6 +704,47 @@ class Configuration(Agent):
                     "primary metrics). The verifier prints the JSON you must "
                     "echo. Do NOT invent numbers."
                 ), 1
+
+        # Guard E: stage 2 must consult at least one evidence tool before
+        # launching the paper experiment itself.
+        if (self._stage2_active
+                and not self._paper_retrieval_used
+                and self._looks_like_stage2_execution(c)):
+            return (
+                "Hard guard: before running the Stage 2 paper experiment, you "
+                "must gather paper evidence in this run. Use one of:\n"
+                "    paper_recall \"what metric / hyperparameters / command matter most?\"\n"
+                "    graphify_query \"entrypoint / config / metric logging\" --scope both\n"
+                "    web_search \"<paper claim> AMD ROCm <repo or metric>\"\n"
+                "    deep_research \"Which paper details and AMD-specific caveats matter for this experiment?\"\n"
+                "Then run the experiment with those concrete details."
+            ), 1
+
+        # Guard F: broad repo discovery should use graphify, not shell search.
+        if (self.graphify_provider is not None
+                and getattr(self.graphify_provider, "enabled", False)
+                and not self._graphify_code_lookup_used
+                and self._looks_like_repo_discovery_command(c)):
+            return (
+                "Hard guard: broad repo discovery should use `graphify_query` "
+                "before shell-wide search. Run something like:\n"
+                "    graphify_query \"entrypoints, config loaders, metric logging\" --scope code\n"
+                "Use `find`/`grep -r` only after graphify has narrowed the search."
+            ), 1
+
+        # Guard G: after an AMD/ROCm-specific failure, require at least one
+        # live internet-backed lookup before the next high-impact action.
+        if self._needs_live_amd_research and first not in safe_cmd:
+            hint = self._amd_live_research_hint or "the last AMD/ROCm-specific failure"
+            return (
+                "Hard guard: static knowledge is not enough for this AMD/ROCm-specific issue. "
+                f"Before another high-impact action, use live evidence for {hint!r}.\n"
+                "Prefer one of:\n"
+                "    web_search \"<exact error> AMD ROCm HIP\"\n"
+                "    visit_url <best hit from web_search>\n"
+                "    deep_research \"How do I fix this AMD/ROCm-specific failure?\"\n"
+                "Use `pypi_versions` / `dockerhub_tags` too if the issue is package- or image-specific."
+            ), 1
 
         return None
 
@@ -824,6 +930,14 @@ WHEN TO USE RETRIEVAL TOOLS (in escalating order of cost; all cached):
 7. **web_search** "<query>" — DDG search ~2s. Use AFTER (1)–(6) come up empty. Best for niche errors: SDPA tensor-shape mismatches, undefined-symbol HIP errors, transformers-vs-torch version dances. Returns top-N hits with snippets.
 8. **visit_url** <url> — fetch ~2s. Use AFTER `web_search` to read a specific GitHub issue / ROCm doc / blog post that promises an answer. Strips HTML to readable markdown.
 9. **deep_research** "<question>" — bounded sub-agent loop (~30–90s, 4–6 internal LLM calls). Use when single-round `web_search`+`visit_url` won't crack the problem in one round (multi-version dependency dances, deep stack traces from libraries you've never seen, "what's the right ROCm install for this repo+gpu" composite questions). The sub-agent composes live web evidence with deterministic lookups and returns ONE compact answer + cited URLs + verified install commands. You spend exactly ONE turn; it does the rest. Cached 14 days.
+
+**AMD/ROCm-specific rule:** if the issue mentions ROCm/HIP/gfx/miopen/rocBLAS/libamdhip64,
+or a fast-moving package like flash-attn/xformers/bitsandbytes/triton/deepspeed,
+do NOT trust static knowledge alone. Use `web_search` first, escalate to
+`deep_research` when the issue spans versions, packages, or low-level runtime behavior.
+
+**Repo-discovery rule:** use `graphify_query` before broad `find`/`grep -r`
+across `/repo`. Shell-wide search is a fallback, not the first move.
 
 **Always prefer retrieval over guessing.** A `mem_recall` + `web_search` round costs <2 LLM tokens to invoke and saves ~5–25 turns of trial-and-error rollback. `deep_research` is the heavy hammer for problems that justify ~60s of background work.
 
@@ -1841,6 +1955,14 @@ STAGE 2 - PAPER RESULT REPRODUCTION (only after ROCM_ENV_VERIFIED):
                     classified_error = None
                     kb_in_guidance = ""
                     rc_int = return_code if isinstance(return_code, int) else -1
+                    if rc_int != 0 and self.rocm_mode and self._looks_like_amd_specific_issue(commands[i], sandbox_res):
+                        self._needs_live_amd_research = True
+                        hint_parts = []
+                        if commands[i]:
+                            hint_parts.append(commands[i][:120])
+                        if sandbox_res:
+                            hint_parts.append((sandbox_res or "").strip().splitlines()[-1][:160])
+                        self._amd_live_research_hint = " | ".join(p for p in hint_parts if p)
                     if self.error_classifier and rc_int != 0 and sandbox_res:
                         classified_error, deterministic_cmds = self.error_classifier.classify_and_fix(
                             sandbox_res, rc_int

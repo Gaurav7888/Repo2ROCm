@@ -722,14 +722,15 @@ def generate_claude_md(
         "agent exposes retrieval tools with these intents:\n"
         "- `paper_recall \"<question>\"` → retrieve paper-only context plus this-run state\n"
         "- `mem_recall \"<question>\"` → retrieve this-run context (decisions, failures, fixes)\n"
-        "- `graphify_query \"<question>\"` → query the code graph for file/symbol locations\n"
-        "- `pypi_versions <pkg>` / `dockerhub_tags <image>` → deterministic external lookups\n"
-        "- `web_search \"<query>\"` / `visit_url <url>` → cached internet search + page read\n"
-        "- `deep_research \"<question>\"` → bounded sub-agent that composes the above\n"
+        "- `graphify_query \"<question>\"` → query the code graph for file/symbol locations before broad shell search\n"
+        "- `pypi_versions <pkg>` / `dockerhub_tags <image>` → deterministic live version/tag lookups\n"
+        "- `web_search \"<query>\"` / `visit_url <url>` → cached internet search + page read, especially for AMD/ROCm/HIP issues\n"
+        "- `deep_research \"<question>\"` → bounded AMD-aware research helper that composes the above\n"
         "\n"
         "For paper reproduction, NEVER read `/repo/paper.pdf` directly as the first step; "
         "prefer `paper_recall`, then `graphify_query`, then `deep_research`, and only then "
         "raw PDF reads if needed.\n"
+        "For AMD/ROCm-specific install/runtime issues, prefer live web evidence over static knowledge.\n"
     )
     sections.append("")
 
@@ -822,8 +823,10 @@ def setup_claude_code_project(
     agents_dir = os.path.join(claude_dir, "agents")
     skills_root = os.path.join(claude_dir, "skills")
     rocm_skills_dir = os.path.join(skills_root, "rocm-migration")
+    amd_research_skills_dir = os.path.join(skills_root, "amd-live-research")
     os.makedirs(agents_dir, exist_ok=True)
     os.makedirs(rocm_skills_dir, exist_ok=True)
+    os.makedirs(amd_research_skills_dir, exist_ok=True)
 
     if paper_pdf_path and os.path.isfile(paper_pdf_path):
         target = os.path.join(repo_root, "paper.pdf")
@@ -862,6 +865,10 @@ def setup_claude_code_project(
     skill_md = _generate_rocm_skill()
     with open(os.path.join(rocm_skills_dir, "SKILL.md"), "w") as f:
         f.write(skill_md)
+
+    amd_skill_md = _generate_amd_live_research_skill()
+    with open(os.path.join(amd_research_skills_dir, "SKILL.md"), "w") as f:
+        f.write(amd_skill_md)
 
     return claude_dir
 
@@ -921,4 +928,31 @@ When migrating a CUDA-based repository to ROCm, follow this structured workflow:
 3. Run the project's main script with mock/real data
 4. Verify output shows CUDA device usage (not CPU)
 5. Signal success: `echo ROCM_ENV_VERIFIED`
+"""
+
+
+def _generate_amd_live_research_skill() -> str:
+    """Generate the AMD live research skill SKILL.md content."""
+    return """\
+---
+name: amd-live-research
+description: Uses live internet evidence and deterministic package or image lookups for AMD ROCm HIP-specific debugging. Use when a failure mentions ROCm, HIP, gfx, MIOpen, rocBLAS, libamdhip64, flash-attn, xformers, bitsandbytes, Triton, or fast-moving package and image compatibility.
+---
+
+# AMD Live Research
+
+## Quick Start
+
+1. Use `graphify_query` for repo structure before broad shell discovery.
+2. Use `pypi_versions` or `dockerhub_tags` for package/image facts.
+3. Use `web_search` with the exact error plus `AMD ROCm HIP`.
+4. Use `visit_url` on one or two high-signal sources.
+5. Use `deep_research` when the issue spans multiple versions, packages, or low-level runtime behavior.
+
+## Rules
+
+- Prefer live evidence over static prompt knowledge for AMD-specific facts.
+- Prefer deterministic package/image lookups over guessing versions or tags.
+- Quote exact error strings, versions, tags, and gfx architectures.
+- Let current repo evidence win when it conflicts with old advice.
 """

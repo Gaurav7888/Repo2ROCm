@@ -123,8 +123,8 @@ class Tools(Enum):
             "Ask the per-repo static graphify corpus for snippets relevant to "
             "<question>. `--scope code` (default) hits the tree-sitter code "
             "graph and returns ranked nodes (files, classes, functions) with "
-            "absolute paths and line numbers — use it instead of `find -name`/"
-            "`grep -r` to locate entry points, config loaders, model factories, "
+            "absolute paths and line numbers — use it BEFORE broad `find -name`/"
+            "`grep -r` discovery to locate entry points, config loaders, model factories, "
             "etc. `--scope paper` queries the indexed paper PDF (sections, "
             "tables, hyperparameters); use it BEFORE reading `/repo/paper.pdf` "
             "directly. `--scope both` returns code AND paper results in a "
@@ -172,8 +172,9 @@ class Tools(Enum):
         "command": 'web_search "<query>" [--max-results N]',
         "description": (
             "DuckDuckGo web search (no API key). Use this when in-repo / paper "
-            "/ KB context can't answer (e.g. 'transformers SDPA tensor shape "
-            "mismatch ROCm', 'flash-attn build error gfx942', 'undefined "
+            "/ KB context can't answer, especially for fast-moving AMD/ROCm/HIP "
+            "issues (e.g. 'transformers SDPA tensor shape mismatch ROCm', "
+            "'flash-attn build error gfx942', 'undefined "
             "symbol libamdhip64'). Returns title+URL+snippet for top N hits "
             "(default 5). Cached 7 days. Pair with `visit_url` to read the "
             "best hit. Cheap; prefer over guessing-and-retrying."
@@ -184,7 +185,7 @@ class Tools(Enum):
         "description": (
             "Fetch a URL and return readable text (HTML stripped to markdown). "
             "Use this AFTER `web_search` to read a specific GitHub issue / "
-            "ROCm doc / blog post that promises an answer. Default cap "
+            "ROCm doc / AMD-specific issue thread / blog post that promises an answer. Default cap "
             "8000 chars; raise if you need more context. Cached 7 days."
         ),
     }
@@ -192,13 +193,14 @@ class Tools(Enum):
     deep_research = {
         "command": 'deep_research "<question>" [--max-turns N] [--budget-s S]',
         "description": (
-            "Run a BOUNDED sub-agent that iteratively searches the web, reads "
-            "the most relevant pages, and returns ONE distilled answer with "
-            "citations and (where applicable) verified install commands. Use "
-            "this for niche errors that single-shot `web_search` can't crack "
-            "in one round (e.g. SDPA tensor shape mismatches, undefined HIP "
-            "symbols, multi-version transformers/torch/flash-attn dances). "
-            "Defaults: max-turns=6, budget-s=90. Cached 14 days. Costs 4-6 "
-            "small LLM calls; saves the parent ~10-25 turns of trial-error."
+            "Run a BOUNDED AMD-aware research helper that combines ROCm/AMD web "
+            "search with deterministic PyPI/Docker lookups, then returns ONE "
+            "distilled answer with citations and (where applicable) verified "
+            "install commands. Use this for niche AMD-specific errors that "
+            "single-shot `web_search` can't crack in one round (e.g. undefined "
+            "HIP symbols, gfx-arch-specific failures, multi-version "
+            "transformers/torch/flash-attn/xformers dances). Defaults: "
+            "max-turns=6, budget-s=90. Cached 14 days. Costs a few small LLM "
+            "calls; saves the parent many turns of trial-error."
         ),
     }

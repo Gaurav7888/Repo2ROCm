@@ -6,9 +6,8 @@ Workflow:
 1. Extract arXiv/paper links from README
 2. Fetch paper via arXiv API / Semantic Scholar
 3. LLM-based structured extraction (hardware, libraries, benchmarks, commands)
-4. Scale-adjusted reproduction plan
-5. Run experiments, compare against paper metrics
-6. ROCm vs CUDA delta report
+4. Shortlist reproducible experiments against the shipped repo
+5. Hand off execution and deterministic verification to the main agent loop
 """
 
 from __future__ import annotations
@@ -22,56 +21,10 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from storage.models import ExperimentCandidate, PaperMetadata, ReproductionResult
+from storage.models import ExperimentCandidate, PaperMetadata
+from utils.json_utils import load_json_loose
 from utils.llm import get_llm_response
 from utils.rich_logger import log_info, log_warning
-
-
-def _extract_largest_json_object(text: str) -> Optional[str]:
-    """Best-effort recovery of a top-level JSON object from a noisy LLM reply.
-
-    Walks the string with a brace-depth counter (respecting strings and
-    escapes) and returns the substring of the largest balanced ``{ ... }``.
-    Returns ``None`` if no balanced object is found. Used when the LLM wraps
-    the JSON in prose or truncates the trailing braces.
-    """
-    if not text:
-        return None
-    best: Optional[str] = None
-    n = len(text)
-    i = 0
-    while i < n:
-        if text[i] != "{":
-            i += 1
-            continue
-        depth = 0
-        in_str = False
-        esc = False
-        j = i
-        while j < n:
-            ch = text[j]
-            if in_str:
-                if esc:
-                    esc = False
-                elif ch == "\\":
-                    esc = True
-                elif ch == '"':
-                    in_str = False
-            else:
-                if ch == '"':
-                    in_str = True
-                elif ch == "{":
-                    depth += 1
-                elif ch == "}":
-                    depth -= 1
-                    if depth == 0:
-                        candidate = text[i : j + 1]
-                        if best is None or len(candidate) > len(best):
-                            best = candidate
-                        break
-            j += 1
-        i = max(i + 1, j + 1)
-    return best
 
 
 _DEFAULT_ENTRY_SCRIPT_PATTERNS = [
@@ -354,132 +307,12 @@ Return ONLY the JSON object, no markdown fences."""
             response, _ = get_llm_response(self.llm, messages,
                                            temperature=0.1, max_tokens=1024)
             if response and response[0]:
-                text = response[0].strip()
-                if text.startswith("```"):
-                    text = re.sub(r"^```\w*\n?", "", text)
-                    text = re.sub(r"\n?```$", "", text)
-                data = json.loads(text)
+                data = load_json_loose(response[0], expected="object")
                 return PaperMetadata.from_dict(data)
         except Exception:
             pass
 
         return PaperMetadata()
-
-    def create_reproduction_plan(self, metadata: PaperMetadata,
-                                 available_gpu_memory_gb: float = 24.0
-                                 ) -> List[Dict[str, Any]]:
-        """
-        Create a scale-adjusted reproduction plan.
-
-        Full reproduction at paper scale is often impossible. This creates
-        a feasible plan that validates correctness:
-        - Reduce batch/seq length/model size to fit available VRAM
-        - Reduce training steps to just enough to confirm loss curves
-        - For inference, run on smaller inputs but verify throughput scales
-        """
-        plan = []
-
-        for cmd in metadata.reproduction_commands:
-            step = {
-                "original_command": cmd,
-                "scaled_command": cmd,
-                "scale_factor": 1.0,
-                "notes": "",
-            }
-
-            batch_match = re.search(r"--batch[_-]size\s+(\d+)", cmd)
-            if batch_match:
-                original_bs = int(batch_match.group(1))
-                scaled_bs = min(original_bs, max(1, int(available_gpu_memory_gb / 4)))
-                if scaled_bs < original_bs:
-                    step["scaled_command"] = re.sub(
-                        r"--batch[_-]size\s+\d+",
-                        f"--batch_size {scaled_bs}",
-                        cmd
-                    )
-                    step["scale_factor"] = scaled_bs / original_bs
-                    step["notes"] = f"Batch size reduced from {original_bs} to {scaled_bs}"
-
-            steps_match = re.search(r"--(?:max_)?steps\s+(\d+)", cmd)
-            if steps_match:
-                original_steps = int(steps_match.group(1))
-                scaled_steps = min(original_steps, 100)
-                if scaled_steps < original_steps:
-                    step["scaled_command"] = re.sub(
-                        r"--(?:max_)?steps\s+\d+",
-                        f"--max_steps {scaled_steps}",
-                        step["scaled_command"]
-                    )
-                    step["notes"] += f" Steps reduced from {original_steps} to {scaled_steps}"
-
-            epochs_match = re.search(r"--(?:num_)?epochs?\s+(\d+)", cmd)
-            if epochs_match:
-                original_epochs = int(epochs_match.group(1))
-                scaled_epochs = min(original_epochs, 2)
-                if scaled_epochs < original_epochs:
-                    step["scaled_command"] = re.sub(
-                        r"--(?:num_)?epochs?\s+\d+",
-                        f"--num_epochs {scaled_epochs}",
-                        step["scaled_command"]
-                    )
-                    step["notes"] += f" Epochs reduced from {original_epochs} to {scaled_epochs}"
-
-            plan.append(step)
-
-        return plan
-
-    def compare_results(self, expected: Dict[str, str],
-                        actual: Dict[str, str],
-                        scale_factor: float = 1.0
-                        ) -> ReproductionResult:
-        """
-        Compare reproduction results against paper-reported metrics.
-
-        Returns match status: "match", "partial", or "mismatch".
-        """
-        result = ReproductionResult(
-            expected_output=json.dumps(expected),
-            actual_output=json.dumps(actual),
-            scaled=scale_factor != 1.0,
-            scale_factor=scale_factor,
-        )
-
-        if not expected or not actual:
-            result.match_status = "partial"
-            return result
-
-        match_count = 0
-        total = len(expected)
-
-        for metric, expected_val in expected.items():
-            actual_val = actual.get(metric)
-            if actual_val is None:
-                continue
-
-            try:
-                exp_num = float(re.search(r"[\d.]+", str(expected_val)).group())
-                act_num = float(re.search(r"[\d.]+", str(actual_val)).group())
-
-                tolerance = 0.1 if scale_factor == 1.0 else 0.3
-                rel_diff = abs(act_num - exp_num) / (abs(exp_num) + 1e-8)
-                result.metric_deltas[metric] = rel_diff
-
-                if rel_diff <= tolerance:
-                    match_count += 1
-            except (ValueError, AttributeError):
-                if str(expected_val).lower() == str(actual_val).lower():
-                    match_count += 1
-
-        if total == 0:
-            result.match_status = "partial"
-        elif match_count == total:
-            result.match_status = "match"
-        elif match_count > 0:
-            result.match_status = "partial"
-        else:
-            result.match_status = "mismatch"
-
-        return result
 
     # ── Paper download + experiment shortlisting ─────────────────────────────
 
@@ -618,27 +451,22 @@ Return ONLY the JSON object, no markdown fences."""
         return results
 
     @staticmethod
-    def _select_relevant_configs(graphify_text: str,
-                                  repo_configs: Dict[str, str],
-                                  max_paths: int = 4,
-                                  query_terms: Optional[List[str]] = None) -> List[str]:
+    def _select_relevant_configs(repo_configs: Dict[str, str],
+                                 max_paths: int = 4,
+                                 query_terms: Optional[List[str]] = None) -> List[str]:
         """
         Pick the config files most relevant to the planner's query.
 
-        Three-stage selection (each falls through to the next on miss):
+        Two-stage selection:
 
-        1. **Graphify AST**: parse `src=<path>.{yaml,toml,json,cfg,ini}`
-           citations from the graphify subgraph text. Works when graphify
-           surfaces config files via cross-references in the code.
-
-        2. **Filename + first-line keyword overlap**: rank repo_configs by
+        1. **Filename + first-line keyword overlap**: rank repo_configs by
            token overlap between
              (a) the basename + parent-dir tokens of each config path, and
              (b) the first ~40 lines of its content (typically `name:`,
                  `model: ...`, `optimizer: ...` keys),
            against `query_terms`. Picks the top-K.
 
-        3. **Deterministic fallback**: first `max_paths` items in the original
+        2. **Deterministic fallback**: first `max_paths` items in the original
            order (priority-sorted by `_collect_repo_configs`).
 
         `query_terms` defaults to the canonical hyperparameter vocabulary if
@@ -648,27 +476,7 @@ Return ONLY the JSON object, no markdown fences."""
         if not repo_configs:
             return []
 
-        # ── Stage 1: graphify AST hits ──────────────────────────────────────
-        out: List[str] = []
-        seen: set = set()
-        if graphify_text:
-            hits = re.findall(
-                r"src=([^\s\]]+\.(?:yaml|yml|toml|json|cfg|ini))",
-                graphify_text, flags=re.IGNORECASE,
-            )
-            for h in hits:
-                base = h.replace("\\", "/").split("/")[-1].lower()
-                for cfg_path in repo_configs:
-                    if cfg_path.lower().endswith(base) and cfg_path not in seen:
-                        out.append(cfg_path)
-                        seen.add(cfg_path)
-                        break
-                if len(out) >= max_paths:
-                    return out
-        if out:
-            return out
-
-        # ── Stage 2: filename + first-line keyword overlap ──────────────────
+        # ── Stage 1: filename + first-line keyword overlap ──────────────────
         if query_terms is None:
             query_terms = [
                 "config", "hyperparam", "hyperparameters",
@@ -703,7 +511,7 @@ Return ONLY the JSON object, no markdown fences."""
         if scored and scored[0][0] > 0:
             return [p for _, p in scored[:max_paths]]
 
-        # ── Stage 3: deterministic fallback ─────────────────────────────────
+        # ── Stage 2: deterministic fallback ─────────────────────────────────
         return [
             p for p in list(repo_configs.keys())
             if not p.startswith("graphify-out/")
@@ -848,20 +656,9 @@ Return ONLY the JSON object, no markdown fences."""
                 "epoch", "epochs", "seed", "warmup", "weight", "decay",
                 "train", "training", "experiment",
             ]
-            cfg_snippet = ""
-            if graphify_provider is not None and getattr(graphify_provider, "enabled", False):
-                try:
-                    cfg_snippet = graphify_provider.query(
-                        " ".join(cfg_query_terms), token_budget=2500,
-                        depth=1, top_seeds=8,
-                    ) or ""
-                except Exception as _e:
-                    log_warning(
-                        f"  Paper shortlist: graphify configs query failed: {_e}"
-                    )
             try:
                 relevant_paths = self._select_relevant_configs(
-                    cfg_snippet, repo_configs, max_paths=4,
+                    repo_configs, max_paths=4,
                     query_terms=cfg_query_terms,
                 )
             except Exception as _e:
@@ -880,9 +677,7 @@ Return ONLY the JSON object, no markdown fences."""
                         f"had {len(repo_configs)} config files):\n\n"
                         + "\n\n".join(chunks)
                     )
-                    configs_method = (
-                        "graphify+keyword" if cfg_snippet else "keyword-overlap"
-                    ) + f" ({len(chunks)}/{len(repo_configs)} files)"
+                    configs_method = f"keyword-overlap ({len(chunks)}/{len(repo_configs)} files)"
             if not configs_block:
                 if repo_configs:
                     config_chunks = [
@@ -955,37 +750,14 @@ Return ONLY the JSON object, no markdown fences."""
                     )
                     if response and response[0]:
                         raw_text = response[0].strip()
-                        if raw_text.startswith("```"):
-                            raw_text = re.sub(r"^```\w*\n?", "", raw_text)
-                            raw_text = re.sub(r"\n?```\s*$", "", raw_text)
                         try:
-                            parsed_obj = json.loads(raw_text)
-                        except json.JSONDecodeError as je:
-                            recovered = _extract_largest_json_object(raw_text)
-                            if recovered is not None:
-                                try:
-                                    parsed_obj = json.loads(recovered)
-                                    log_warning(
-                                        f"  Paper shortlist {label}: JSON recovered after "
-                                        f"parse error ({je.msg} at line {je.lineno} col "
-                                        f"{je.colno}); used {len(recovered):,}/"
-                                        f"{len(raw_text):,} chars."
-                                    )
-                                except json.JSONDecodeError as je2:
-                                    log_warning(
-                                        f"  Paper shortlist {label}: JSON recovery also "
-                                        f"failed: {je2.msg} at line {je2.lineno} col "
-                                        f"{je2.colno}; raw response len={len(raw_text):,} "
-                                        f"chars; head={raw_text[:300]!r} ... tail="
-                                        f"{raw_text[-300:]!r}"
-                                    )
-                            else:
-                                log_warning(
-                                    f"  Paper shortlist {label}: JSON parse failed "
-                                    f"({je.msg} at line {je.lineno} col {je.colno}); "
-                                    f"raw response len={len(raw_text):,} chars; head="
-                                    f"{raw_text[:300]!r} ... tail={raw_text[-300:]!r}"
-                                )
+                            parsed_obj = load_json_loose(raw_text, expected="object")
+                        except ValueError:
+                            log_warning(
+                                f"  Paper shortlist {label}: JSON parse failed; "
+                                f"raw response len={len(raw_text):,} chars; head="
+                                f"{raw_text[:300]!r} ... tail={raw_text[-300:]!r}"
+                            )
                     else:
                         log_warning(
                             f"  Paper shortlist {label}: LLM returned an empty response."

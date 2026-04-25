@@ -63,6 +63,17 @@ _DEFAULT_LLM = "claude-sonnet-4"
 _GLOBAL_WING = "rocm_global_lessons"
 _CACHE_ROOM = "research_notes"
 
+_AMD_TERMS = ("amd", "rocm", "hip", "gfx", "miopen", "rocblas", "rccl", "amdgpu")
+_PKG_HINTS = (
+    "flash-attn", "flash_attn", "bitsandbytes", "xformers", "triton",
+    "deepspeed", "transformers", "torch", "vllm", "sglang", "accelerate",
+    "peft", "datasets",
+)
+_IMAGE_HINTS = (
+    "rocm/pytorch", "rocm/vllm", "rocm/sgl-dev", "rocm/tensorflow",
+    "rocm/jax", "rocm/megatron-lm", "rocm/onnxruntime",
+)
+
 
 # ── Cache (re-uses the same drawer convention as web_search/external_lookups) ─
 
@@ -150,6 +161,39 @@ def _cache_put(question: str, note: Dict[str, Any], ttl_s: int = _DEFAULT_CACHE_
         print(f"[researcher] cache put failed: {e}")
 
 
+def _augment_rocm_query(question: str) -> str:
+    q = (question or "").strip()
+    if not q:
+        return ""
+    lowered = q.lower()
+    if any(term in lowered for term in _AMD_TERMS):
+        return q
+    return f"{q} AMD ROCm HIP"
+
+
+def _infer_lookup_targets(question: str) -> Tuple[List[str], List[str]]:
+    lowered = (question or "").lower()
+    pkgs = []
+    for pkg in _PKG_HINTS:
+        if pkg in lowered and pkg not in pkgs:
+            pkgs.append(pkg)
+
+    images = []
+    for image in _IMAGE_HINTS:
+        if image in lowered and image not in images:
+            images.append(image)
+
+    if not images:
+        if "rocm" in lowered and "pytorch" in lowered:
+            images.append("rocm/pytorch")
+        elif "rocm" in lowered and "vllm" in lowered:
+            images.append("rocm/vllm")
+        elif "rocm" in lowered and "sglang" in lowered:
+            images.append("rocm/sgl-dev")
+
+    return pkgs[:2], images[:1]
+
+
 # ── Tool palette (thin wrappers — soft-fail, return short strings) ────────────
 
 def _tool_search(query: str) -> Tuple[str, str]:
@@ -219,11 +263,13 @@ Tools (each call = ONE tool, exactly one line, no quotes around the tool name):
 Strategy:
 1. Start with `search` terms that include both the
    error class and the ROCm/AMD context.
-2. Pick ONE high-signal hit (prefer github.com/pytorch, github.com/ROCm,
+2. If the question names a package or image, use `pypi` / `docker` before
+   guessing versions or tags.
+3. Pick ONE high-signal hit (prefer github.com/pytorch, github.com/ROCm,
    rocm.docs.amd.com, huggingface.co/transformers issues). `visit` it.
-3. If you need a second source (dependency version, image tag), use `pypi` or
+4. If you need a second source (dependency version, image tag), use `pypi` or
    `docker`.
-4. Synthesize. `finish` with a 1-3 paragraph answer + the actual commands the
+5. Synthesize. `finish` with a 1-3 paragraph answer + the actual commands the
    parent should try, plus citations. Be HONEST about confidence.
 
 Constraints:
@@ -333,18 +379,37 @@ def _gather_evidence(question: str, max_search_hits: int = 5,
     cites: List[Dict[str, str]] = []
     calls = 0
 
-    # 1. Cumulative KB recall (free)
+    # 1. Compatibility shim / reminder
     rc_text, _ = _tool_recall(question)
     calls += 1
-    parts.append("=== CUMULATIVE-KB RECALL ===")
+    parts.append("=== RECALL / POLICY NOTE ===")
     parts.append(rc_text)
     if verbose:
         print(f"[researcher] recall: {len(rc_text)} chars")
 
-    # 2. Web search
-    sr_text, _ = _tool_search(question)
+    # 2. Deterministic package/image lookups if the question names them.
+    pkg_targets, image_targets = _infer_lookup_targets(question)
+    for pkg in pkg_targets:
+        p_text, _ = _tool_pypi(pkg)
+        calls += 1
+        parts.append(f"\n=== PYPI LOOKUP: {pkg} ===")
+        parts.append(p_text)
+        if verbose:
+            print(f"[researcher] pypi {pkg}: {len(p_text)} chars")
+
+    for image in image_targets:
+        d_text, _ = _tool_docker(image)
+        calls += 1
+        parts.append(f"\n=== DOCKER LOOKUP: {image} ===")
+        parts.append(d_text)
+        if verbose:
+            print(f"[researcher] docker {image}: {len(d_text)} chars")
+
+    # 3. Web search, augmented with ROCm terms when the question is stale or vague.
+    search_query = _augment_rocm_query(question)
+    sr_text, _ = _tool_search(search_query)
     calls += 1
-    parts.append("\n=== WEB SEARCH ===")
+    parts.append(f"\n=== WEB SEARCH ({search_query}) ===")
     parts.append(sr_text)
     if verbose:
         print(f"[researcher] search: {len(sr_text)} chars")
@@ -370,7 +435,7 @@ def _gather_evidence(question: str, max_search_hits: int = 5,
                 candidates.append({"title": title, "url": url})
         i += 1
 
-    # 3. Visit the top-N hits, prioritizing high-signal sources.
+    # 4. Visit the top-N hits, prioritizing high-signal sources.
     def _score(c: Dict[str, str]) -> int:
         u = c["url"].lower()
         s = 0
