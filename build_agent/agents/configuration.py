@@ -30,7 +30,7 @@ from utils.rich_logger import (
     log_header, log_phase, log_turn, log_prompt_sent, log_llm_response,
     log_multi_action_warning, log_action, log_observation, log_rocm_no_test_block,
     log_rocm_success, log_revert, log_context_summary, log_finish_summary,
-    log_success, log_error, log_info, console,
+    log_success, log_error, log_info, log_observer_note, console,
 )
 import re
 import time
@@ -103,7 +103,8 @@ class Configuration(Agent):
                  optimize_kernels=False, use_claude_code=False,
                  reproduce_results=False, paper_pdf_path=None,
                  paper_experiments=None, paper_title="",
-                 run_memory=None, graphify_provider=None):
+                 run_memory=None, graphify_provider=None,
+                 observer_client=None):
         self.model = llm
         self.root_dir = root_dir
         self.max_turn = max_turn
@@ -123,6 +124,7 @@ class Configuration(Agent):
         self.use_claude_code = use_claude_code
         self.run_memory = run_memory  # mempalace per-run store (Stage 2); may be None
         self.graphify_provider = graphify_provider  # per-repo code graph (Stage 4); may be None
+        self.observer_client = observer_client
         # Track Stage-1 compaction savings for diagnostics.
         self._compaction_orig_chars = 0
         self._compaction_short_chars = 0
@@ -202,11 +204,6 @@ class Configuration(Agent):
         # PR-A: external lookups always available (pure-stdlib HTTP, soft-fail).
         self.tool_lib.append(Tools.pypi_versions)
         self.tool_lib.append(Tools.dockerhub_tags)
-        # PR-B: web search + URL fetcher (uses `ddgs` when available, soft-fail).
-        self.tool_lib.append(Tools.web_search)
-        self.tool_lib.append(Tools.visit_url)
-        # PR-C: deep_research sub-agent (composes web_search + visit_url + …).
-        self.tool_lib.append(Tools.deep_research)
         # Stage-2 deterministic verifier (only meaningful when reproducing a paper).
         if self.reproduce_results:
             self.tool_lib.append(Tools.verify_paper_result)
@@ -228,6 +225,120 @@ class Configuration(Agent):
         self.system_prompt = self._build_system_prompt(tools_list)
 
     # ── Stage 5b: in-loop retrieval tools (mempalace + graphify) ────────────
+
+    def _tool_usage_snapshot(self) -> dict:
+        return {
+            "mem_recall": self._mem_recall_calls,
+            "paper_recall": self._paper_recall_calls,
+            "graphify_query": self._graphify_query_calls,
+            "pypi_versions": self._pypi_versions_calls,
+            "dockerhub_tags": self._dockerhub_tags_calls,
+            "web_search": self._web_search_calls,
+            "visit_url": self._visit_url_calls,
+            "deep_research": self._deep_research_calls,
+            "verify_paper_result": self._verify_paper_calls,
+        }
+
+    def _emit_observer_event(self, event_type: str, payload: dict) -> None:
+        if self.observer_client is None:
+            return
+        try:
+            self.observer_client.emit_event(event_type, payload)
+        except Exception as e:
+            log_info(f"[observer] emit failed: {e}")
+
+    def _format_observer_advice(self, advice_rows: list) -> str:
+        lines = [
+            "### External Observer Note",
+            "An asynchronous observer reviewed the recent turn history. "
+            "Treat this as strategic guidance before your next action.",
+        ]
+        for row in advice_rows:
+            profile = str(row.get("profile_used") or "observerCritic")
+            diagnosis = str(row.get("diagnosis") or "").strip()
+            strategy = str(row.get("recommended_strategy") or "").strip()
+            confidence = float(row.get("confidence", 0.0) or 0.0)
+            lines.append("")
+            lines.append(
+                f"- Observer skill: {profile} (confidence={confidence:.2f}, turn_seen={row.get('turn_seen', '?')})"
+            )
+            if diagnosis:
+                lines.append(f"  Diagnosis: {diagnosis}")
+            if strategy:
+                lines.append(f"  Strategy: {strategy}")
+            for item in (row.get("suggested_questions_or_tools") or [])[:4]:
+                lines.append(f"  Next: {str(item)[:220]}")
+            for item in (row.get("evidence") or [])[:3]:
+                lines.append(f"  Evidence: {str(item)[:220]}")
+        lines.append("")
+        lines.append(
+            "Do not blindly obey this note. Re-evaluate the current state, then "
+            "choose the next action accordingly."
+        )
+        return "\n".join(lines)
+
+    def _consume_observer_advice(self, turn: int) -> None:
+        if self.observer_client is None:
+            return
+        try:
+            fresh = self.observer_client.consume_new_advice()
+        except Exception as e:
+            log_info(f"[observer] advice read failed: {e}")
+            return
+        if not fresh:
+            return
+        note_text = self._format_observer_advice(fresh)
+        role = "system" if "gpt" in self.model else "user"
+        self.messages.append({"role": role, "content": note_text})
+        self.outer_commands.append({"observer_advice": fresh, "turn": turn})
+        log_observer_note(note_text)
+
+    def _emit_turn_snapshot(self, turn: int, assistant_response: str,
+                            commands: list, diffs: list, system_res: str,
+                            turn_elapsed_s: float, outer_entries: list,
+                            tool_counts_before: dict) -> None:
+        if self.observer_client is None:
+            return
+        tool_counts_after = self._tool_usage_snapshot()
+        tool_deltas = {
+            key: tool_counts_after.get(key, 0) - tool_counts_before.get(key, 0)
+            for key in tool_counts_after
+        }
+        return_codes = [
+            entry.get("returncode")
+            for entry in outer_entries
+            if isinstance(entry, dict) and "returncode" in entry
+        ]
+        recent_commands = []
+        for item in self.sandbox.commands[-5:]:
+            if not isinstance(item, dict):
+                continue
+            recent_commands.append({
+                "command": str(item.get("command") or "")[:240],
+                "returncode": item.get("returncode"),
+                "time": item.get("time"),
+                "dir": item.get("dir"),
+            })
+        payload = {
+            "turn": turn,
+            "stage": "stage2" if self._stage2_active else "stage1",
+            "rocm_mode": self.rocm_mode,
+            "paper_title": self.paper_title,
+            "assistant_response": str(assistant_response or "")[:2500],
+            "action_type": "bash" if commands else "diff" if diffs else "none",
+            "commands": [str(cmd)[:240] for cmd in commands[:3]],
+            "diff_present": bool(diffs),
+            "return_codes": return_codes,
+            "duration_s": round(float(turn_elapsed_s), 2),
+            "error_class": self._last_error_class,
+            "observation_excerpt": str(system_res or "")[:2500],
+            "tool_deltas": tool_deltas,
+            "recent_commands": recent_commands,
+            "paper_retrieval_used": self._paper_retrieval_used,
+            "graphify_code_lookup_used": self._graphify_code_lookup_used,
+            "needs_live_amd_research": self._needs_live_amd_research,
+        }
+        self._emit_observer_event("turn_snapshot", payload)
 
     def _maybe_run_retrieval_tool(self, command: str):
         """
@@ -317,7 +428,7 @@ class Configuration(Agent):
                     pack = (
                         "paper_recall: no relevant paper context found from graphify or run-state references. "
                         "Try a more specific paper question (metric, experiment name, hyperparameter), "
-                        "or use `deep_research`.\n"
+                        "or wait for an observer note with external evidence.\n"
                     )
                 self._paper_retrieval_used = True
                 msg = f"Running `{command}`...\n" + pack
@@ -715,8 +826,7 @@ class Configuration(Agent):
                 "must gather paper evidence in this run. Use one of:\n"
                 "    paper_recall \"what metric / hyperparameters / command matter most?\"\n"
                 "    graphify_query \"entrypoint / config / metric logging\" --scope both\n"
-                "    web_search \"<paper claim> AMD ROCm <repo or metric>\"\n"
-                "    deep_research \"Which paper details and AMD-specific caveats matter for this experiment?\"\n"
+                                "    wait for an observer note with paper-specific external evidence\n"
                 "Then run the experiment with those concrete details."
             ), 1
 
@@ -740,9 +850,7 @@ class Configuration(Agent):
                 "Hard guard: static knowledge is not enough for this AMD/ROCm-specific issue. "
                 f"Before another high-impact action, use live evidence for {hint!r}.\n"
                 "Prefer one of:\n"
-                "    web_search \"<exact error> AMD ROCm HIP\"\n"
-                "    visit_url <best hit from web_search>\n"
-                "    deep_research \"How do I fix this AMD/ROCm-specific failure?\"\n"
+                                "    wait for the observer to attach internet-backed diagnosis before retrying\n"
                 "Use `pypi_versions` / `dockerhub_tags` too if the issue is package- or image-specific."
             ), 1
 
@@ -788,8 +896,9 @@ class Configuration(Agent):
     def _is_raw_paper_read_command(self, command: str) -> bool:
         """Detect direct shell reads of `/repo/paper.pdf`.
 
-        Stage 2 should prefer `paper_recall`, `graphify_query`, `web_search`,
-        `visit_url`, or `deep_research` first. Direct PDF reads remain allowed
+        Stage 2 should prefer `paper_recall` and `graphify_query` first, then
+        absorb any observer note that brings in external internet evidence.
+        Direct PDF reads remain allowed
         after at least one retrieval attempt, because sometimes the agent truly
         needs a verbatim passage.
         """
@@ -927,19 +1036,24 @@ WHEN TO USE RETRIEVAL TOOLS (in escalating order of cost; all cached):
 4. **mem_recall "<topic>" --rooms plan,experiment_state,context_refs,decisions** — ground hyperparameters / env vars in the planner output and run-state references. ~free.
 5. **pypi_versions** <pkg> — local network ~1s. BEFORE pinning a CUDA-only wheel (flash-attn, bitsandbytes, xformers, triton). Returns currently-installable versions + dates.
 6. **dockerhub_tags** <image> — local network ~1s. BEFORE `change_base_image`. Returns the actually-published tags for `rocm/pytorch`, `rocm/vllm`, etc.
-7. **web_search** "<query>" — DDG search ~2s. Use AFTER (1)–(6) come up empty. Best for niche errors: SDPA tensor-shape mismatches, undefined-symbol HIP errors, transformers-vs-torch version dances. Returns top-N hits with snippets.
-8. **visit_url** <url> — fetch ~2s. Use AFTER `web_search` to read a specific GitHub issue / ROCm doc / blog post that promises an answer. Strips HTML to readable markdown.
-9. **deep_research** "<question>" — bounded sub-agent loop (~30–90s, 4–6 internal LLM calls). Use when single-round `web_search`+`visit_url` won't crack the problem in one round (multi-version dependency dances, deep stack traces from libraries you've never seen, "what's the right ROCm install for this repo+gpu" composite questions). The sub-agent composes live web evidence with deterministic lookups and returns ONE compact answer + cited URLs + verified install commands. You spend exactly ONE turn; it does the rest. Cached 14 days.
+7. **Observer-side internet research** — external web search and page reads are
+handled asynchronously by the observer sidecar. When the run is stuck on an
+AMD/ROCm/runtime or paper-fidelity issue, the observer may inject a note with
+internet-backed evidence and a suggested strategy. Treat that note as advisory
+guidance before your next action.
 
 **AMD/ROCm-specific rule:** if the issue mentions ROCm/HIP/gfx/miopen/rocBLAS/libamdhip64,
 or a fast-moving package like flash-attn/xformers/bitsandbytes/triton/deepspeed,
-do NOT trust static knowledge alone. Use `web_search` first, escalate to
-`deep_research` when the issue spans versions, packages, or low-level runtime behavior.
+do NOT trust static knowledge alone. Use deterministic lookups first
+(`pypi_versions`, `dockerhub_tags`) and then incorporate observer-provided
+internet research when it arrives.
 
 **Repo-discovery rule:** use `graphify_query` before broad `find`/`grep -r`
 across `/repo`. Shell-wide search is a fallback, not the first move.
 
-**Always prefer retrieval over guessing.** A `mem_recall` + `web_search` round costs <2 LLM tokens to invoke and saves ~5–25 turns of trial-and-error rollback. `deep_research` is the heavy hammer for problems that justify ~60s of background work.
+**Always prefer retrieval over guessing.** Local retrieval (`mem_recall`,
+`graphify_query`, `paper_recall`) comes first. External web evidence should come
+through the observer so the execution loop stays focused on grounded actions.
 
 {INIT_PROMPT}
 {EDIT_PROMPT}
@@ -1194,8 +1308,7 @@ STAGE 2 - PAPER RESULT REPRODUCTION (only after ROCM_ENV_VERIFIED):
         lines.append("  FIRST use retrieval tools in this order:")
         lines.append("    1. paper_recall \"what metric / experiment / hyperparameters do I need?\"")
         lines.append("    2. graphify_query \"where in the code/config is this experiment wired?\"")
-        lines.append("    3. web_search / visit_url for paper claims or niche runtime issues")
-        lines.append("    4. deep_research if a one-shot search will not be enough")
+        lines.append("    3. wait for observer-provided internet evidence when local retrieval is insufficient")
         lines.append("  Only after at least one retrieval attempt may you read /repo/paper.pdf directly.")
         lines.append("")
         lines.append("You MUST now run ONE paper experiment and verify its results match the")
@@ -1641,6 +1754,14 @@ STAGE 2 - PAPER RESULT REPRODUCTION (only after ROCM_ENV_VERIFIED):
         self.messages = []
         user_message = {"role": "user", "content": "[Project root Path]: /repo"}
         self.messages.append(user_message)
+        self._emit_observer_event("run_started", {
+            "repo": self.full_name,
+            "model": self.model,
+            "rocm_mode": self.rocm_mode,
+            "reproduce_results": self.reproduce_results,
+            "paper_title": self.paper_title,
+            "plan_excerpt": (self.plan or "")[:2500],
+        })
 
         turn = 0
         cost_tokens = 0
@@ -1690,6 +1811,10 @@ STAGE 2 - PAPER RESULT REPRODUCTION (only after ROCM_ENV_VERIFIED):
             turn += 1
             finish = False
             self._turns_used_so_far = turn
+            turn_started_at = time.time()
+            turn_outer_start = len(self.outer_commands)
+            tool_counts_before = self._tool_usage_snapshot()
+            self._consume_observer_advice(turn)
 
             # ── LLM Call ──
             log_turn(turn, self.max_turn, self.model)
@@ -1938,9 +2063,7 @@ STAGE 2 - PAPER RESULT REPRODUCTION (only after ROCM_ENV_VERIFIED):
                                 "`/repo/paper.pdf` directly yet. First use one of:\n"
                                 "  graphify_query \"...\" --scope paper\n"
                                 "  paper_recall \"what metric / experiment / hyperparameter do I need?\"\n"
-                                "  web_search \"<paper claim or error>\"\n"
-                                "  visit_url <best hit from web_search>\n"
-                                "  deep_research \"<paper or runtime question>\"\n"
+                                "  wait for the observer note if external evidence is needed\n"
                                 "After at least one retrieval attempt, raw PDF reads are allowed.\n"
                             )
                             return_code = 1
@@ -2309,6 +2432,16 @@ The edit format is as follows:
             else:
                 system_message = {"role": "user", "content": system_res}
             self.messages.append(system_message)
+            self._emit_turn_snapshot(
+                turn=turn,
+                assistant_response=configuration_agent,
+                commands=commands,
+                diffs=diffs,
+                system_res=system_res,
+                turn_elapsed_s=time.time() - turn_started_at,
+                outer_entries=self.outer_commands[turn_outer_start:],
+                tool_counts_before=tool_counts_before,
+            )
 
             # ── Save intermediate outputs ──
             with open(f'{self.root_dir}/output/{self.full_name}/outer_commands.json', 'w') as w1:
@@ -2322,6 +2455,13 @@ The edit format is as follows:
         
         total_time = time.time() - start_time0
         log_finish_summary(turn, total_time, cost_tokens, finish)
+        self._emit_observer_event("run_finished", {
+            "total_turns": turn,
+            "total_time": round(total_time, 2),
+            "cost_tokens": cost_tokens,
+            "finished": finish,
+            "paper_verdict": self._paper_verdict,
+        })
 
         append_trajectory(trajectory, self.messages, 'configuration')
         trajectory.append({'agent': "configuration", 'cost_time': total_time, 'cost_tokens': cost_tokens}) 

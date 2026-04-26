@@ -261,6 +261,12 @@ def log_warning(message):
     _fwrite(f"  [WARNING] {message}")
 
 
+def log_observer_note(message):
+    """Log observer-side advisory guidance."""
+    console.print(Panel(f"[bold cyan]{message}[/]", style="cyan", box=box.ROUNDED))
+    _fwrite(f"  [OBSERVER] {message}")
+
+
 def log_context_summary(current_dir, image_name, turns_left, success_cmds):
     """Log the context being sent back to the LLM."""
     table = Table(title="[bold]CONTEXT SENT BACK TO LLM[/]", box=box.SIMPLE, expand=True)

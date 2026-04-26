@@ -17,11 +17,10 @@ import os
 import re
 import shlex
 import shutil
-import subprocess
 import urllib.request
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from agents.paper_corpus import PaperCorpus, extract_pdf_text
 from storage.models import ExperimentCandidate, PaperMetadata
 from utils.json_utils import load_json_loose
 from utils.llm import get_llm_response
@@ -165,54 +164,6 @@ _METRIC_CLASS_RANK = {
 }
 
 
-def _extract_text_with_pymupdf(pdf_path: str, max_chars: int = 400000) -> str:
-    """Try extracting text via PyMuPDF (fitz). Returns empty string on failure."""
-    try:
-        import fitz  # type: ignore
-    except Exception:
-        return ""
-    try:
-        parts: List[str] = []
-        total = 0
-        with fitz.open(pdf_path) as doc:
-            for page in doc:
-                txt = page.get_text("text")
-                if not txt:
-                    continue
-                parts.append(txt)
-                total += len(txt)
-                if total >= max_chars:
-                    break
-        return ("\n".join(parts))[:max_chars]
-    except Exception:
-        return ""
-
-
-def _extract_text_with_pdftotext(pdf_path: str, max_chars: int = 400000) -> str:
-    """Fallback: use the `pdftotext` CLI from poppler-utils if available."""
-    if not shutil.which("pdftotext"):
-        return ""
-    try:
-        res = subprocess.run(
-            ["pdftotext", "-layout", pdf_path, "-"],
-            capture_output=True, timeout=60,
-        )
-        if res.returncode == 0 and res.stdout:
-            return res.stdout.decode("utf-8", errors="ignore")[:max_chars]
-    except Exception:
-        pass
-    return ""
-
-
-def extract_pdf_text(pdf_path: str, max_chars: int = 400000) -> str:
-    """Best-effort PDF -> text extraction. Empty string if nothing works."""
-    text = _extract_text_with_pymupdf(pdf_path, max_chars=max_chars)
-    if text:
-        return text
-    text = _extract_text_with_pdftotext(pdf_path, max_chars=max_chars)
-    return text
-
-
 class PaperAgent:
     """Extracts paper metadata and drives reproduction verification."""
 
@@ -276,10 +227,10 @@ class PaperAgent:
 Extract structured information from this research paper context.
 
 PAPER ABSTRACT / CONTENT:
-{paper_text[:3000]}
+{paper_text}
 
 README EXCERPT:
-{readme_content[:2000]}
+{readme_content}
 
 Return a JSON object with these fields:
 {{
@@ -617,6 +568,7 @@ Return ONLY the JSON object, no markdown fences."""
         self,
         paper_pdf_path: Optional[str],
         repo_path: str,
+        paper_corpus: Optional[PaperCorpus] = None,
         readme_content: str = "",
         readme_run_commands: Optional[List[Dict[str, Any]]] = None,
         readme_expected_outcomes: Optional[List[Dict[str, Any]]] = None,
@@ -648,7 +600,9 @@ Return ONLY the JSON object, no markdown fences."""
         """
         effective_llm = llm or self.llm
         paper_text = ""
-        if paper_pdf_path and os.path.isfile(paper_pdf_path):
+        if paper_corpus is not None and paper_corpus.has_text():
+            paper_text = paper_corpus.index_text
+        elif paper_pdf_path and os.path.isfile(paper_pdf_path):
             paper_text = extract_pdf_text(paper_pdf_path)
 
         repo_files = self._list_repo_code_files(repo_path)
@@ -657,7 +611,35 @@ Return ONLY the JSON object, no markdown fences."""
         paper_title = ""
 
         if effective_llm and (paper_text or readme_content):
-            readme_slice = readme_content[:50000] if readme_content else ""
+            readme_slice = readme_content or ""
+            repo_readme_block = ""
+            repo_config_block = ""
+            repo_code_block = ""
+            if graphify_provider is not None and getattr(graphify_provider, "enabled", False):
+                try:
+                    repo_readme_block = graphify_provider.query_repo_corpus(
+                        "README usage commands datasets expected outputs models benchmarks",
+                        scope="readme",
+                        token_budget=12000,
+                        max_chunks=10,
+                        per_chunk_max_chars=2000,
+                    ) or ""
+                    repo_config_block = graphify_provider.query_repo_corpus(
+                        "training config hyperparameters batch size learning rate optimizer scheduler dataset path yaml toml",
+                        scope="config",
+                        token_budget=12000,
+                        max_chunks=10,
+                        per_chunk_max_chars=2000,
+                    ) or ""
+                    repo_code_block = graphify_provider.query_repo_corpus(
+                        "entrypoint training evaluation metric logging config parser argparse hydra expected runtime metric",
+                        scope="code",
+                        token_budget=12000,
+                        max_chunks=10,
+                        per_chunk_max_chars=2000,
+                    ) or ""
+                except Exception as _repo_ctx_e:
+                    log_warning(f"  Paper shortlist: repo corpus query failed: {_repo_ctx_e}")
 
             # ── Repo-first experiment discovery ───────────────────────────────
             entry_scripts: List[str] = []
@@ -732,12 +714,13 @@ Return ONLY the JSON object, no markdown fences."""
                 # repo-backed commands to paper rows and resolve ambiguity.
                 paper_block = (
                     "PAPER TEXT DUMP (use to map repo-backed experiments to paper rows; appendix only if config/metric/setup remains ambiguous):\n"
-                    + paper_text[:350000]
+                    + paper_text
                 )
                 paper_backend = "fallback-dump"
 
             # ── Stage 5a: small repo-config surface for the chosen commands ─────
             configs_block = ""
+            configs_method = "none"
             try:
                 relevant_paths = self._select_prompt_configs(
                     repo_experiments,
@@ -749,9 +732,12 @@ Return ONLY the JSON object, no markdown fences."""
                     f"  Paper shortlist: _select_prompt_configs failed: {_e}"
                 )
                 relevant_paths = []
-            if relevant_paths:
+            if repo_config_block:
+                configs_block = repo_config_block
+                configs_method = "repo-corpus"
+            elif relevant_paths:
                 chunks = [
-                    f"# ---- {p} ----\n{repo_configs[p][:6000]}"
+                    f"# ---- {p} ----\n{repo_configs[p]}"
                     for p in relevant_paths if p in repo_configs
                 ]
                 if chunks:
@@ -764,20 +750,30 @@ Return ONLY the JSON object, no markdown fences."""
             if not configs_block:
                 if repo_configs:
                     config_chunks = [
-                        f"# ---- {path} ----\n{content[:8000]}"
+                        f"# ---- {path} ----\n{content}"
                         for path, content in list(repo_configs.items())[:12]
                     ]
                     configs_block = "\n\n".join(config_chunks)
                 else:
                     configs_block = "(no yaml/toml/json/cfg config files found in the repo)"
 
+            def _render_research_note(note: Dict[str, Any], label: str) -> List[str]:
+                lines: List[str] = []
+                answer = str(note.get("answer") or "").strip()
+                if answer:
+                    lines.append(f"{label}: {answer[:420]}")
+                for followup in (note.get("followups") or [])[:3]:
+                    lines.append(f"{label} followup: {str(followup)[:260]}")
+                for citation in (note.get("citations") or [])[:2]:
+                    if not isinstance(citation, dict):
+                        continue
+                    title = str(citation.get("title") or "").strip()
+                    url = str(citation.get("url") or "").strip()
+                    if title or url:
+                        lines.append(f"{label} citation: {title[:90]} {url[:180]}".strip())
+                return lines
+
             # ── Researcher pattern phase 1: deterministic evidence ─────────
-            # We pre-fetch a tiny amount of live evidence the synth call would
-            # otherwise have to guess at, namely:
-            #   * pypi_versions for common evaluation frameworks the LLM tends
-            #     to invoke as flags (transformers, datasets, lm-eval).
-            #   * a single deep_research snippet about the paper's headline
-            #     metric, when an llm/budget is available.
             evidence_lines: List[str] = []
             try:
                 from tools.external_lookups import pypi_versions as _pv
@@ -790,28 +786,33 @@ Return ONLY the JSON object, no markdown fences."""
                                 evidence_lines.append(f"  {ln.strip()}")
             except Exception:
                 pass
-            paper_hint = ""
             if effective_llm and os.environ.get("AMD_LLM_API_KEY"):
                 try:
                     from agents.researcher import research
                     note = research(
-                        "Which metrics in this paper are most reliably "
-                        "reproducible across GPU vendors? Prefer accuracy / "
-                        "F1 / ratio metrics over absolute throughput. Be "
-                        "concise.",
+                        "Which metrics and experiment rows in this paper are "
+                        "most reproducible across GPU vendors, and what caveats "
+                        "matter for selecting one repo-backed experiment?",
                         llm=effective_llm, budget_s=20.0, use_cache=True,
+                        profile="paperResearch",
+                        context={
+                            "readme_excerpt": repo_readme_block or readme_slice,
+                            "repo_code_excerpt": repo_code_block,
+                            "paper_excerpt": paper_block,
+                            "repo_experiments": repo_experiments[:4],
+                            "config_paths": relevant_paths[:6],
+                        },
                     )
-                    paper_hint = (note.get("answer") or "")[:300]
+                    evidence_lines.extend(_render_research_note(note, "paperResearch"))
                 except Exception:
-                    paper_hint = ""
+                    pass
             evidence_block = ""
-            if evidence_lines or paper_hint:
+            if evidence_lines:
                 evidence_block = (
                     "\nLIVE EVIDENCE (deterministic tools, prefer over training "
                     "data):\n" + "\n".join(evidence_lines[:30])
                 )
-                if paper_hint:
-                    evidence_block += f"\nResearcher hint: {paper_hint}\n"
+                evidence_block += "\n"
 
             log_info(
                 f"  Paper shortlist prompt sources: "
@@ -973,8 +974,8 @@ metric(s) must match.
 
 {paper_block}
 
-README (full):
-{readme_slice}
+README / DOCS CORPUS (retrieved from full README/docs corpus):
+{repo_readme_block or readme_slice}
 
 REPO EXPERIMENT SURFACES (PRIMARY INPUT):
 {repo_experiment_block}
@@ -984,6 +985,9 @@ README EXPECTED OUTCOMES:
 
 REPO METRIC SURFACES:
 {repo_metric_block}
+
+REPO CODE CORPUS (retrieved from full codebase corpus):
+{repo_code_block or "(repo code corpus unavailable)"}
 
 REPO CONFIG FILES (yaml/toml/json/cfg/ini — these are the codebase's actual
 default hyperparameters; treat them as authoritative when the paper is silent
@@ -1093,9 +1097,40 @@ PHASE 1 WORKFLOW:
                     followup_block = (
                         "FOLLOW-UP PAPER DUMP (use only to resolve remaining "
                         "config/metric/setup ambiguity; appendix/supplementary "
-                        "may help here):\n" + paper_text[:250000]
+                        "may help here):\n" + paper_text
                     )
                     followup_backend = "fallback-dump-pass2"
+
+                if effective_llm and os.environ.get("AMD_LLM_API_KEY"):
+                    try:
+                        from agents.researcher import research
+                        note = research(
+                            followup_query,
+                            llm=effective_llm,
+                            budget_s=20.0,
+                            use_cache=True,
+                            profile="paperResearch",
+                            context={
+                                "phase1_unresolved": phase1_unresolved,
+                                "phase1_followups": phase1_followups,
+                                "paper_excerpt": (followup_block or paper_block),
+                                "repo_metric_block": repo_metric_block,
+                                "repo_code_excerpt": repo_code_block,
+                            },
+                        )
+                        note_lines = _render_research_note(note, "paperResearch-pass2")
+                        if note_lines:
+                            followup_block = (
+                                (followup_block or "")
+                                + "\n\nFOLLOW-UP RESEARCH NOTE:\n"
+                                + "\n".join(note_lines[:8])
+                            ).strip()
+                            followup_backend = (
+                                f"{followup_backend}+research"
+                                if followup_backend else "research-only"
+                            )
+                    except Exception:
+                        pass
 
                 if followup_block:
                     log_info(

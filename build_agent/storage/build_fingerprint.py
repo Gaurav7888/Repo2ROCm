@@ -104,15 +104,11 @@ def _scan_imports(repo_path: str) -> Dict[str, int]:
     """Quick import scan when planner hasn't provided one."""
     import_re = re.compile(r"^\s*(?:import|from)\s+([a-zA-Z_][a-zA-Z0-9_]*)")
     counts: Dict[str, int] = {}
-    py_count = 0
     for root, dirs, files in os.walk(repo_path):
         dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("__pycache__", "node_modules")]
         for f in files:
             if not f.endswith(".py"):
                 continue
-            py_count += 1
-            if py_count > 120:
-                return counts
             fpath = os.path.join(root, f)
             try:
                 with open(fpath, errors="ignore") as fh:

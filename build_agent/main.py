@@ -149,6 +149,11 @@ def main():
                              'Used by --reproduce-results. If omitted, auto-discovered from README.')
     parser.add_argument('--paper-pdf', type=str, default=None,
                         help='Local path to the research paper PDF. Overrides --paper-url.')
+    parser.add_argument('--paper-source-mode', type=str, default='both',
+                        choices=['pdf', 'html', 'both'],
+                        help='How to build the local paper corpus for planning/retrieval. '
+                             'Always preserves /repo/paper.pdf when available; this flag controls '
+                             'whether Graphify indexes PDF text, arXiv HTML text, or both.')
 
     args = parser.parse_args()
 
@@ -201,6 +206,7 @@ def main():
     reproduce_results = args.reproduce_results
     paper_url = args.paper_url
     paper_pdf_arg = args.paper_pdf
+    paper_source_mode = args.paper_source_mode
 
     if reproduce_results and not paper_url and not paper_pdf_arg:
         log_info("--reproduce-results: no --paper-url or --paper-pdf given; "
@@ -283,6 +289,7 @@ def main():
         from learning.graphify_provider import GraphifyProvider
         graphify_provider = GraphifyProvider.create(repo_path)
         graphify_provider.build_or_refresh()
+        graphify_provider.index_repo_corpus()
         log_info(f"Graphify graph: {graphify_provider.stats()}")
     except Exception as _gp_e:
         log_info(f"Graphify provider disabled: {_gp_e}")
@@ -329,8 +336,10 @@ def main():
 
     # ── Resolve paper PDF (for --reproduce-results) ──
     paper_pdf_path: Optional[str] = None
+    paper_arxiv_id: str = ""
     if reproduce_results:
         from agents.paper_agent import PaperAgent
+        from agents.paper_corpus import extract_arxiv_id_from_url
         paper_dest = os.path.join(repo_path, "paper.pdf")
         paper_agent_for_dl = PaperAgent(llm=llm)
         try:
@@ -339,6 +348,7 @@ def main():
                 paper_pdf_path = paper_dest
                 log_info(f"Paper PDF copied from {paper_pdf_arg} to {paper_dest}")
             elif paper_url:
+                paper_arxiv_id = extract_arxiv_id_from_url(paper_url) or ""
                 paper_pdf_path = paper_agent_for_dl.download_paper(paper_url, paper_dest)
                 if paper_pdf_path:
                     log_info(f"Paper PDF downloaded to {paper_pdf_path}")
@@ -355,6 +365,7 @@ def main():
                             pass
                 arxiv_id = paper_agent_for_dl.extract_paper_link(readme_text) if readme_text else None
                 if arxiv_id:
+                    paper_arxiv_id = arxiv_id
                     url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
                     paper_pdf_path = paper_agent_for_dl.download_paper(url, paper_dest)
                     if paper_pdf_path:
@@ -370,19 +381,32 @@ def main():
     # Stage 4/6: Index the paper into graphify BEFORE generate_plan.
     # Static paper content belongs to graphify-out/, not mempalace.
     # Mempalace stores only references / experiment state.
+    paper_corpus = None
     if reproduce_results and paper_pdf_path and os.path.exists(paper_pdf_path):
         try:
-            from agents.paper_agent import extract_pdf_text as _ext_pdf
-            _ptxt = _ext_pdf(paper_pdf_path) or ""
-            if _ptxt:
-                log_info(f"Indexing paper into graphify: {len(_ptxt):,} chars")
-                graphify_provider.index_paper_text(_ptxt, source_file=paper_pdf_path)
+            from agents.paper_corpus import build_paper_corpus
+            paper_corpus = build_paper_corpus(
+                paper_pdf_path,
+                arxiv_id=paper_arxiv_id,
+                source_mode=paper_source_mode,
+            )
+            if paper_corpus.has_text():
+                log_info(
+                    "Indexing paper into graphify: "
+                    f"mode={paper_corpus.source_mode}, "
+                    f"resolved={paper_corpus.resolved_modes}, "
+                    f"chars={len(paper_corpus.index_text):,}"
+                )
+                graphify_provider.index_paper_sources(paper_corpus.source_payloads())
                 run_memory.write_experiment_state(
                     "paper_index",
                     {
                         "backend": "graphify",
                         "paper_pdf_path": paper_pdf_path,
-                        "indexed_chars": len(_ptxt),
+                        "paper_source_mode": paper_source_mode,
+                        "resolved_modes": paper_corpus.resolved_modes,
+                        "paper_arxiv_id": paper_arxiv_id,
+                        "indexed_chars": len(paper_corpus.index_text),
                     },
                     source_file="paper_index.json",
                 )
@@ -391,7 +415,18 @@ def main():
                     ref_id="graphify:paper_chunks",
                     source=graphify_provider.paper_chunks_jsonl,
                     why_relevant="static paper corpus for planner/stage2 retrieval",
-                    extra={"paper_pdf_path": paper_pdf_path, "indexed_chars": len(_ptxt)},
+                    extra={
+                        "paper_pdf_path": paper_pdf_path,
+                        "paper_source_mode": paper_source_mode,
+                        "paper_arxiv_id": paper_arxiv_id,
+                        "resolved_modes": paper_corpus.resolved_modes,
+                        "indexed_chars": len(paper_corpus.index_text),
+                    },
+                )
+            else:
+                log_info(
+                    "Paper corpus resolved but contained no indexable text; "
+                    f"provenance={getattr(paper_corpus, 'provenance', {})}"
                 )
         except Exception as _ext_e:
             log_info(f"Paper indexing into graphify failed: {_ext_e}")
@@ -403,6 +438,7 @@ def main():
         llm=llm,
         no_scale_down=no_scale_down,
         paper_pdf_path=paper_pdf_path,
+        paper_corpus=paper_corpus,
         reproduce_results=reproduce_results,
         run_memory=run_memory,
         graphify_provider=graphify_provider,
@@ -603,6 +639,20 @@ def main():
         outer_commands = agent_result.get("tool_calls", [])
     else:
         log_phase("RUNNING CONFIGURATION AGENT")
+        observer_client = None
+        try:
+            from observers.observer_agent import ObserverClient
+            observer_client = ObserverClient(
+                output_dir=output_dir,
+                llm=llm,
+                api_key=args.api_key or os.environ.get("AMD_LLM_API_KEY", ""),
+                enabled=bool(llm),
+            )
+            observer_client.start()
+            log_info("Observer sidecar: ON")
+        except Exception as _obs_e:
+            observer_client = None
+            log_info(f"Observer sidecar disabled: {_obs_e}")
         configuration_agent = Configuration(
             configuration_sandbox, base_image, full_name, root_path, llm, 100,
             rocm_mode=rocm_mode, plan=plan, no_scale_down=no_scale_down,
@@ -620,8 +670,13 @@ def main():
             paper_title=paper_title,
             run_memory=run_memory,
             graphify_provider=graphify_provider,
+            observer_client=observer_client,
         )
-        msg, outer_commands = configuration_agent.run('/tmp', trajectory, waiting_list, conflict_list)
+        try:
+            msg, outer_commands = configuration_agent.run('/tmp', trajectory, waiting_list, conflict_list)
+        finally:
+            if observer_client is not None:
+                observer_client.shutdown()
         # Stage 1 / 3 compaction summary
         try:
             o = getattr(configuration_agent, "_compaction_orig_chars", 0)

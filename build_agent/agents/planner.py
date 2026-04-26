@@ -46,8 +46,7 @@ _CONFIG_FILES = [
 _README_NAMES = ["README.md", "readme.md", "README.rst", "README.txt", "README"]
 
 _MAX_FILE_CHARS = 4000
-_MAX_README_CHARS = 100000
-_MAX_SOURCE_SCAN_FILES = 120
+_MAX_SOURCE_SCAN_FILES = None
 
 # stdlib modules removed or significantly changed in Python 3.12
 _PY312_REMOVED_MODULES = {
@@ -96,24 +95,24 @@ _OLD_PIN_HAZARD_CUTOFFS = {
 
 # ── file helpers ─────────────────────────────────────────────────────────────
 
-def _read_file(path: str, max_chars: int = _MAX_FILE_CHARS) -> Optional[str]:
+def _read_file(path: str, max_chars: Optional[int] = _MAX_FILE_CHARS) -> Optional[str]:
     if not os.path.isfile(path):
         return None
     try:
         with open(path, "r", errors="ignore") as f:
-            return f.read(max_chars)
+            return f.read() if max_chars is None else f.read(max_chars)
     except Exception:
         return None
 
 
-def _find_python_files(repo_path: str, limit: int = _MAX_SOURCE_SCAN_FILES) -> List[str]:
+def _find_python_files(repo_path: str, limit: Optional[int] = _MAX_SOURCE_SCAN_FILES) -> List[str]:
     py_files = []
     for root, dirs, files in os.walk(repo_path):
         dirs[:] = [d for d in dirs if not d.startswith(".") and d != "__pycache__" and d != "node_modules"]
         for f in files:
             if f.endswith(".py"):
                 py_files.append(os.path.join(root, f))
-                if len(py_files) >= limit:
+                if limit is not None and len(py_files) >= limit:
                     return py_files
     return py_files
 
@@ -681,7 +680,19 @@ def _gather_image_evidence(import_counts: Dict[str, int],
                 f"Best AMD ROCm Docker image for a repository whose primary "
                 f"framework is `{primary}` in 2026. Mention concrete tags from "
                 f"`rocm/{primary}` or `rocm/pytorch` and any known caveats.",
-                llm=llm, budget_s=30.0, use_cache=True,
+                llm=llm,
+                budget_s=30.0,
+                use_cache=True,
+                profile="repoResearch",
+                context={
+                    "primary_framework": primary,
+                    "candidate_workloads": workloads[:6],
+                    "top_imports": sorted(import_counts.items(), key=lambda item: -item[1])[:12],
+                    "config_excerpt": "\n".join(
+                        f"# {name}\n{content[:1200]}"
+                        for name, content in list((config_contents or {}).items())[:3]
+                    ),
+                },
             )
             ans = (note.get("answer") or "").strip()
             if ans:
@@ -1184,7 +1195,15 @@ def _planner_external_notes(cuda_deps: List[str],
                     f"What is the safest AMD ROCm installation or fallback strategy for "
                     f"`{dep_norm}` in a PyTorch repository on ROCm 7.x? Include exact "
                     f"commands if known.",
-                    llm=llm, budget_s=45.0, use_cache=True,
+                    llm=llm,
+                    budget_s=45.0,
+                    use_cache=True,
+                    profile="repoResearch",
+                    context={
+                        "dep": dep_norm,
+                        "base_image": base_image_name,
+                        "cuda_deps": cuda_deps[:6],
+                    },
                 )
                 ans = (note.get("answer") or "").strip()
                 cmds = note.get("suggested_commands") or []
@@ -1211,6 +1230,7 @@ def generate_plan(repo_path: str, full_name: str, rocm_mode: bool = False,
                   llm: Optional[str] = None,
                   no_scale_down: bool = False,
                   paper_pdf_path: Optional[str] = None,
+                  paper_corpus: Optional[Any] = None,
                   reproduce_results: bool = False,
                   run_memory: Optional[Any] = None,
                   graphify_provider: Optional[Any] = None,
@@ -1252,11 +1272,40 @@ def generate_plan(repo_path: str, full_name: str, rocm_mode: bool = False,
     # 2. Read README
     readme_content = None
     for rname in _README_NAMES:
-        content = _read_file(os.path.join(repo_path, rname), max_chars=_MAX_README_CHARS)
+        content = _read_file(os.path.join(repo_path, rname), max_chars=None)
         if content:
             readme_content = content
             log_info(f"  Found README: {rname}")
             break
+
+    repo_readme_context = ""
+    repo_config_context = ""
+    repo_code_context = ""
+    if graphify_provider is not None and getattr(graphify_provider, "enabled", False):
+        try:
+            repo_readme_context = graphify_provider.query_repo_corpus(
+                "README installation usage commands expected outputs models datasets benchmarks",
+                scope="readme",
+                token_budget=12000,
+                max_chunks=10,
+                per_chunk_max_chars=2000,
+            ) or ""
+            repo_config_context = graphify_provider.query_repo_corpus(
+                "config training hyperparameters batch size learning rate optimizer scheduler dataset path yaml toml",
+                scope="config",
+                token_budget=12000,
+                max_chunks=10,
+                per_chunk_max_chars=2000,
+            ) or ""
+            repo_code_context = graphify_provider.query_repo_corpus(
+                "entrypoint training evaluation metric logging argparse hydra main function model loading config parser",
+                scope="code",
+                token_budget=12000,
+                max_chunks=10,
+                per_chunk_max_chars=2000,
+            ) or ""
+        except Exception as _repo_ctx_e:
+            log_warning(f"  Repo corpus query failed: {_repo_ctx_e}")
 
     # 3. Scan source files
     py_files = _find_python_files(repo_path)
@@ -1305,6 +1354,7 @@ def generate_plan(repo_path: str, full_name: str, rocm_mode: bool = False,
             paper_experiments, paper_title = paper_agent.shortlist_experiments(
                 paper_pdf_path=paper_pdf_path,
                 repo_path=repo_path,
+                paper_corpus=paper_corpus,
                 readme_content=readme_content or "",
                 readme_run_commands=readme_run_commands,
                 readme_expected_outcomes=expected_outcomes,
@@ -1734,9 +1784,23 @@ def generate_plan(repo_path: str, full_name: str, rocm_mode: bool = False,
 
     # ── README snippet ───────────────────────────────────────────────────────
 
-    if readme_content:
-        sections.append(f"README Content (first {_MAX_README_CHARS} chars):")
-        sections.append(readme_content[:_MAX_README_CHARS])
+    if repo_readme_context:
+        sections.append("README Corpus Highlights:")
+        sections.append(repo_readme_context)
+        sections.append("")
+    elif readme_content:
+        sections.append("README Content (full file):")
+        sections.append(readme_content)
+        sections.append("")
+
+    if repo_config_context:
+        sections.append("Config Corpus Highlights:")
+        sections.append(repo_config_context)
+        sections.append("")
+
+    if repo_code_context:
+        sections.append("Code Corpus Highlights:")
+        sections.append(repo_code_context)
         sections.append("")
 
     raw_plan = "\n".join(sections)

@@ -1,43 +1,24 @@
 """
-Researcher sub-agent — PR-C (deep web search loop).
+Profile-based research worker for Repo2ROCm.
 
-A bounded LLM loop that turns ONE big question from the parent configuration
-agent into ONE compact ResearchNote, by iteratively choosing among a small
-palette of free, cached tools:
+The same bounded helper is reused across:
+  - runtime `deep_research` during configuration,
+  - planner-side repository/image/dependency investigation,
+  - paper-side metric/setup/reproducibility clarification,
+  - observer-side diagnosis (via a separate profile).
 
-    search   (DDG)              -> top-k hits
-    visit    (urllib + html2text) -> readable page text
-    pypi     (PyPI JSON)         -> package versions
-    docker   (Docker Hub)        -> image tags
-    recall   (compat shim)        -> explains that cross-run lesson recall is disabled
-    finish   (JSON ResearchNote)  -> terminate
+Each profile keeps its own synthesis guidance and cache namespace while sharing
+the same deterministic evidence-gathering substrate:
 
-The point: the parent agent spends ZERO turns reading search snippets. It just
-asks `deep_research "..."` once and gets back a structured answer with
-citations and (when applicable) verified install commands.
+    recall  -> policy / compatibility note
+    pypi    -> package versions
+    docker  -> Docker Hub tags
+    search  -> DDG web results
+    visit   -> extracted page text
 
-Cost / safety:
-- max_turns:    6 (default)  — hard cap on internal LLM rounds
-- budget_s:    90 (default)  — wall-clock cap; aborts gracefully
-- max_calls:   12 (default)  — hard cap on tool invocations across turns
-- cache_ttl:   14 days       — mempalace `room="research_notes"` global wing
-- soft-fail:   any tool error becomes a `[error] ...` observation; the loop
-               continues. No exceptions ever escape research().
-
-Result is a typed dict (kept dict, not dataclass, so json round-trips trivially):
-
-    {
-      "question": str,
-      "answer": str,                    # 1-3 paragraph distilled answer
-      "suggested_commands": [str, ...], # bash/pip lines we believe will work
-      "citations": [{"title": str, "url": str}, ...],
-      "confidence": float,              # 0..1, self-reported
-      "turns_used": int,
-      "tool_calls": int,
-      "wall_time_s": float,
-      "stopped_reason": str,            # "finish" | "max_turns" | "budget_s" | ...
-      "error": str | "",                # non-empty if everything failed
-    }
+The worker spends zero parent turns reading snippets. Callers ask one focused
+question and receive one compact ResearchNote with citations and, when
+applicable, suggested commands or follow-up questions.
 """
 
 from __future__ import annotations
@@ -47,6 +28,7 @@ import json
 import os
 import re
 import time
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 from utils.json_utils import load_json_loose
@@ -75,25 +57,165 @@ _IMAGE_HINTS = (
 )
 
 
+# ── Research profiles ─────────────────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class ResearchProfile:
+    name: str
+    cache_namespace: str
+    search_hint: str
+    synth_guidance: str
+    augment_rocm_terms: bool = True
+    include_lookup_targets: bool = True
+    include_recall_note: bool = True
+    max_search_hits: int = 5
+    max_visits: int = 2
+
+
+_RUNTIME_REPAIR_GUIDANCE = """\
+You are acting as a runtime repair specialist for AMD ROCm / HIP migrations.
+- Prioritize concrete fixes for the exact failure or version conflict at hand.
+- Prefer commands only when the evidence directly supports them.
+- Do NOT recommend CUDA-only wheels on AMD unless the evidence explicitly says
+  they work on ROCm.
+- Prefer ROCm-native or PyTorch-native fallbacks over guessy package pinning.
+"""
+
+_REPO_RESEARCH_GUIDANCE = """\
+You are assisting the planner before execution starts.
+- Focus on the safest ROCm image choice, dependency strategy, and known caveats.
+- Keep the answer planner-friendly: concise, comparative, and grounded.
+- Suggested commands are optional; use them only when they are directly useful
+  to the planner (for example a known source-build invocation or verified image
+  tag).
+"""
+
+_PAPER_RESEARCH_GUIDANCE = """\
+You are clarifying research-paper details for reproducibility.
+- Focus on the metric semantics, setup details, and what is portable across GPU
+  vendors.
+- Prefer exact wording for experiment names, tables, figures, datasets,
+  hyperparameters, and evaluation caveats.
+- If ambiguity remains, use `followups` to tell the parent what exact question
+  should be asked next or what evidence is still missing.
+- Do not invent shell commands unless the evidence directly ties them to the
+  question.
+"""
+
+_OBSERVER_GUIDANCE = """\
+You are an observer-side critic for Repo2ROCm.
+- Diagnose progress quality from recent turns without executing anything.
+- Proactively use web-grounded evidence when the recent turns suggest the run is
+  stalled on a compatibility, runtime, or paper-fidelity issue.
+- If the run is genuinely making progress, say so and keep `suggested_commands`
+  empty.
+- If the run is stuck, propose a higher-level corrective strategy rather than a
+  regex-like rule. Examples: switch from trial-installing to verified version
+  lookup, revisit the planner assumptions, or verify the paper metric path
+  before rerunning.
+- Use `followups` for high-value questions or tools the parent should invoke
+  next.
+"""
+
+_PROFILES = {
+    "runtimeRepair": ResearchProfile(
+        name="runtimeRepair",
+        cache_namespace="runtime_repair",
+        search_hint="AMD ROCm HIP",
+        synth_guidance=_RUNTIME_REPAIR_GUIDANCE,
+        augment_rocm_terms=True,
+        include_lookup_targets=True,
+        include_recall_note=True,
+        max_search_hits=5,
+        max_visits=2,
+    ),
+    "repoResearch": ResearchProfile(
+        name="repoResearch",
+        cache_namespace="repo_research",
+        search_hint="AMD ROCm image compatibility dependency strategy",
+        synth_guidance=_REPO_RESEARCH_GUIDANCE,
+        augment_rocm_terms=True,
+        include_lookup_targets=True,
+        include_recall_note=True,
+        max_search_hits=5,
+        max_visits=2,
+    ),
+    "paperResearch": ResearchProfile(
+        name="paperResearch",
+        cache_namespace="paper_research",
+        search_hint="paper metric setup appendix benchmark reproducibility",
+        synth_guidance=_PAPER_RESEARCH_GUIDANCE,
+        augment_rocm_terms=False,
+        include_lookup_targets=True,
+        include_recall_note=True,
+        max_search_hits=5,
+        max_visits=2,
+    ),
+    "observerCritic": ResearchProfile(
+        name="observerCritic",
+        cache_namespace="observer_critic",
+        search_hint="AMD ROCm diagnosis strategy",
+        synth_guidance=_OBSERVER_GUIDANCE,
+        augment_rocm_terms=True,
+        include_lookup_targets=True,
+        include_recall_note=False,
+        max_search_hits=4,
+        max_visits=2,
+    ),
+}
+
+
+def _resolve_profile(profile: str | None) -> ResearchProfile:
+    key = (profile or "runtimeRepair").strip()
+    if key in _PROFILES:
+        return _PROFILES[key]
+    lowered = key.lower()
+    for profile_obj in _PROFILES.values():
+        if profile_obj.name.lower() == lowered:
+            return profile_obj
+    return _PROFILES["runtimeRepair"]
+
+
+def _context_to_text(context: Any) -> str:
+    if context is None:
+        return ""
+    if isinstance(context, str):
+        return context.strip()
+    try:
+        return json.dumps(context, indent=2, default=str)[:12000]
+    except Exception:
+        return str(context)[:12000]
+
+
 # ── Cache (re-uses the same drawer convention as web_search/external_lookups) ─
 
 def _palace_global_path() -> str:
     return os.path.expanduser("~/.mempalace/palaces/_global")
 
 
-def _cache_id(question: str) -> str:
-    return hashlib.sha256(("deep_research::" + question.strip().lower()).encode()).hexdigest()[:24]
+def _cache_id(question: str, profile: str, context_text: str = "") -> str:
+    key = (
+        "research_worker::"
+        + profile.strip().lower()
+        + "::"
+        + question.strip().lower()
+        + "::"
+        + context_text.strip().lower()
+    )
+    return hashlib.sha256(key.encode()).hexdigest()[:24]
 
 
-def _cache_get(question: str, max_age_s: int) -> Optional[Dict[str, Any]]:
+def _cache_get(question: str, profile: str, max_age_s: int,
+               context_text: str = "") -> Optional[Dict[str, Any]]:
     try:
         from mempalace.searcher import search_memories
     except Exception:
         return None
-    cid = _cache_id(question)
+    cid = _cache_id(question, profile, context_text=context_text)
     try:
         r = search_memories(
-            f"deep_research {question}", _palace_global_path(),
+            f"research_worker {profile} {question}", _palace_global_path(),
             wing=_GLOBAL_WING, room=_CACHE_ROOM,
             n_results=8, max_distance=0.0,
         )
@@ -123,14 +245,27 @@ def _cache_get(question: str, max_age_s: int) -> Optional[Dict[str, Any]]:
             note["_cache_hit"] = True
             return note
         except Exception:
-            return {"question": question, "answer": body, "_cache_hit": True,
-                    "citations": [], "suggested_commands": [], "confidence": 0.5,
-                    "turns_used": 0, "tool_calls": 0, "wall_time_s": 0.0,
-                    "stopped_reason": "cache", "error": ""}
+            return {
+                "question": question,
+                "answer": body,
+                "_cache_hit": True,
+                "citations": [],
+                "suggested_commands": [],
+                "confidence": 0.5,
+                "turns_used": 0,
+                "tool_calls": 0,
+                "wall_time_s": 0.0,
+                "stopped_reason": "cache",
+                "error": "",
+                "profile_used": profile,
+                "followups": [],
+            }
     return None
 
 
-def _cache_put(question: str, note: Dict[str, Any], ttl_s: int = _DEFAULT_CACHE_TTL_S) -> None:
+def _cache_put(question: str, profile: str, note: Dict[str, Any],
+               ttl_s: int = _DEFAULT_CACHE_TTL_S,
+               context_text: str = "") -> None:
     try:
         from mempalace.miner import add_drawer
         from mempalace.palace import get_collection
@@ -141,8 +276,8 @@ def _cache_put(question: str, note: Dict[str, Any], ttl_s: int = _DEFAULT_CACHE_
         col = get_collection(_palace_global_path(), create=True)
     except Exception:
         return
-    cid = _cache_id(question)
-    meta = {"kind": "deep_research", "key": question[:200],
+    cid = _cache_id(question, profile, context_text=context_text)
+    meta = {"kind": "research_worker", "profile": profile, "key": question[:200],
             "ttl_s": int(ttl_s), "ts": time.time(), "cache_id": cid,
             "confidence": float(note.get("confidence", 0.0))}
     try:
@@ -155,24 +290,24 @@ def _cache_put(question: str, note: Dict[str, Any], ttl_s: int = _DEFAULT_CACHE_
             + json.dumps(meta, default=str, sort_keys=True)
         )
         add_drawer(col, _GLOBAL_WING, _CACHE_ROOM, content,
-                   source_file=f"deep_research:{cid}", chunk_index=0,
+                   source_file=f"research_worker:{profile}:{cid}", chunk_index=0,
                    agent="researcher")
     except Exception as e:
         print(f"[researcher] cache put failed: {e}")
 
 
-def _augment_rocm_query(question: str) -> str:
+def _augment_rocm_query(question: str, suffix: str = "") -> str:
     q = (question or "").strip()
     if not q:
         return ""
     lowered = q.lower()
     if any(term in lowered for term in _AMD_TERMS):
-        return q
-    return f"{q} AMD ROCm HIP"
+        return " ".join(part for part in (q, suffix.strip()) if part).strip()
+    return " ".join(part for part in (q, "AMD ROCm HIP", suffix.strip()) if part).strip()
 
 
-def _infer_lookup_targets(question: str) -> Tuple[List[str], List[str]]:
-    lowered = (question or "").lower()
+def _infer_lookup_targets(question: str, context_text: str = "") -> Tuple[List[str], List[str]]:
+    lowered = f"{question or ''}\n{context_text or ''}".lower()
     pkgs = []
     for pkg in _PKG_HINTS:
         if pkg in lowered and pkg not in pkgs:
@@ -241,74 +376,6 @@ def _tool_recall(question: str) -> Tuple[str, str]:
     )
 
 
-# ── LLM-driven loop ──────────────────────────────────────────────────────────
-
-_SYSTEM_PROMPT = """\
-You are the Researcher sub-agent for Repo2ROCm. Your sole job is to answer ONE
-question from the parent configuration agent, using the tools listed below.
-
-Tools (each call = ONE tool, exactly one line, no quotes around the tool name):
-
-    search <query>          DuckDuckGo. Snippets only. ~5 hits.
-    visit <url>             Fetch a URL, returns extracted text (max 4000 chars).
-    pypi <pkg>              List recent PyPI versions + dates.
-    docker <image>          List recent Docker Hub tags + dates.
-    recall <question>       Compatibility shim that explains cross-run lesson recall is disabled.
-    finish <json>           Emit the final ResearchNote and terminate. JSON shape:
-        {"answer": "...",
-         "suggested_commands": ["cmd1", "cmd2"],
-         "citations": [{"title":"...","url":"..."}, ...],
-         "confidence": 0.0..1.0}
-
-Strategy:
-1. Start with `search` terms that include both the
-   error class and the ROCm/AMD context.
-2. If the question names a package or image, use `pypi` / `docker` before
-   guessing versions or tags.
-3. Pick ONE high-signal hit (prefer github.com/pytorch, github.com/ROCm,
-   rocm.docs.amd.com, huggingface.co/transformers issues). `visit` it.
-4. If you need a second source (dependency version, image tag), use `pypi` or
-   `docker`.
-5. Synthesize. `finish` with a 1-3 paragraph answer + the actual commands the
-   parent should try, plus citations. Be HONEST about confidence.
-
-Constraints:
-- Output exactly ONE tool call per turn, no other text.
-- Tool calls are stateless: the user message will show the tool result.
-- Do NOT search more than twice without a `visit` in between.
-- Do NOT visit non-essential pages (e.g. docs.python.org for stdlib).
-- If you cannot find a confident answer in the budget, `finish` anyway with
-  whatever partial information you have and a low `confidence`.
-"""
-
-
-def _parse_tool(line: str) -> Optional[Tuple[str, str]]:
-    """Parse one of: search/visit/pypi/docker/recall/finish followed by an arg."""
-    s = line.strip()
-    # Strip ```bash fences if the LLM wraps the call in one
-    s = re.sub(r"^```(?:bash|json)?\n?", "", s)
-    s = re.sub(r"\n?```$", "", s)
-    s = s.strip()
-    m = re.match(r"^(search|visit|pypi|docker|recall|finish)\s+(.+)$",
-                 s, flags=re.DOTALL | re.IGNORECASE)
-    if not m:
-        return None
-    tool = m.group(1).lower()
-    arg = m.group(2).strip()
-    # Strip surrounding quotes for the simple tools
-    if tool in ("search", "visit", "pypi", "docker", "recall"):
-        if (arg.startswith('"') and arg.endswith('"')) or (arg.startswith("'") and arg.endswith("'")):
-            arg = arg[1:-1]
-    return tool, arg
-
-
-def _format_observation(tool_name: str, output: str, max_chars: int = 3500) -> str:
-    o = output.strip()
-    if len(o) > max_chars:
-        o = o[: max_chars - 32] + "\n…[truncated]"
-    return f"[{tool_name} result]\n{o}"
-
-
 def _safe_finish(arg: str, ctx: Dict[str, Any]) -> Dict[str, Any]:
     """Parse the LLM's finish JSON; on failure, fall back to a partial note."""
     try:
@@ -326,19 +393,22 @@ def _safe_finish(arg: str, ctx: Dict[str, Any]) -> Dict[str, Any]:
     note.setdefault("answer", "")
     note.setdefault("suggested_commands", [])
     note.setdefault("citations", [])
+    note.setdefault("followups", [])
     note["confidence"] = float(note.get("confidence", 0.0) or 0.0)
     if not isinstance(note["suggested_commands"], list):
         note["suggested_commands"] = [str(note["suggested_commands"])]
     if not isinstance(note["citations"], list):
         note["citations"] = []
+    if not isinstance(note["followups"], list):
+        note["followups"] = [str(note["followups"])]
     return note
 
 
-_SYNTH_SYSTEM_PROMPT = """\
-You are the Synthesizer for Repo2ROCm's deep_research tool. The orchestrator
-has already gathered raw evidence (cumulative-KB recall + web search hits +
-fetched page extracts) for one ROCm/CUDA migration question. Your ONLY job is
-to read that evidence and produce ONE compact JSON ResearchNote.
+_BASE_SYNTH_SYSTEM_PROMPT = """\
+You are the Synthesizer for Repo2ROCm's research worker. The orchestrator has
+already gathered raw evidence (policy note + deterministic lookups + web search
+hits + fetched page extracts) for one focused question. Your ONLY job is to
+read that evidence and produce ONE compact JSON ResearchNote.
 
 Output rules (STRICT — your reply will be JSON-parsed):
 - Reply with EXACTLY one JSON object, no prose before or after, no Markdown
@@ -358,18 +428,91 @@ Output rules (STRICT — your reply will be JSON-parsed):
                                   guessing"; 0.3-0.6 = "plausible but worth
                                   trying"; > 0.6 = "evidence directly
                                   supports this".
+    "followups":           list  Zero or more focused next questions the
+                                  parent should ask when ambiguity remains.
 
 - If the evidence is contradictory or incomplete, say so in `answer` and
   drop `confidence`.
-- Do NOT recommend installing the CUDA-only PyPI flash-attn wheel on AMD;
-  always prefer build-from-source with FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE
-  or PyTorch SDPA fallback.
-- Prefer ungated HuggingFace models when the gated original is referenced.
 """
 
 
-def _gather_evidence(question: str, max_search_hits: int = 5,
-                     max_visits: int = 2,
+def _build_synth_system_prompt(profile_obj: ResearchProfile) -> str:
+    return _BASE_SYNTH_SYSTEM_PROMPT + "\n\nPROFILE GUIDANCE:\n" + profile_obj.synth_guidance.strip() + "\n"
+
+
+def _score_visit_candidate(url: str) -> int:
+    u = (url or "").lower()
+    score = 0
+    if "github.com/pytorch" in u:
+        score += 4
+    if "github.com/rocm" in u:
+        score += 4
+    if "rocm.docs.amd.com" in u:
+        score += 4
+    if "github.com/dao-ailab/flash-attention" in u:
+        score += 3
+    if "github.com/huggingface" in u:
+        score += 3
+    if "github.com/" in u:
+        score += 2
+    if "huggingface.co" in u:
+        score += 2
+    if "arxiv.org" in u or "ar5iv" in u:
+        score += 2
+    if "stackoverflow.com" in u:
+        score += 1
+    return score
+
+
+def _extract_search_candidates(search_text: str,
+                               max_search_hits: int) -> List[Dict[str, str]]:
+    candidates: List[Dict[str, str]] = []
+    lines = (search_text or "").splitlines()
+    i = 0
+    while i < len(lines) and len(candidates) < max_search_hits:
+        match = re.match(r"^\s*\d+\.\s+(.+?)\s*$", lines[i])
+        if match:
+            title = match.group(1).strip()
+            url = ""
+            if i + 1 < len(lines):
+                next_line = lines[i + 1].strip()
+                if next_line.startswith("http"):
+                    url = next_line
+            if url:
+                candidates.append({"title": title, "url": url})
+        i += 1
+    candidates.sort(key=lambda item: _score_visit_candidate(item["url"]), reverse=True)
+    return candidates
+
+
+def _build_search_query(question: str,
+                        profile_obj: ResearchProfile,
+                        context_text: str) -> str:
+    q = (question or "").strip()
+    if not q:
+        return ""
+    context_bits = []
+    if context_text:
+        for line in context_text.splitlines():
+            cleaned = line.strip()
+            if cleaned:
+                context_bits.append(cleaned[:120])
+            if len(context_bits) >= 2:
+                break
+    suffix = profile_obj.search_hint
+    if context_bits:
+        suffix = f"{suffix} {' '.join(context_bits)}".strip()
+    if profile_obj.augment_rocm_terms:
+        return _augment_rocm_query(q, suffix=suffix)
+    return " ".join(part for part in (q, suffix) if part).strip()
+
+
+def _gather_evidence(question: str,
+                     profile_obj: ResearchProfile,
+                     context_text: str = "",
+                     extra_evidence: Optional[List[str]] = None,
+                     max_search_hits: Optional[int] = None,
+                     max_visits: Optional[int] = None,
                      verbose: bool = False) -> Tuple[str, List[Dict[str, str]], int]:
     """
     Deterministic phase: recall + search + visit top-K. Returns
@@ -379,34 +522,46 @@ def _gather_evidence(question: str, max_search_hits: int = 5,
     cites: List[Dict[str, str]] = []
     calls = 0
 
-    # 1. Compatibility shim / reminder
-    rc_text, _ = _tool_recall(question)
-    calls += 1
-    parts.append("=== RECALL / POLICY NOTE ===")
-    parts.append(rc_text)
-    if verbose:
-        print(f"[researcher] recall: {len(rc_text)} chars")
+    search_hits = max_search_hits or profile_obj.max_search_hits
+    max_visit_count = max_visits or profile_obj.max_visits
 
-    # 2. Deterministic package/image lookups if the question names them.
-    pkg_targets, image_targets = _infer_lookup_targets(question)
-    for pkg in pkg_targets:
-        p_text, _ = _tool_pypi(pkg)
+    if profile_obj.include_recall_note:
+        recall_text, _ = _tool_recall(question)
         calls += 1
-        parts.append(f"\n=== PYPI LOOKUP: {pkg} ===")
-        parts.append(p_text)
+        parts.append("=== RECALL / POLICY NOTE ===")
+        parts.append(recall_text)
         if verbose:
-            print(f"[researcher] pypi {pkg}: {len(p_text)} chars")
+            print(f"[researcher] recall: {len(recall_text)} chars")
 
-    for image in image_targets:
-        d_text, _ = _tool_docker(image)
-        calls += 1
-        parts.append(f"\n=== DOCKER LOOKUP: {image} ===")
-        parts.append(d_text)
-        if verbose:
-            print(f"[researcher] docker {image}: {len(d_text)} chars")
+    if context_text:
+        parts.append("\n=== PARENT CONTEXT ===")
+        parts.append(context_text[:6000])
 
-    # 3. Web search, augmented with ROCm terms when the question is stale or vague.
-    search_query = _augment_rocm_query(question)
+    if extra_evidence:
+        rendered = [str(item).strip() for item in extra_evidence if str(item).strip()]
+        if rendered:
+            parts.append("\n=== CALLER-SUPPLIED EVIDENCE ===")
+            parts.extend(rendered[:12])
+
+    if profile_obj.include_lookup_targets:
+        pkg_targets, image_targets = _infer_lookup_targets(question, context_text=context_text)
+        for pkg in pkg_targets:
+            p_text, _ = _tool_pypi(pkg)
+            calls += 1
+            parts.append(f"\n=== PYPI LOOKUP: {pkg} ===")
+            parts.append(p_text)
+            if verbose:
+                print(f"[researcher] pypi {pkg}: {len(p_text)} chars")
+
+        for image in image_targets:
+            d_text, _ = _tool_docker(image)
+            calls += 1
+            parts.append(f"\n=== DOCKER LOOKUP: {image} ===")
+            parts.append(d_text)
+            if verbose:
+                print(f"[researcher] docker {image}: {len(d_text)} chars")
+
+    search_query = _build_search_query(question, profile_obj, context_text)
     sr_text, _ = _tool_search(search_query)
     calls += 1
     parts.append(f"\n=== WEB SEARCH ({search_query}) ===")
@@ -414,45 +569,10 @@ def _gather_evidence(question: str, max_search_hits: int = 5,
     if verbose:
         print(f"[researcher] search: {len(sr_text)} chars")
 
-    # Extract URLs + titles from the search output for visit candidates.
-    candidates: List[Dict[str, str]] = []
-    # The web_search format we control:
-    # 1. <title>
-    #    <url>
-    #    <snippet>
-    lines = sr_text.splitlines()
-    i = 0
-    while i < len(lines) and len(candidates) < max_search_hits:
-        m = re.match(r"^\s*\d+\.\s+(.+?)\s*$", lines[i])
-        if m:
-            title = m.group(1).strip()
-            url = ""
-            if i + 1 < len(lines):
-                u = lines[i + 1].strip()
-                if u.startswith("http"):
-                    url = u
-            if url:
-                candidates.append({"title": title, "url": url})
-        i += 1
-
-    # 4. Visit the top-N hits, prioritizing high-signal sources.
-    def _score(c: Dict[str, str]) -> int:
-        u = c["url"].lower()
-        s = 0
-        if "github.com/pytorch" in u: s += 4
-        if "github.com/rocm" in u: s += 4
-        if "rocm.docs.amd.com" in u: s += 4
-        if "github.com/dao-ailab/flash-attention" in u: s += 3
-        if "github.com/huggingface" in u: s += 3
-        if "github.com/" in u: s += 2
-        if "stackoverflow.com" in u: s += 1
-        if "huggingface.co" in u: s += 1
-        return s
-
-    candidates.sort(key=_score, reverse=True)
+    candidates = _extract_search_candidates(sr_text, max_search_hits=search_hits)
     visited = 0
     for c in candidates:
-        if visited >= max_visits:
+        if visited >= max_visit_count:
             break
         v_text, _ = _tool_visit(c["url"])
         calls += 1
@@ -478,7 +598,12 @@ def research(question: str,
              max_calls: int = _DEFAULT_MAX_CALLS,        # kept for API compat
              use_cache: bool = True,
              cache_ttl_s: int = _DEFAULT_CACHE_TTL_S,
-             verbose: bool = False) -> Dict[str, Any]:
+             verbose: bool = False,
+             profile: str = "runtimeRepair",
+             context: Any = None,
+             extra_evidence: Optional[List[str]] = None,
+             max_search_hits: Optional[int] = None,
+             max_visits: Optional[int] = None) -> Dict[str, Any]:
     """
     Run the deep research sub-agent. Returns a ResearchNote dict (always).
 
@@ -493,11 +618,16 @@ def research(question: str,
     1-2 visits) plus 1 LLM call for synthesis. `budget_s` IS enforced.
     """
     q = (question or "").strip()
+    profile_obj = _resolve_profile(profile)
+    context_text = _context_to_text(context)
     if not q:
-        return _make_result(q, "deep_research: empty question.", [], [], 0.0,
-                            0, 0, 0.0, "empty_question", "empty question")
+        return _make_result(
+            q, "research_worker: empty question.", [], [], 0.0,
+            0, 0, 0.0, "empty_question", "empty question",
+            profile_used=profile_obj.name, followups=[],
+        )
     if use_cache:
-        hit = _cache_get(q, cache_ttl_s)
+        hit = _cache_get(q, profile_obj.cache_namespace, cache_ttl_s, context_text=context_text)
         if hit:
             hit["_cache_hit"] = True
             return hit
@@ -509,17 +639,29 @@ def research(question: str,
     # ── Phase 1: gather evidence (no LLM) ──
     try:
         evidence, citations, tool_calls = _gather_evidence(
-            q, max_search_hits=5, max_visits=2, verbose=verbose,
+            q,
+            profile_obj=profile_obj,
+            context_text=context_text,
+            extra_evidence=extra_evidence,
+            max_search_hits=max_search_hits,
+            max_visits=max_visits,
+            verbose=verbose,
         )
     except Exception as e:
-        return _make_result(q,
-            f"deep_research: evidence gathering failed: {e}",
-            [], [], 0.0, 0, 0, time.time() - t0, "gather_error", str(e))
+        return _make_result(
+            q,
+            f"research_worker: evidence gathering failed: {e}",
+            [], [], 0.0, 0, 0, time.time() - t0, "gather_error", str(e),
+            profile_used=profile_obj.name, followups=[],
+        )
 
     if time.time() - t0 > budget_s:
-        return _make_result(q,
-            f"deep_research: evidence gathering exhausted budget ({budget_s}s).",
-            [], citations, 0.0, 0, tool_calls, time.time() - t0, "budget_s", "")
+        return _make_result(
+            q,
+            f"research_worker: evidence gathering exhausted budget ({budget_s}s).",
+            [], citations, 0.0, 0, tool_calls, time.time() - t0, "budget_s", "",
+            profile_used=profile_obj.name, followups=[],
+        )
 
     # Hard-cap evidence size before sending to LLM.
     MAX_EVIDENCE_CHARS = 16000
@@ -530,12 +672,18 @@ def research(question: str,
     try:
         from utils.llm import get_llm_response
     except Exception as e:
-        return _make_result(q,
-            f"deep_research: LLM client unavailable ({e}); returning raw evidence only.",
-            [], citations, 0.0, 0, tool_calls, time.time() - t0, "no_llm", str(e))
+        return _make_result(
+            q,
+            f"research_worker: LLM client unavailable ({e}); returning raw evidence only.",
+            [], citations, 0.0, 0, tool_calls, time.time() - t0, "no_llm", str(e),
+            profile_used=profile_obj.name, followups=[],
+        )
 
+    context_block = f"PARENT CONTEXT:\n{context_text}\n\n" if context_text else ""
     user_msg = (
+        f"PROFILE:\n{profile_obj.name}\n\n"
         f"QUESTION:\n{q}\n\n"
+        f"{context_block}"
         f"EVIDENCE GATHERED (cumulative-KB recall + web search + top page extracts):\n"
         f"{evidence}\n\n"
         f"Now emit the JSON ResearchNote per the system rules. JSON ONLY."
@@ -545,14 +693,17 @@ def research(question: str,
         choices, _usage = get_llm_response(
             llm,
             [{"role": "user", "content": user_msg}],
-            system_prompt=_SYNTH_SYSTEM_PROMPT,
+            system_prompt=_build_synth_system_prompt(profile_obj),
             temperature=0.1, max_tokens=1200,
         )
         reply = (choices or [""])[0] or ""
     except Exception as e:
-        return _make_result(q,
-            f"deep_research: synthesis LLM call failed: {e}; returning raw evidence.",
-            [], citations, 0.0, 0, tool_calls, time.time() - t0, "llm_error", str(e))
+        return _make_result(
+            q,
+            f"research_worker: synthesis LLM call failed: {e}; returning raw evidence.",
+            [], citations, 0.0, 0, tool_calls, time.time() - t0, "llm_error", str(e),
+            profile_used=profile_obj.name, followups=[],
+        )
 
     note = _safe_finish(reply, {})
     # Backfill citations from deterministic gathering if the LLM didn't supply any.
@@ -565,11 +716,19 @@ def research(question: str,
         q, note.get("answer", ""), note.get("suggested_commands", []),
         note.get("citations", []), float(note.get("confidence", 0.0) or 0.0),
         turns, tool_calls, elapsed, stopped, note.get("_parse_error", "") or "",
+        profile_used=profile_obj.name,
+        followups=note.get("followups") or [],
     )
 
     if use_cache:
         try:
-            _cache_put(q, result, cache_ttl_s)
+            _cache_put(
+                q,
+                profile_obj.cache_namespace,
+                result,
+                cache_ttl_s,
+                context_text=context_text,
+            )
         except Exception:
             pass
     return result
@@ -577,7 +736,9 @@ def research(question: str,
 
 def _make_result(question: str, answer: str, cmds: list, citations: list,
                  confidence: float, turns: int, tool_calls: int,
-                 wall_time_s: float, stopped: str, error: str) -> Dict[str, Any]:
+                 wall_time_s: float, stopped: str, error: str,
+                 profile_used: str,
+                 followups: Optional[List[str]] = None) -> Dict[str, Any]:
     return {
         "question": question,
         "answer": answer,
@@ -589,6 +750,8 @@ def _make_result(question: str, answer: str, cmds: list, citations: list,
         "wall_time_s": round(float(wall_time_s), 2),
         "stopped_reason": stopped,
         "error": error,
+        "profile_used": profile_used,
+        "followups": list(followups or []),
     }
 
 
@@ -596,8 +759,9 @@ def format_for_observation(note: Dict[str, Any], max_chars: int = 1800) -> str:
     """Render a ResearchNote as a compact prompt-friendly string."""
     parts: List[str] = []
     cache_marker = " [cache hit]" if note.get("_cache_hit") else ""
+    profile_label = str(note.get("profile_used") or "runtimeRepair")
     parts.append(
-        f"deep_research{cache_marker}: confidence={note.get('confidence', 0):.2f} "
+        f"research_worker[{profile_label}]{cache_marker}: confidence={note.get('confidence', 0):.2f} "
         f"turns={note.get('turns_used', 0)} calls={note.get('tool_calls', 0)} "
         f"time={note.get('wall_time_s', 0)}s stopped={note.get('stopped_reason', '?')}"
     )
@@ -616,6 +780,11 @@ def format_for_observation(note: Dict[str, Any], max_chars: int = 1800) -> str:
             t = (c.get("title") if isinstance(c, dict) else "") or ""
             u = (c.get("url") if isinstance(c, dict) else str(c)) or ""
             parts.append(f"  - {t[:80]} {u[:160]}")
+    followups = note.get("followups") or []
+    if followups:
+        parts.append("\n--- FOLLOWUPS ---")
+        for item in followups[:4]:
+            parts.append("  - " + str(item).strip()[:220])
     if note.get("error"):
         parts.append(f"\n[note] {note['error']}")
     out = "\n".join(parts).strip() + "\n"

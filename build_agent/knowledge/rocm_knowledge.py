@@ -800,13 +800,10 @@ those are listed below as guards.
 5. `dockerhub_tags <repo> --limit 8` — what tags does Docker Hub actually
    serve? **Required before `change_base_image <repo>:<tag>`.** The runtime
    will block the image switch until you have called this.
-6. `web_search "<query>"` — for new errors / unfamiliar libraries / version
-   matrices that aren't covered by the rules below.
-7. `visit_url <best_hit>` — pull the actual page content (release notes,
-   issue thread, README) instead of guessing from the snippet.
-8. `deep_research "<focused question>"` — multi-turn researcher sub-agent
-   that composes web_search + visit_url and returns a synthesised answer.
-   Use sparingly; it's the most expensive tool.
+6. Observer-side internet research — when the run hits a new error or an
+   unfamiliar compatibility issue, the asynchronous observer may attach a note
+   with web-grounded evidence and a suggested strategy. Treat that note as
+   advisory guidance before the next risky action.
 
 **Live-evidence rule:** for AMD/ROCm/HIP/gfx/miopen/rocBLAS/libamdhip64 issues,
 or for fast-moving packages/images (flash-attn, xformers, bitsandbytes,
@@ -1608,8 +1605,9 @@ runtime enforces several hard guards.
    wheel (`flash-attn`, `bitsandbytes`, `xformers`, `deepspeed`, `apex`,
    `cupy`, `nvidia-*`).
 5. `dockerhub_tags <repo>` — required before `change_base_image`.
-6. `web_search` / `visit_url` — for unfamiliar errors and version matrices.
-7. `deep_research "<question>"` — for multi-source synthesis. Use sparingly.
+6. Observer-side internet research — for unfamiliar errors and version
+   matrices, prefer observer-provided external evidence over turning the main
+   execution loop into a browsing agent.
 
 For AMD/ROCm/HIP-specific failures, prefer live web/package/image evidence over
 static knowledge before making another risky change.
