@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import urllib.request
@@ -25,12 +26,6 @@ from storage.models import ExperimentCandidate, PaperMetadata
 from utils.json_utils import load_json_loose
 from utils.llm import get_llm_response
 from utils.rich_logger import log_info, log_warning
-
-
-_DEFAULT_ENTRY_SCRIPT_PATTERNS = [
-    r"(?<!\w)(\w+\.py)\b",
-    r"(?<!\w)(\w+\.sh)\b",
-]
 
 
 # ── Metric classification (generic, not paper-specific) ─────────────────────
@@ -451,73 +446,6 @@ Return ONLY the JSON object, no markdown fences."""
         return results
 
     @staticmethod
-    def _select_relevant_configs(repo_configs: Dict[str, str],
-                                 max_paths: int = 4,
-                                 query_terms: Optional[List[str]] = None) -> List[str]:
-        """
-        Pick the config files most relevant to the planner's query.
-
-        Two-stage selection:
-
-        1. **Filename + first-line keyword overlap**: rank repo_configs by
-           token overlap between
-             (a) the basename + parent-dir tokens of each config path, and
-             (b) the first ~40 lines of its content (typically `name:`,
-                 `model: ...`, `optimizer: ...` keys),
-           against `query_terms`. Picks the top-K.
-
-        2. **Deterministic fallback**: first `max_paths` items in the original
-           order (priority-sorted by `_collect_repo_configs`).
-
-        `query_terms` defaults to the canonical hyperparameter vocabulary if
-        not provided, so the function is also useful when called outside the
-        paper-agent context (e.g. from a future planner stage).
-        """
-        if not repo_configs:
-            return []
-
-        # ── Stage 1: filename + first-line keyword overlap ──────────────────
-        if query_terms is None:
-            query_terms = [
-                "config", "hyperparam", "hyperparameters",
-                "model", "init", "peft", "lora", "rank", "alpha",
-                "optimizer", "scheduler", "lr", "learning", "rate",
-                "batch", "size", "epoch", "epochs", "seed",
-                "warmup", "weight", "decay",
-                "train", "training", "experiment", "experiments",
-                "accelerate", "deepspeed", "fsdp",
-            ]
-        terms_lc = {t.lower() for t in query_terms if t and len(t) >= 2}
-
-        def _score(path: str, content: str) -> float:
-            # Tokenize path + first 40 content lines.
-            path_tokens = re.findall(r"[A-Za-z]+", path.lower())
-            head = "\n".join(content.splitlines()[:40]) if content else ""
-            content_tokens = re.findall(r"[A-Za-z]+", head.lower())
-            tokens = set(path_tokens) | set(content_tokens)
-            if not tokens:
-                return 0.0
-            overlap = len(tokens & terms_lc)
-            # small recency bonus for shallow paths (top-level configs)
-            depth_penalty = path.count("/")
-            return overlap - 0.05 * depth_penalty
-
-        scored = [
-            (_score(p, c), p)
-            for p, c in repo_configs.items()
-            if not p.startswith("graphify-out/")
-        ]
-        scored.sort(key=lambda t: (-t[0], t[1]))
-        if scored and scored[0][0] > 0:
-            return [p for _, p in scored[:max_paths]]
-
-        # ── Stage 2: deterministic fallback ─────────────────────────────────
-        return [
-            p for p in list(repo_configs.keys())
-            if not p.startswith("graphify-out/")
-        ][:max_paths]
-
-    @staticmethod
     def _bucket_runtime(minutes: float) -> str:
         if minutes <= 10:
             return "small"
@@ -534,10 +462,15 @@ Return ONLY the JSON object, no markdown fences."""
         """Return repo-relative files that plausibly back the suggested command."""
         if not suggested_command:
             return []
-        tokens: List[str] = []
-        for pat in _DEFAULT_ENTRY_SCRIPT_PATTERNS:
-            tokens.extend(re.findall(pat, suggested_command))
-        tokens = [t for t in tokens if t and len(t) > 3]
+        try:
+            parts = shlex.split(suggested_command)
+        except ValueError:
+            parts = suggested_command.split()
+        tokens = [
+            os.path.basename(tok)
+            for tok in parts
+            if tok.endswith(".py") or tok.endswith(".sh")
+        ]
         if not tokens:
             return []
         matches: List[str] = []
@@ -550,35 +483,168 @@ Return ONLY the JSON object, no markdown fences."""
                         matches.append(orig)
         return matches
 
+    def _normalize_repo_experiments(
+        self,
+        readme_run_commands: Optional[List[Dict[str, Any]]],
+        entry_scripts: List[str],
+        repo_files: List[str],
+        max_candidates: int = 10,
+    ) -> List[Dict[str, Any]]:
+        """Build simple repo experiment surfaces from README commands first."""
+        candidates: List[Dict[str, Any]] = []
+        seen_commands = set()
+
+        for idx, item in enumerate(readme_run_commands or [], 1):
+            if not isinstance(item, dict):
+                continue
+            command = str(item.get("command") or "").strip()
+            if not command or command in seen_commands:
+                continue
+            seen_commands.add(command)
+            candidates.append({
+                "id": f"repo_exp_{idx}",
+                "source": "readme",
+                "command": command,
+                "context": str(item.get("context") or "").strip(),
+                "matched_files": self._match_code_for_experiment(command, repo_files)[:8],
+            })
+            if len(candidates) >= max_candidates:
+                return candidates
+
+        if candidates:
+            return candidates
+
+        for idx, script in enumerate(entry_scripts[:max_candidates], 1):
+            command = (
+                f"python {script}" if script.endswith(".py")
+                else f"bash {script}" if script.endswith(".sh")
+                else script
+            )
+            candidates.append({
+                "id": f"repo_exp_{idx}",
+                "source": "entrypoint",
+                "command": command,
+                "context": "Inferred from repo entrypoints because no README command was available.",
+                "matched_files": [script],
+            })
+        return candidates
+
+    @staticmethod
+    def _collect_repo_metric_surfaces(
+        repo_path: str,
+        repo_experiments: List[Dict[str, Any]],
+        repo_files: List[str],
+        max_files: int = 8,
+        max_chars_per_file: int = 2200,
+    ) -> str:
+        """Collect small repo/eval snippets that hint at runtime metric names."""
+        selected: List[str] = []
+        seen = set()
+        lower_repo_files = [(path, path.lower()) for path in repo_files]
+
+        for exp in repo_experiments:
+            for matched in exp.get("matched_files") or []:
+                if matched not in seen:
+                    selected.append(matched)
+                    seen.add(matched)
+                parent = matched.rsplit("/", 1)[0] if "/" in matched else ""
+                for orig, low in lower_repo_files:
+                    if len(selected) >= max_files:
+                        break
+                    if orig in seen:
+                        continue
+                    if parent and not low.startswith(parent.lower() + "/"):
+                        continue
+                    base = os.path.basename(low)
+                    if any(key in base for key in ("eval", "metric", "score", "pred")):
+                        selected.append(orig)
+                        seen.add(orig)
+                if len(selected) >= max_files:
+                    break
+            if len(selected) >= max_files:
+                break
+
+        blocks: List[str] = []
+        for rel in selected[:max_files]:
+            full = os.path.join(repo_path, rel)
+            try:
+                with open(full, "r", encoding="utf-8", errors="ignore") as f:
+                    text = f.read(max_chars_per_file + 1)
+            except Exception:
+                continue
+            if len(text) > max_chars_per_file:
+                text = text[:max_chars_per_file] + "\n# ... [truncated]"
+            blocks.append(f"# ---- {rel} ----\n{text}")
+
+        return "\n\n".join(blocks)
+
+    @staticmethod
+    def _select_prompt_configs(
+        repo_experiments: List[Dict[str, Any]],
+        repo_configs: Dict[str, str],
+        max_paths: int = 6,
+    ) -> List[str]:
+        """Pick a small config set near the chosen repo experiment surfaces."""
+        if not repo_configs:
+            return []
+
+        selected: List[str] = []
+        seen = set()
+        for exp in repo_experiments:
+            for matched in exp.get("matched_files") or []:
+                parent = matched.rsplit("/", 1)[0] if "/" in matched else ""
+                if not parent:
+                    continue
+                for path in repo_configs:
+                    if path in seen or path.startswith("graphify-out/"):
+                        continue
+                    if path.startswith(parent + "/"):
+                        selected.append(path)
+                        seen.add(path)
+                        if len(selected) >= max_paths:
+                            return selected
+
+        for path in repo_configs:
+            if path in seen or path.startswith("graphify-out/"):
+                continue
+            selected.append(path)
+            seen.add(path)
+            if len(selected) >= max_paths:
+                break
+        return selected
+
     def shortlist_experiments(
         self,
         paper_pdf_path: Optional[str],
         repo_path: str,
         readme_content: str = "",
+        readme_run_commands: Optional[List[Dict[str, Any]]] = None,
+        readme_expected_outcomes: Optional[List[Dict[str, Any]]] = None,
         llm: Optional[str] = None,
         max_candidates: int = 8,
         run_memory: Optional[Any] = None,
         graphify_provider: Optional[Any] = None,
     ) -> Tuple[List[ExperimentCandidate], str]:
         """
-        Enumerate experiments from the paper, cross-reference with code in the repo,
-        and return (ranked_candidates, paper_title).
+        Enumerate runnable repo experiments, map them to paper rows, and return
+        (ranked_candidates, paper_title).
 
         Ranking priorities (most-significant first):
           1. `code_available` — must be True; experiments with no code match are
              pushed to the bottom.
-          2. `is_baseline` — pure baselines (no-cache / --origin / vanilla / naive)
+          2. README-backed repo commands are preferred over inferred entrypoints.
+          3. `is_baseline` — pure baselines (no-cache / --origin / vanilla / naive)
              are pushed below method experiments, because reproducing only a
              baseline does NOT demonstrate the paper's contribution.
-          3. `metric_class` portability — ratio/speedup/percentage > accuracy-style
+          4. `metric_class` portability — ratio/speedup/percentage > accuracy-style
              > perplexity/loss > absolute throughput/latency. Hardware-portable
              metrics are preferred because we typically run on a different GPU
              than the paper (e.g. AMD MI250X vs NVIDIA A100).
-          4. Shorter estimated runtime.
-          5. Shorter suggested command (tie-breaker).
+          5. Shorter estimated runtime.
+          6. Shorter suggested command (tie-breaker).
 
-        This ranking is generic — it uses only metric names/units and a small
-        set of keyword heuristics, no paper-specific logic.
+        This ranking is generic — it starts from runnable repo surfaces, then
+        asks which paper row those surfaces best correspond to.
         """
         effective_llm = llm or self.llm
         paper_text = ""
@@ -592,6 +658,46 @@ Return ONLY the JSON object, no markdown fences."""
 
         if effective_llm and (paper_text or readme_content):
             readme_slice = readme_content[:50000] if readme_content else ""
+
+            # ── Repo-first experiment discovery ───────────────────────────────
+            entry_scripts: List[str] = []
+            if graphify_provider is not None and getattr(graphify_provider, "enabled", False):
+                try:
+                    if not os.path.exists(getattr(graphify_provider, "graph_json", "")):
+                        graphify_provider.build_or_refresh()
+                    entry_scripts = graphify_provider.list_entry_scripts(max_files=12)
+                except Exception as _e:
+                    log_warning(
+                        f"  Paper shortlist: graphify entry-script lookup failed: {_e}"
+                    )
+            files_for_prompt = entry_scripts if entry_scripts else repo_files[:200]
+            repo_experiments = self._normalize_repo_experiments(
+                readme_run_commands=readme_run_commands,
+                entry_scripts=entry_scripts,
+                repo_files=repo_files,
+                max_candidates=max(max_candidates, 8),
+            )
+            repo_experiment_map = {
+                str(item.get("id") or ""): item
+                for item in repo_experiments
+                if item.get("id")
+            }
+            repo_experiment_block = json.dumps(
+                repo_experiments[: max(max_candidates, 8)],
+                indent=2,
+                default=str,
+            )
+            readme_outcomes_block = json.dumps(
+                (readme_expected_outcomes or [])[:8],
+                indent=2,
+                default=str,
+            ) if readme_expected_outcomes else "[]"
+            repo_metric_block = self._collect_repo_metric_surfaces(
+                repo_path=repo_path,
+                repo_experiments=repo_experiments,
+                repo_files=repo_files,
+                max_files=8,
+            ) or "(no repo/eval metric surfaces captured)"
 
             # ── Stage 4/6: paper text via graphify-owned paper index ──────────
             paper_block = ""
@@ -615,55 +721,32 @@ Return ONLY the JSON object, no markdown fences."""
                                 ref_id="graphify:paper_chunks",
                                 source=getattr(graphify_provider, "paper_chunks_jsonl", ""),
                                 why_relevant="paper shortlist pass1 main-body evidence",
-                                extra={"question": "paper shortlist main-body-first query"},
+                                extra={"question": "paper shortlist repo-first mapping query"},
                             )
                 except Exception as _e:
                     log_warning(
                         f"  Paper shortlist: graphify paper query failed: {_e}"
                     )
             if not paper_block and paper_text:
-                # Fallback dump: the prompt below tells the LLM to treat this as
-                # main-body-first evidence and consult appendix only on ambiguity.
+                # Fallback dump: paper text is secondary evidence used to map
+                # repo-backed commands to paper rows and resolve ambiguity.
                 paper_block = (
-                    "PAPER TEXT DUMP (main body first; appendix only if config/metric/setup remains ambiguous):\n"
+                    "PAPER TEXT DUMP (use to map repo-backed experiments to paper rows; appendix only if config/metric/setup remains ambiguous):\n"
                     + paper_text[:350000]
                 )
                 paper_backend = "fallback-dump"
 
-            # ── Stage 4: repo file list via graphify (deterministic, ranked) ──
-            entry_scripts: List[str] = []
-            if graphify_provider is not None and getattr(graphify_provider, "enabled", False):
-                try:
-                    if not os.path.exists(getattr(graphify_provider, "graph_json", "")):
-                        graphify_provider.build_or_refresh()
-                    entry_scripts = graphify_provider.list_entry_scripts(max_files=12)
-                except Exception as _e:
-                    log_warning(
-                        f"  Paper shortlist: graphify entry-script lookup failed: {_e}"
-                    )
-            files_for_prompt = entry_scripts if entry_scripts else repo_files[:200]
-
-            # ── Stage 5a: configs_block via graphify keyword query (was 65K dump) ──
-            # Old behavior dumped EVERY yaml/toml/json file verbatim (~65K chars on
-            # the LoRA-One repo). New behavior asks graphify for the configs whose
-            # nodes match hyperparameter-related terms, then renders only those.
+            # ── Stage 5a: small repo-config surface for the chosen commands ─────
             configs_block = ""
-            configs_method = "fallback-dump"
-            cfg_query_terms = [
-                "config", "model", "hyperparam", "hyperparameters",
-                "init", "peft", "lora", "rank", "alpha", "optimizer",
-                "scheduler", "lr", "learning", "rate", "batch", "size",
-                "epoch", "epochs", "seed", "warmup", "weight", "decay",
-                "train", "training", "experiment",
-            ]
             try:
-                relevant_paths = self._select_relevant_configs(
-                    repo_configs, max_paths=4,
-                    query_terms=cfg_query_terms,
+                relevant_paths = self._select_prompt_configs(
+                    repo_experiments,
+                    repo_configs,
+                    max_paths=6,
                 )
             except Exception as _e:
                 log_warning(
-                    f"  Paper shortlist: _select_relevant_configs failed: {_e}"
+                    f"  Paper shortlist: _select_prompt_configs failed: {_e}"
                 )
                 relevant_paths = []
             if relevant_paths:
@@ -677,7 +760,7 @@ Return ONLY the JSON object, no markdown fences."""
                         f"had {len(repo_configs)} config files):\n\n"
                         + "\n\n".join(chunks)
                     )
-                    configs_method = f"keyword-overlap ({len(chunks)}/{len(repo_configs)} files)"
+                    configs_method = f"repo-surface ({len(chunks)}/{len(repo_configs)} files)"
             if not configs_block:
                 if repo_configs:
                     config_chunks = [
@@ -732,9 +815,11 @@ Return ONLY the JSON object, no markdown fences."""
 
             log_info(
                 f"  Paper shortlist prompt sources: "
+                f"repo_experiments={len(repo_experiments)}, "
                 f"paper_block={len(paper_block):,} chars "
                 f"(backend={paper_backend}), "
                 f"readme={len(readme_slice):,}, "
+                f"repo_metric_block={len(repo_metric_block):,}, "
                 f"configs_block={len(configs_block):,} ({configs_method}), "
                 f"entry_scripts={len(files_for_prompt)}, "
                 f"evidence={len(evidence_block):,}"
@@ -782,6 +867,10 @@ Return a STRICT JSON object with this shape (no markdown fences, no prose):
         "value": "<numeric value as string, e.g. '2.5', '3x', '78.4'>",
         "units": "<e.g. x, %, tokens/s, ms, '' >"
       }},
+      "repo_experiment_id": "<id from REPO EXPERIMENT SURFACES>",
+      "repo_command_source": "<readme | entrypoint>",
+      "repo_context": "<short note about where this command came from>",
+      "runtime_metric_source": "<repo/eval file or README outcome that justifies the runtime metric name>",
       "primary_metrics": [
         {{
           "name": "<EXACT metric name as it would appear in the run log>",
@@ -816,7 +905,16 @@ Return a STRICT JSON object with this shape (no markdown fences, no prose):
       "codebase_config_files": [
         "<relative path of every yaml/toml/json/cfg file that governs this experiment's hyperparameters>"
       ],
-      "suggested_command": "<shell command with EVERY non-default flag spelled out explicitly, taken from the README verbatim when possible, extended with flags from the paper's config and codebase yaml — do NOT invent flags the script doesn't support; put those in missing_flags instead. Use Hydra-style overrides if the codebase uses Hydra/OmegaConf>",
+      "suggested_command": "<start from the chosen repo experiment command verbatim when possible; only substitute local paths/model ids and add non-default flags the repo surface actually supports. Do NOT invent a fresh command from the paper alone>",
+      "comparison_mode": "<single | vs_baseline>",
+      "baseline_reference": {{
+        "section": "<paper row for the baseline, when needed>",
+        "repo_experiment_id": "<matching repo experiment id, if there is one>",
+        "suggested_command": "<repo-backed command for the baseline if the claim is relative>",
+        "expected_metric_name": "<baseline headline metric name>",
+        "expected_metric_value": "<baseline expected value>",
+        "notes": "<blank unless the main claim needs a baseline run>"
+      }},
       "missing_flags": ["<flag the paper used but the script can't accept>"],
       "caveats": [
         "<paper/README disclaimer verbatim>",
@@ -827,7 +925,7 @@ Return a STRICT JSON object with this shape (no markdown fences, no prose):
     }}
   ],
   "unresolved_items": [
-    "<config / metric / setup detail that remains ambiguous after the main-body-first pass>"
+    "<config / metric / setup detail that remains ambiguous after the repo-first pass>"
   ],
   "followup_questions": [
     "<targeted question a second paper retrieval pass should answer; mention appendix/supplementary only if needed>"
@@ -839,9 +937,9 @@ RULES for primary_metrics (the deterministic verifier reads this list):
   reports for the chosen experiment. If the paper claims "RMSE 0.123 / PCC
   0.987", you MUST list BOTH — otherwise the verifier cannot detect the
   classic "RMSE better but PCC much worse" failure mode.
-- `name` MUST match the spelling used in the run log (case-insensitive). If
-  unsure, prefer the paper's spelling and include common aliases via the
-  `notes` field.
+- `name` MUST come from repo/runtime evidence first: README EXPECTED OUTCOMES,
+  REPO METRIC SURFACES, eval scripts, or the repo command context. Only fall
+  back to paper wording if the repo gives no signal.
 - `direction` is mandatory: pick from higher_is_better, lower_is_better, or
   equal. RMSE/MSE/MAE/loss/PPL → lower_is_better. Accuracy/F1/PCC/AUC →
   higher_is_better. Speedups → higher_is_better.
@@ -849,27 +947,17 @@ RULES for primary_metrics (the deterministic verifier reads this list):
   `tolerance_rule` when the verifier is invoked with no explicit override.
 
 RULES for choosing and ordering experiments:
-- Reproducing the paper means demonstrating the paper's CONTRIBUTION, not just
-  rerunning a baseline. PREFER experiments that exercise the paper's proposed
-  method (`is_baseline: false`). Include baselines only as fallbacks or as the
-  denominator of a speedup ratio.
-- PREFER metrics that are hardware-portable across GPUs:
-  * FIRST:  ratios / speedups / percentages / compression factors
-  * SECOND: accuracy-style metrics (accuracy, F1, BLEU, EM, Top-k, pass@k)
-  * THIRD:  quality metrics (PPL, loss, NLL, reward)
-  * AVOID picking absolute throughput or latency as the headline unless
-    nothing else is available.
-- If the paper's headline is a speedup X vs. baseline Y, set the chosen
-  experiment to run the METHOD config and put "compute speedup =
-  method_tok/s / baseline_tok/s" in `notes`.
-- PENALIZE experiments whose `caveats` make reproduction on our setup
-  impossible (e.g. "requires 8xH100", "requires proprietary dataset"). Put
-  them lower in the ranking. Prefer experiments whose config is fully
-  reproducible from the repo and HuggingFace alone.
-- Prefer inference/demo/benchmark experiments under ~30 min.
+- Start from the REPO EXPERIMENT SURFACES. Prefer mapping one of them to a
+  paper row over inventing a brand-new command from the paper.
+- Prefer the README-backed repo command when it already reaches a meaningful
+  paper result.
+- Prefer method rows over pure baselines.
+- Only use `comparison_mode = "vs_baseline"` when the paper claim is inherently
+  relative and needs a second row to interpret the result.
 - Return AT LEAST 3 and AT MOST {max_candidates} experiments, best first.
-  The first experiment MUST be: (method, not baseline) AND (portable metric)
-  AND (config fully specified) AND (code in the repo) — in that priority order.
+- `repo_experiment_id` MUST point at one of the supplied repo experiment
+  surfaces. If none of the supplied repo experiments can realize a paper row,
+  say so in `missing_flags` / `caveats` instead of inventing a repo surface.
 - `suggested_command` MUST use flags the entry script actually supports. If
   the paper uses flags the script can't accept, put them in `missing_flags`
   rather than inventing them.
@@ -877,21 +965,25 @@ RULES for choosing and ordering experiments:
 """
 
             phase1_prompt = f"""\
-You are analyzing a research paper to pick ONE experiment we can reproduce on
-different GPU hardware than the paper used (e.g. the paper used NVIDIA
-A100/A6000/H100 but we will run on AMD MI250X/MI300X). Your goal: choose an
-experiment that captures the paper's CORE CONTRIBUTION, whose metric is
-MEANINGFUL across different GPUs, AND whose EXACT configuration (all
-hyperparameters) is unambiguously determined by RECONCILING the paper with
-the codebase's actual config files.
+You are mapping runnable REPO experiments to exact PAPER results.
+
+Your goal: choose ONE repo-backed experiment we can actually run on AMD ROCm,
+then identify exactly which paper row it should reproduce and which runtime
+metric(s) must match.
 
 {paper_block}
 
 README (full):
 {readme_slice}
 
-REPO FILES (candidate entry scripts):
-{json.dumps(files_for_prompt, indent=2)}
+REPO EXPERIMENT SURFACES (PRIMARY INPUT):
+{repo_experiment_block}
+
+README EXPECTED OUTCOMES:
+{readme_outcomes_block}
+
+REPO METRIC SURFACES:
+{repo_metric_block}
 
 REPO CONFIG FILES (yaml/toml/json/cfg/ini — these are the codebase's actual
 default hyperparameters; treat them as authoritative when the paper is silent
@@ -900,13 +992,18 @@ or specifies a sweep without picking a value):
 {evidence_block}
 
 PHASE 1 WORKFLOW:
-1. MAIN BODY FIRST: prioritize the paper's main body, experiments/results
-   sections, tables, table footnotes, figure captions, README, and repo config
-   files.
-2. RECONCILE paper and codebase. The codebase config files are usually the
-   exact values the paper authors used; the paper may quote them generically
+1. REPO FIRST: start from REPO EXPERIMENT SURFACES. These are the commands the
+   repo most clearly exposes through the README or entrypoints.
+2. For each repo experiment surface, ask which paper row it most plausibly
+   corresponds to. Do NOT invent a fresh experiment if a repo surface already
+   matches the paper's contribution.
+3. Use README EXPECTED OUTCOMES and REPO METRIC SURFACES as the PRIMARY source
+   for runtime metric naming. Your job is to bind the paper's metric to the
+   metric name the repo/eval path will actually emit.
+4. RECONCILE paper and codebase. The codebase config files are usually the
+   actual values the repo ships with; the paper may quote them generically
    ("we tune the learning rate via grid search") while the yaml/toml file
-   ships with the actual chosen value.
+   ships with the chosen default.
    - If the paper FIXES a value (e.g. "lr=2e-4") and the codebase ALSO has it,
      they should agree — use that value. If they disagree, prefer the PAPER's
      value and add a caveat citing the conflict.
@@ -914,13 +1011,13 @@ PHASE 1 WORKFLOW:
      codebase has a hardcoded value, USE THE CODEBASE VALUE and cite the
      yaml/toml path in `config_source`.
    - If neither paper nor codebase specifies a value, fall back to the
-     entry-script default and note that in `caveats`.
-3. Use Appendix/Supplementary ONLY if a config / metric / setup detail remains
-   ambiguous after the main-body-first reconciliation.
-4. If anything remains ambiguous after this first pass, keep the best current
+     repo surface default and note that in `caveats`.
+5. Use Appendix/Supplementary ONLY if a config / metric / setup detail remains
+   ambiguous after the repo-first reconciliation.
+6. If anything remains ambiguous after this first pass, keep the best current
    experiment list but record the gap in `unresolved_items` and write precise
    `followup_questions` for a second retrieval pass.
-5. For EACH candidate experiment, extract the FULL configuration. Include:
+7. For EACH candidate experiment, extract the FULL configuration. Include:
    - model name (exact HuggingFace repo id when possible)
    - batch_size, sequence length, steps/epochs, learning_rate, optimizer,
      lr_scheduler, warmup_ratio, weight_decay, block_length, temperature,
@@ -928,13 +1025,16 @@ PHASE 1 WORKFLOW:
      (fp16/bf16/int8), decoding algorithm, peft/lora hyperparams
    - dataset / benchmark name (MMLU, GSM8K, HumanEval, MRPC, etc.)
    - any environment variables the paper/README calls out
-6. PRECISELY include every non-default flag in `suggested_command`. Do NOT
-   rely on script defaults — spell them out, even if the value matches the
-   yaml default (so the experiment is reproducible without depending on
-   environment). If the paper's config cannot be expressed through the
-   script's CLI (e.g. the script hardcodes batch_size=1), list the
-   unreachable flags in `missing_flags`.
-7. Check the paper AND the README for DISCLAIMERS about the config, e.g.
+8. `suggested_command` should start from the chosen repo command verbatim when
+   possible. Only substitute local paths/model ids and add non-default flags
+   the repo surface clearly supports. If the paper's config cannot be
+   expressed through the script's CLI (e.g. the script hardcodes
+   batch_size=1), list the unreachable flags in `missing_flags`.
+9. If the paper claim is relative (speedup vs baseline, degradation vs full,
+   compression vs full attention), use `comparison_mode = "vs_baseline"` and
+   fill `baseline_reference`. Otherwise leave `comparison_mode = "single"` and
+   keep `baseline_reference` empty.
+10. Check the paper AND the README for DISCLAIMERS about the config, e.g.
    "speedup not significant at batch_size=1", "requires H100 for 10x claim",
    "accuracy measured on MMLU only". Put every disclaimer in `caveats`.
 
@@ -1016,15 +1116,16 @@ PHASE 1 WORKFLOW:
                     phase2_prompt = f"""\
 You are in PASS 2 of experiment selection.
 
-PASS 1 was intentionally MAIN-BODY-FIRST: it reconciled the paper's main body,
-tables, footnotes, figure captions, README, and repo config files before
-looking for extra evidence.
+PASS 1 was intentionally REPO-FIRST: it started from runnable repo experiment
+surfaces, then mapped them to the paper's rows using README, config files, and
+paper evidence.
 
 Only use the follow-up evidence below to resolve REMAINING ambiguity in
-config / metric / setup details. If the follow-up evidence includes
-Appendix/Supplementary material, use it only to fill missing or ambiguous
-fields. Do NOT let appendix details override a clear main-body claim or a
-repo config file unless they explicitly resolve that ambiguity.
+config / metric / setup details after the repo-first mapping. If the
+follow-up evidence includes Appendix/Supplementary material, use it only to
+fill missing or ambiguous fields. Do NOT let appendix details override a
+clear repo surface or README command unless they explicitly resolve that
+ambiguity.
 
 PASS 1 OUTPUT (JSON):
 {json.dumps(phase1_parsed or {}, indent=2, default=str)}
@@ -1099,9 +1200,51 @@ experiments unchanged. Update only fields clarified by the follow-up evidence.
                                 "tolerance": str(exp.get("tolerance_rule", ""))[:160],
                                 "direction": "",
                             })
+                        repo_experiment_id = str(exp.get("repo_experiment_id", "")).strip()
+                        repo_surface = repo_experiment_map.get(repo_experiment_id, {})
+                        repo_command_source = str(
+                            exp.get("repo_command_source")
+                            or repo_surface.get("source")
+                            or ""
+                        )[:40]
+                        repo_context = str(
+                            exp.get("repo_context")
+                            or repo_surface.get("context")
+                            or ""
+                        )[:400]
+                        runtime_metric_source = str(
+                            exp.get("runtime_metric_source") or ""
+                        )[:400]
+                        comparison_mode = str(
+                            exp.get("comparison_mode") or "single"
+                        ).strip().lower()
+                        if comparison_mode not in ("single", "vs_baseline"):
+                            comparison_mode = "single"
+                        raw_baseline = exp.get("baseline_reference") or {}
+                        if not isinstance(raw_baseline, dict):
+                            raw_baseline = {}
+                        baseline_reference = {
+                            "section": str(raw_baseline.get("section", ""))[:120],
+                            "repo_experiment_id": str(raw_baseline.get("repo_experiment_id", ""))[:40],
+                            "suggested_command": str(raw_baseline.get("suggested_command", ""))[:800],
+                            "expected_metric_name": str(raw_baseline.get("expected_metric_name", ""))[:60],
+                            "expected_metric_value": str(raw_baseline.get("expected_metric_value", ""))[:60],
+                            "notes": str(raw_baseline.get("notes", ""))[:240],
+                        }
+                        if not any(v for v in baseline_reference.values()):
+                            baseline_reference = {}
+                        suggested_command = str(
+                            exp.get("suggested_command")
+                            or repo_surface.get("command")
+                            or ""
+                        )[:1000]
                         cand = ExperimentCandidate(
                             name=str(exp.get("name", ""))[:200],
                             section=str(exp.get("section", ""))[:120],
+                            repo_experiment_id=repo_experiment_id[:40],
+                            repo_command_source=repo_command_source,
+                            repo_context=repo_context,
+                            runtime_metric_source=runtime_metric_source,
                             expected_metric_name=str(em.get("name", ""))[:60],
                             expected_metric_value=str(em.get("value", ""))[:60],
                             expected_metric_units=str(em.get("units", ""))[:30],
@@ -1110,7 +1253,7 @@ experiments unchanged. Update only fields clarified by the follow-up evidence.
                             runtime_bucket=self._bucket_runtime(runtime_f)
                                 if runtime_f > 0 else "",
                             paper_config=exp.get("paper_config") or {},
-                            suggested_command=str(exp.get("suggested_command", ""))[:1000],
+                            suggested_command=suggested_command,
                             tolerance_rule=str(exp.get("tolerance_rule", ""))[:160],
                             notes=str(exp.get("notes", ""))[:400],
                             is_baseline=bool(exp.get("is_baseline", False)),
@@ -1118,6 +1261,8 @@ experiments unchanged. Update only fields clarified by the follow-up evidence.
                             missing_flags=missing_list,
                             config_source=str(exp.get("config_source", ""))[:400],
                             codebase_config_files=codebase_cfg_files,
+                            comparison_mode=comparison_mode,
+                            baseline_reference=baseline_reference,
                             primary_metrics=primary_metrics_list,
                         )
                         candidates.append(cand)
@@ -1162,9 +1307,10 @@ experiments unchanged. Update only fields clarified by the follow-up evidence.
             runtime = c.est_runtime_minutes if c.est_runtime_minutes > 0 else 999.0
             return (
                 0 if c.code_available else 1,                    # code must exist
+                0 if c.repo_command_source == "readme" else 1,   # README beats inference
                 1 if c.is_baseline else 0,                       # method > baseline
-                _METRIC_CLASS_RANK.get(c.metric_class, 3),       # portable metric first
                 runtime,                                         # shorter runs first
+                _METRIC_CLASS_RANK.get(c.metric_class, 3),       # portable metric as tie-breaker
                 len(c.suggested_command),                        # simpler cmd first
             )
 

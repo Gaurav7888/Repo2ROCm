@@ -542,9 +542,13 @@ class ReproductionResult:
 
 @dataclass
 class ExperimentCandidate:
-    """A candidate paper experiment considered for reproduction."""
+    """A repo-backed experiment matched to a paper claim."""
     name: str = ""
     section: str = ""
+    repo_experiment_id: str = ""
+    repo_command_source: str = ""  # readme | inferred_entrypoint
+    repo_context: str = ""
+    runtime_metric_source: str = ""
     expected_metric_name: str = ""
     expected_metric_value: str = ""
     expected_metric_units: str = ""
@@ -573,6 +577,8 @@ class ExperimentCandidate:
     # hyperparameters. The runtime agent should read/override these instead of
     # guessing values when the paper is ambiguous.
     codebase_config_files: List[str] = field(default_factory=list)
+    comparison_mode: str = "single"  # single | vs_baseline
+    baseline_reference: Dict[str, Any] = field(default_factory=dict)
     # Multi-metric verdicts: when an experiment has more than one headline
     # metric (e.g. EARTH reports both RMSE and PCC), the verifier needs each
     # one with its own tolerance/direction so it can flag the "RMSE better

@@ -12,7 +12,17 @@ unclear.
 
 Work from three evidence surfaces in order:
 
-1. **Paper facts**
+1. **Repo facts**
+   - What README commands already exist?
+   - What entry scripts, eval scripts, config files, and defaults actually
+     control the run?
+   - What datasets / side inputs / checkpoints / helper scripts are actually
+     shipped in the repo?
+   - What metric names does the code log?
+   - If the paper claim is relative (speedup, degradation, compression vs
+     baseline), what baseline command or eval path already exists in the repo?
+
+2. **Paper facts**
    - What dataset, benchmark, horizon, metric, and hyperparameters does the
      paper actually claim?
    - Are the reported numbers numeric and directly comparable, or only
@@ -22,13 +32,6 @@ Work from three evidence surfaces in order:
      setup is still ambiguous after the first pass.
    - What caveats, disclaimers, or hidden conditions appear in tables,
      captions, appendix, or README text?
-
-2. **Repo facts**
-   - What entry scripts exist?
-   - What CLI flags, config files, and defaults actually control the run?
-   - What datasets / side inputs / checkpoints / helper scripts are actually
-     shipped in the repo?
-   - What metric names does the code log?
 
 3. **Runtime facts**
    - What command actually ran?
@@ -42,6 +45,10 @@ Do not form a verdict until all three surfaces are checked.
 
 - Never compare a paper number to the wrong dataset, wrong horizon, wrong
   metric definition, or wrong aggregation.
+- Start from the repo command surface first; map that runnable command to a
+  paper row, rather than inventing a new command from the paper alone.
+- If the paper claim is inherently relative, allow a second baseline row or
+  companion command only when needed to interpret the main experiment.
 - Never trust helper-script defaults if the paper row requires explicit
   overrides.
 - If the repo does not ship a required dataset or side input, classify the
