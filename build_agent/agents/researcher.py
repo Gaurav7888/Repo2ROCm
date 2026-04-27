@@ -376,20 +376,145 @@ def _tool_recall(question: str) -> Tuple[str, str]:
     )
 
 
+_FOLLOWUP_PATTERNS = (
+    re.compile(r"(?im)^\s*(?:follow[- ]?ups?|next questions?|to\s+investigate)\s*[:\-]\s*$"),
+    re.compile(r"(?im)^\s*follow[- ]?up:\s*"),
+)
+_COMMAND_PATTERNS = (
+    re.compile(r"(?im)^\s*\$\s+(.+)$"),
+    re.compile(r"(?im)^\s{0,4}(pip\s+install\s.+)$"),
+    re.compile(r"(?im)^\s{0,4}(apt[- ]get\s+install\s.+)$"),
+    re.compile(r"(?im)^\s{0,4}(docker\s.+)$"),
+)
+_CITATION_PATTERNS = (
+    re.compile(r"(?im)^\s*(?:citation|source|see|ref(?:erence)?)\s*[:\-]\s*(.+?)\s*(https?://\S+)\s*$"),
+    re.compile(r"(?im)^\s*[-*]\s*(.+?)\s*(https?://\S+)\s*$"),
+)
+
+
+def _scrape_prose_recovery(text: str) -> Dict[str, Any]:
+    """Salvage answer/commands/citations/followups from a free-form reply.
+
+    Used as a last-resort recovery path when the gateway model returns prose
+    instead of a JSON object. The goal is to keep readiness packs useful even
+    when the synthesizer didn't follow the JSON contract.
+    """
+    cleaned = (text or "").strip()
+    # Strip a single layer of markdown fence if present.
+    if cleaned.startswith("```"):
+        first_nl = cleaned.find("\n")
+        if first_nl != -1:
+            body = cleaned[first_nl + 1:]
+            if body.endswith("```"):
+                body = body[:-3]
+            cleaned = body.strip()
+
+    # Suggested commands (lines that look like shell invocations).
+    commands: List[str] = []
+    for pattern in _COMMAND_PATTERNS:
+        for match in pattern.finditer(cleaned):
+            cmd = match.group(1).strip()
+            if cmd and cmd not in commands:
+                commands.append(cmd)
+            if len(commands) >= 5:
+                break
+        if len(commands) >= 5:
+            break
+
+    # Citations (lines pairing a title and a URL).
+    citations: List[Dict[str, str]] = []
+    seen_urls = set()
+    for pattern in _CITATION_PATTERNS:
+        for match in pattern.finditer(cleaned):
+            title = match.group(1).strip().rstrip(":").strip()
+            url = match.group(2).strip().strip(".,;)")
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
+            citations.append({"title": title[:120], "url": url[:240]})
+            if len(citations) >= 6:
+                break
+        if len(citations) >= 6:
+            break
+
+    # Followups: explicit "Followups:" or "Next questions:" sections.
+    followups: List[str] = []
+    lines = cleaned.splitlines()
+    in_follow = False
+    for line in lines:
+        if any(p.match(line) for p in _FOLLOWUP_PATTERNS):
+            in_follow = True
+            continue
+        if in_follow:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if not stripped.startswith(("-", "*", "•", "1", "2", "3", "4", "5", "6", "7", "8", "9")):
+                in_follow = False
+                continue
+            cleaned_line = stripped.lstrip("-*•0123456789.) \t").strip()
+            if cleaned_line:
+                followups.append(cleaned_line[:220])
+            if len(followups) >= 4:
+                break
+
+    # Pick the answer body. Prefer the first 1-3 paragraphs of the cleaned
+    # reply, excluding obvious boilerplate / list sections.
+    answer_blocks: List[str] = []
+    for chunk in re.split(r"\n\s*\n", cleaned):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        first_line = chunk.splitlines()[0].lower()
+        if first_line.startswith(("citation", "source", "followup", "follow-up", "follow up", "next question")):
+            continue
+        if first_line.startswith(("$", "pip ", "apt ", "docker ")):
+            continue
+        answer_blocks.append(chunk)
+        if len(answer_blocks) >= 3:
+            break
+    answer = "\n\n".join(answer_blocks).strip()
+    if not answer:
+        answer = cleaned[:1200]
+
+    return {
+        "answer": answer[:1600],
+        "suggested_commands": commands,
+        "citations": citations,
+        "followups": followups,
+    }
+
+
 def _safe_finish(arg: str, ctx: Dict[str, Any]) -> Dict[str, Any]:
-    """Parse the LLM's finish JSON; on failure, fall back to a partial note."""
+    """Parse the synthesizer reply; tolerate prose so packs stay useful.
+
+    Strategy:
+      1. Try strict-ish JSON parsing via `load_json_loose`.
+      2. Fall back to a prose-recovery scraper that pulls answer/commands/
+         citations/followups from a free-form reply.
+      3. If even that fails, fall back to the cleaned reply as `answer` with
+         a low-but-non-zero confidence so packs still carry strategy text.
+    """
+    parse_error = ""
+    note: Optional[Dict[str, Any]] = None
     try:
-        note = load_json_loose(arg, expected="object")
+        parsed = load_json_loose(arg, expected="object")
+        if isinstance(parsed, dict):
+            note = parsed
     except Exception as e:
-        note = {
-            "answer": "Researcher could not produce a structured answer "
-                      f"(parse error: {e}). Raw arg: {arg[:600]}",
-            "suggested_commands": [],
-            "citations": [],
-            "confidence": 0.0,
-            "_parse_error": str(e),
-        }
-    # Normalize types
+        parse_error = str(e)
+
+    if note is None:
+        recovered = _scrape_prose_recovery(arg)
+        # Conservative default confidence when we recovered from prose.
+        if recovered["answer"]:
+            recovered["confidence"] = 0.35
+        else:
+            recovered["confidence"] = 0.0
+        if parse_error:
+            recovered["_parse_error"] = parse_error
+        note = recovered
+
     note.setdefault("answer", "")
     note.setdefault("suggested_commands", [])
     note.setdefault("citations", [])
@@ -411,8 +536,13 @@ hits + fetched page extracts) for one focused question. Your ONLY job is to
 read that evidence and produce ONE compact JSON ResearchNote.
 
 Output rules (STRICT — your reply will be JSON-parsed):
-- Reply with EXACTLY one JSON object, no prose before or after, no Markdown
-  fence, no comments. The object MUST contain these keys:
+- Reply with EXACTLY one JSON object. The very FIRST character of your reply
+  MUST be `{` and the LAST character MUST be `}`.
+- Do NOT wrap the object in a Markdown fence (no ```).
+- Do NOT include any prose, preamble, postamble, or explanation outside the
+  JSON object.
+- All string values must use double quotes and escape internal double quotes.
+- The object MUST contain these keys:
 
     "answer":              str   1-3 short paragraphs, plain prose. Quote
                                   exact error strings and version numbers.
@@ -433,6 +563,9 @@ Output rules (STRICT — your reply will be JSON-parsed):
 
 - If the evidence is contradictory or incomplete, say so in `answer` and
   drop `confidence`.
+
+EXAMPLE — exact shape your reply must match (do not copy the content):
+{"answer":"On AMD ROCm, the upstream PyPI flash-attn wheels are CUDA-only. Use the Triton AMD path: clone Dao-AILab/flash-attention and build with FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE. The provided evidence shows ROCm 7.x supports this build.","suggested_commands":["FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE pip install flash-attn --no-build-isolation"],"citations":[{"title":"flash-attention ROCm","url":"https://github.com/Dao-AILab/flash-attention#amd-rocm-support"}],"confidence":0.7,"followups":["Confirm torch ROCm version compatibility with this commit"]}
 """
 
 
@@ -686,7 +819,10 @@ def research(question: str,
         f"{context_block}"
         f"EVIDENCE GATHERED (cumulative-KB recall + web search + top page extracts):\n"
         f"{evidence}\n\n"
-        f"Now emit the JSON ResearchNote per the system rules. JSON ONLY."
+        f"Emit the JSON ResearchNote now. STRICT FORMAT REMINDER:\n"
+        f"- Your entire reply MUST be one JSON object.\n"
+        f"- Reply MUST start with the character `{{` and end with the character `}}`.\n"
+        f"- No Markdown fences, no preamble, no postamble. JSON only."
     )
 
     try:

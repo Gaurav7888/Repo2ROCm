@@ -249,31 +249,47 @@ class Configuration(Agent):
 
     def _format_observer_advice(self, advice_rows: list) -> str:
         lines = [
-            "### External Observer Note",
-            "An asynchronous observer reviewed the recent turn history. "
-            "Treat this as strategic guidance before your next action.",
+            "### External Observer Notes",
+            "An asynchronous observer reviewed the recent turn history and is "
+            "preparing the next turn. Treat these as advisory readiness packs "
+            "rather than executable commands.",
         ]
         for row in advice_rows:
             profile = str(row.get("profile_used") or "observerCritic")
+            kind = str(row.get("kind") or "reactive")
+            priority = str(row.get("priority") or "normal")
             diagnosis = str(row.get("diagnosis") or "").strip()
             strategy = str(row.get("recommended_strategy") or "").strip()
+            predicted = str(row.get("predicted_failure") or "").strip()
+            applies_before = str(row.get("applies_before") or "").strip()
             confidence = float(row.get("confidence", 0.0) or 0.0)
+            expires = row.get("expires_after_turn")
             lines.append("")
+            label_bits = [profile, kind, f"priority={priority}"]
+            if applies_before:
+                label_bits.append(f"applies_before={applies_before}")
+            if isinstance(expires, (int, float)) and int(expires) >= 0:
+                label_bits.append(f"expires_after_turn={int(expires)}")
             lines.append(
-                f"- Observer skill: {profile} (confidence={confidence:.2f}, turn_seen={row.get('turn_seen', '?')})"
+                "- Observer pack: "
+                + " | ".join(label_bits)
+                + f" (confidence={confidence:.2f}, turn_seen={row.get('turn_seen', '?')})"
             )
-            if diagnosis:
+            if predicted:
+                lines.append(f"  Predicted failure: {predicted}")
+            if diagnosis and diagnosis != predicted:
                 lines.append(f"  Diagnosis: {diagnosis}")
             if strategy:
                 lines.append(f"  Strategy: {strategy}")
             for item in (row.get("suggested_questions_or_tools") or [])[:4]:
-                lines.append(f"  Next: {str(item)[:220]}")
+                lines.append(f"  Next: {str(item)[:240]}")
             for item in (row.get("evidence") or [])[:3]:
-                lines.append(f"  Evidence: {str(item)[:220]}")
+                lines.append(f"  Evidence: {str(item)[:240]}")
         lines.append("")
         lines.append(
-            "Do not blindly obey this note. Re-evaluate the current state, then "
-            "choose the next action accordingly."
+            "Use these readiness packs to choose the next action. "
+            "Do not blindly obey them and do not execute the observer's "
+            "suggestions verbatim if the current local state contradicts them."
         )
         return "\n".join(lines)
 
@@ -281,7 +297,7 @@ class Configuration(Agent):
         if self.observer_client is None:
             return
         try:
-            fresh = self.observer_client.consume_new_advice()
+            fresh = self.observer_client.consume_new_advice(current_turn=turn)
         except Exception as e:
             log_info(f"[observer] advice read failed: {e}")
             return
@@ -1754,13 +1770,25 @@ STAGE 2 - PAPER RESULT REPRODUCTION (only after ROCM_ENV_VERIFIED):
         self.messages = []
         user_message = {"role": "user", "content": "[Project root Path]: /repo"}
         self.messages.append(user_message)
+        chosen_experiment = ""
+        try:
+            if self.paper_experiments:
+                first = self.paper_experiments[0]
+                first_dict = first if isinstance(first, dict) else getattr(first, "to_dict", lambda: {})()
+                chosen_experiment = str(first_dict.get("name") or first_dict.get("section") or "")[:240]
+        except Exception:
+            chosen_experiment = ""
         self._emit_observer_event("run_started", {
             "repo": self.full_name,
             "model": self.model,
             "rocm_mode": self.rocm_mode,
             "reproduce_results": self.reproduce_results,
             "paper_title": self.paper_title,
-            "plan_excerpt": (self.plan or "")[:2500],
+            "paper_pdf_path": self.paper_pdf_path,
+            "chosen_experiment": chosen_experiment,
+            "plan_excerpt": (self.plan or "")[:6000],
+            "image_name": self.image_name,
+            "kb_context_excerpt": (self.kb_context or "")[:2000],
         })
 
         turn = 0
