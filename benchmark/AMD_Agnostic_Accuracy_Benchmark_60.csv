@@ -1,0 +1,61 @@
+#,Conference,Paper Title,Open-Source Repository / Code Link,Tags,Phase/Focus Tag,Hardware & Performance Metrics
+113,ICLR 2025,DataEnvGym: Data Generation Agents in Teacher Environments,https://github.com/codezakh/DataEnvGym,Generation/Diffusion,Application/General,None/Not Specified
+27,NeurIPS 2025,Class-aware Domain Knowledge Fusion for Continual Test-Time Adaptation,https://github.com/zhoujiahuan1991/NeurIPS2025-KFF,General/Other,Application/General,None/Not Specified
+63,ACL 2025,ORMind: A Cognitive-Inspired End-to-End Reasoning Framework for OR,https://github.com/XiaoAI1989/ORMind,General/Other,Application/General,None/Not Specified
+144,ICLR 2025,CoMRes: Semi-Supervised Time Series Forecasting,https://github.com/yjucho1/CoMRes  ,Time Series,Application/General,None/Not Specified
+133,ICML 2025,An analytic theory of creativity in convolutional diffusion models,https://github.com/Kambm/convolutional_diffusion,Generation/Diffusion,Application/General,None/Not Specified
+7,NeurIPS 2025,Composing Global Solutions to Reasoning Tasks Via Algebraic Objects,https://github.com/facebookresearch/luckmatters,General/Other,Application/General,None/Not Specified
+61,ACL 2025,UAlberta at SemEval-2025 Task 2: Prompting for Entity-Aware Translation,https://github.com/UAlberta-NLP/SemEval2025-EAMT,"Inference, NLP/LLM",Inference,None/Not Specified
+184,ICLR 2029,Exact Certification of (Graph) Neural Networks Against Label Poisoning,https://github.com/saper0/qpcert,General/Other,Application/General,None/Not Specified
+30,NeurIPS 2025,LLM Reproducibility,https://github.com/nanomaoli/llm_reproducibility,NLP/LLM,Application/General,None/Not Specified
+41,ACL 2025,Structural Deep Encoding for Table Question Answering,https://github.com/RaphaelMouravieff/TabStruct,General/Other,Application/General,None/Not Specified
+134,ICML 2025,Online Learning in Risk Sensitive constrained MDP,https://github.com/mmoharami/Risk-Sensitive-CMDP,Training,Training,None/Not Specified
+82,ICLR 2025,Knowledge Entropy Decay Hinders New Knowledge Acquisition,https://github.com/kaistAI/Knowledge-Entropy,General/Other,Application/General,None/Not Specified
+104,ICLR 2025,"Multi-session, multi-task neural decoding from distinct cell-types",https://github.com/neuro-galaxy/torch_brain/tree/main/examples/poyo_plus,General/Other,Application/General,None/Not Specified
+5,NeurIPS 2025,Show-o2: Improved Native Unified Multimodal Models,https://github.com/showlab/Show-o,General/Other,Application/General,None/Not Specified
+123,ICML 2025,TarFlow: Normalizing Flows are Capable Generative Models,https://github.com/apple/ml-tarflow,Generation/Diffusion,Application/General,None/Not Specified
+3,NeurIPS 2025,Large Language Diffusion Models,https://github.com/ML-GSAI/LLaDA,Generation/Diffusion,Application/General,None/Not Specified
+105,ICLR 2025,Reducing Hallucinations via Latent Space Steering,https://github.com/shengliu66/VTI,General/Other,Application/General,None/Not Specified
+36,NeurIPS 2025,C-SEO Bench: Does Conversational SEO Work?,https://github.com/parameterlab/c-seo-bench,General/Other,Application/General,None/Not Specified
+90,ICLR 2025,Internet of Agents: Weaving a Web of Heterogeneous Agents,https://github.com/OpenBMB/IoA,General/Other,Application/General,None/Not Specified
+128,ICML 2025,EARTH: Epidemiology-Aware Neural ODE,https://github.com/GuanchengWan/EARTH,Geospatial/3D/4D,Application/General,None/Not Specified
+91,ICLR 2025,Robustness Reprogramming for Representation Learning,https://github.com/chris-hzc/Robustness-Reprogramming,General/Other,Application/General,None/Not Specified
+9,NeurIPS 2025,PrefixKV: Adaptive Prefix KV Cache Is What Vision Instruction Models Need,https://github.com/THU-MIG/PrefixKV,Computer Vision,Application/General,None/Not Specified
+19,NeurIPS 2025,Toward Relative Positional Encoding in Spiking Transformers,https://github.com/microsoft/SeqSNN,General/Other,Application/General,None/Not Specified
+56,ACL 2025,Does Time Have Its Place? Temporal Heads in Language Models,https://github.com/dmis-lab/TemporalHead,NLP/LLM,Application/General,None/Not Specified
+76,ICLR 2025,CATCH: Channel-Aware Multivariate Time Series Anomaly Detection,https://github.com/decisionintelligence/CATCH,"Anomaly Detection, Time Series",Application/General,None/Not Specified
+57,ACL 2025,Neural Incompatibility: The Gap of Cross-Scale Parametric Knowledge Transfer,https://github.com/Trae1ounG/Neural_Incompatibility,General/Other,Application/General,None/Not Specified
+47,ACL 2025,What Makes a Good Natural Language Prompt?,https://github.com/dxlong2000/NLPromptEval,NLP/LLM,Application/General,None/Not Specified
+48,ACL 2025,Modeling Uncertainty in Composed Image Retrieval via Probabilistic Embeddings,https://github.com/tanghme0w/ACL25-CoPE,"Computer Vision, Inference",Inference,None/Not Specified
+92,ICLR 2025,LayerDAG: Diffusion Model for Directed Acyclic Graph Generation,https://github.com/Graph-COM/LayerDAG,Generation/Diffusion,Application/General,None/Not Specified
+131,ICML 2025,Scaling Collapse Reveals Universal Dynamics,https://github.com/shikaiqiu/supercollapse,Physics,Application/General,None/Not Specified
+118,ICML 2025,HealthGPT: Medical Large Vision-Language Model via H-LoRA,https://github.com/DCDmllm/HealthGPT,"Computer Vision, Medical/Healthcare, NLP/LLM",Application/General,None/Not Specified
+114,ICML 2025,HarmoniCa: Harmonizing Training and Inference for Better Feature Caching,https://github.com/ModelTC/HarmoniCa,"Inference, Training","Inference, Training",None/Not Specified
+111,ICLR 2025,Generating Freeform Endoskeletal Robots,https://github.com/iffiX/endoskeletal,Generation/Diffusion,Application/General,None/Not Specified
+2,NeurIPS 2025,Gated Attention for Large Language Models,https://github.com/qiuzh20/gated_attention,NLP/LLM,Application/General,None/Not Specified
+26,NeurIPS 2025,4KAgent: Agentic Any Image to 4K Super-Resolution,https://github.com/llmsresearch/paperbanana,Computer Vision,Application/General,None/Not Specified
+75,NeurIPS 2025,UltraHR-100K: Enhancing UHR Image Synthesis,https://github.com/NJU-PCALab/UltraHR-100k,"Computer Vision, Generation/Diffusion",Application/General,None/Not Specified
+98,ICLR 2025,TopoNets: Vision and language models with brain-like topography,https://github.com/murtylab/topoloss,"Computer Vision, NLP/LLM",Application/General,None/Not Specified
+55,ACL 2025,LADDER: Language-Driven Slice Discovery and Error Rectification,https://github.com/batmanlab/Ladder,General/Other,Application/General,None/Not Specified
+108,ICLR 2025,Online Reinforcement Learning in Non-Stationary Environments,https://github.com/pouyahmdn/LCPO,General/Other,Application/General,None/Not Specified
+136,ICML 2025,Orthogonal Subspace Decomposition for Generalizable AI-Generated Image Detection,https://github.com/YZY-stack/Effort-AIGI-Detection ,"Computer Vision, Generation/Diffusion",Application/General,None/Not Specified
+43,ACL 2025,Leveraging Context for Multimodal Fallacy Classification,https://github.com/alessiopittiglio/mm-argfallacy,NLP/LLM,Application/General,None/Not Specified
+20,NeurIPS 2025,TimeEmb: Lightweight Static-Dynamic Disentanglement,https://github.com/showmeon/TimeEmb,Physics,Application/General,None/Not Specified
+117,ICML 2025,Automatically Identify and Rectify: Robust Deep Contrastive Multi-view Clustering,https://github.com/xihongyang1999/AIRMVC,General/Other,Application/General,None/Not Specified
+65,ACL 2025,ELABORATION: Benchmark on Human-LLM Competitive Programming,https://github.com/SCUNLP/ELABORATION,NLP/LLM,Application,None/Not Specified
+45,ACL 2025,BookCoref: Coreference Resolution at Book Scale,https://github.com/sapienzanlp/bookcoref,General/Other,Application/General,None/Not Specified
+89,ICLR 2025,Physics of Language Models: Knowledge Capacity Scaling Laws,https://github.com/zeyuanallen-zhu/physics-of-language-models,"NLP/LLM, Physics",Application/General,None/Not Specified
+120,ICML 2025,ReferSplat: 3D Gaussian Splatting for Referring Expressions,https://github.com/heshuting555/ReferSplat,General/Other,Application/General,None/Not Specified
+44,ACL 2025,AskQE: Question Answering as Automatic Evaluation for Machine Translation,https://github.com/dayeonki/askqe,Inference,Inference,Hardware Specific (GPU/CUDA/TPU)
+112,ICLR 2025,AnalogGenie: Automatic Discovery of Analog Circuit Topologies,https://github.com/xz-group/AnalogGenie,General/Other,Application/General,None/Not Specified
+52,ACL 2025,SelfElicit: Your Language Model Secretly Knows Where is the Relevant Evidence!,https://github.com/ZhiningLiu1998/SelfElicit,NLP/LLM,Application/General,None/Not Specified
+115,ICML 2025,"CSL-Mem: Towards Memorization Estimation: Fast, Formal and Free",https://github.com/DeepakTatachar/CSL-Mem,General/Other,Application/General,None/Not Specified
+145,ICLR 2025,MCNC: Manifold-Constrained Reparameterization for Neural Compression,https://github.com/mint-vu/MCNC  ,Training,Training,None/Not Specified
+183,ICLR 2028,Generalized Consistency Trajectory Models for Image Manipulation,https://github.com/1202kbs/GCTM,Computer Vision,Application/General,None/Not Specified
+142,ICLR 2025,Benchmarking Predictive Coding Networks -- Made Simple,https://github.com/liukidar/pcx  ,General/Other,Application,None/Not Specified
+83,ICLR 2025,Language Representations Can be What Recommenders Need,https://github.com/LehengTHU/AlphaRec,Recommender Systems,Application/General,None/Not Specified
+46,ACL 2025,Evaluating Design Decisions for Dual Encoder-based Entity Disambiguation,https://github.com/flairNLP/VerbalizED,Inference,Inference,None/Not Specified
+8,NeurIPS 2025,Scalable Best-of-N Selection for Large Language Models Via Self-Certainty,https://github.com/backprop07/Self-Certainty,NLP/LLM,Application/General,None/Not Specified
+126,ICML 2025,Stacey: Promoting Stochastic Steepest Descent,https://github.com/xinyuluo8561/Stacey,General/Other,Application/General,None/Not Specified
+138,ICLR 2025,TOP-ERL: Transformer-based Off-Policy Episodic Reinforcement Learning,https://github.com/BruceGeLi/TOP_ERL_ICLR25  ,General/Other,Application/General,None/Not Specified
+122,ICML 2025,LoRA-One: Subspace Alignment for Low-Rank Adaptation,https://github.com/YuanheZ/LoRA-One,General/Other,Application/General,None/Not Specified
