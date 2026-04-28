@@ -26,6 +26,7 @@ from knowledge.rocm_knowledge import (
     CUDA_TO_ROCM_MAPPING,
     BANNED_NVIDIA_PACKAGES,
 )
+from knowledge.amd_rocm_repos import get_relevant_amd_repos
 from utils.json_utils import load_json_loose
 from utils.llm import get_llm_response
 from utils.rich_logger import log_phase, log_info, log_success, log_warning, console
@@ -1027,6 +1028,240 @@ def _extract_model_references(readme_content: Optional[str], repo_path: str) -> 
     return refs
 
 
+def _extract_external_assets(readme_content: Optional[str], repo_path: str) -> List[Dict]:
+    """
+    Scan the README and repo scripts to identify external data, model checkpoints,
+    and dataset archives that must be downloaded before the main scripts can run.
+
+    GitHub does not allow files > 25 MB, so any sizable dataset, pretrained
+    checkpoint, or annotation archive will always be hosted externally:
+    HuggingFace Hub, Google Drive, Baidu Yun, direct wget/curl URLs, etc.
+    This function makes those requirements explicit in the plan so the executor
+    does not waste turns waiting for files that were never present.
+
+    Returns a list of dicts:
+        {
+            "kind":     "dataset" | "checkpoint" | "pseudo_mask" | "archive" | "unknown",
+            "name":     human-readable label,
+            "source":   "huggingface" | "google_drive" | "baidu" | "direct_url" | "script",
+            "hf_id":    HF repo id when source=huggingface (e.g. "FudanCVL/Ref-Lerf"),
+            "hf_type":  "dataset" | "model" | "space" | "" (the HF repo type),
+            "url":      raw URL or Drive link when present,
+            "script":   path to a download script in the repo (relative),
+            "target_path": where the script expects the asset (e.g. "/data/ref-lerf"),
+            "download_cmd": a concrete shell command to download it,
+            "note":     any additional context,
+        }
+    """
+    assets: List[Dict] = []
+    seen_ids: set = set()
+
+    # ── Pattern registry ────────────────────────────────────────────────────
+
+    # HF dataset references: load_dataset('org/name'), snapshot_download(repo_id='org/name', repo_type='dataset'),
+    # huggingface.co/datasets/org/name, hf.co/datasets/..., or bare 'org/name' next to 'dataset'
+    hf_dataset_patterns = [
+        re.compile(r"load_dataset\s*\(\s*['\"]([a-zA-Z0-9_\-\.]+/[a-zA-Z0-9_\-\.]+)['\"]"),
+        re.compile(r"snapshot_download\s*\([^)]*repo_id\s*=\s*['\"]([a-zA-Z0-9_\-\.]+/[a-zA-Z0-9_\-\.]+)['\"][^)]*repo_type\s*=\s*['\"]dataset['\"]"),
+        re.compile(r"snapshot_download\s*\([^)]*repo_type\s*=\s*['\"]dataset['\"][^)]*repo_id\s*=\s*['\"]([a-zA-Z0-9_\-\.]+/[a-zA-Z0-9_\-\.]+)['\"]"),
+        re.compile(r"huggingface\.co/datasets/([a-zA-Z0-9_\-\.]+/[a-zA-Z0-9_\-\.]+)"),
+        re.compile(r"hf\.co/datasets/([a-zA-Z0-9_\-\.]+/[a-zA-Z0-9_\-\.]+)"),
+        re.compile(r"huggingface-cli\s+download\s+([a-zA-Z0-9_\-\.]+/[a-zA-Z0-9_\-\.]+)\s+--repo-type\s+dataset"),
+    ]
+
+    # HF model/checkpoint references: from_pretrained('org/model'), hub.download(repo_id='...'), etc.
+    hf_model_patterns = [
+        re.compile(r"from_pretrained\s*\(\s*['\"]([a-zA-Z0-9_\-\.]+/[a-zA-Z0-9_\-\.]+)['\"]"),
+        re.compile(r"hf_hub_download\s*\([^)]*repo_id\s*=\s*['\"]([a-zA-Z0-9_\-\.]+/[a-zA-Z0-9_\-\.]+)['\"]"),
+        re.compile(r"snapshot_download\s*\([^)]*repo_id\s*=\s*['\"]([a-zA-Z0-9_\-\.]+/[a-zA-Z0-9_\-\.]+)['\"]"),
+        re.compile(r"huggingface\.co/([a-zA-Z0-9_\-\.]+/[a-zA-Z0-9_\-\.]+)(?!/tree|/blob|/commit)"),
+        re.compile(r"huggingface-cli\s+download\s+([a-zA-Z0-9_\-\.]+/[a-zA-Z0-9_\-\.]+)(?!\s+--repo-type\s+dataset)"),
+    ]
+
+    # Google Drive
+    gdrive_re = re.compile(r"drive\.google\.com/(?:drive/folders/|file/d/|open\?id=)([a-zA-Z0-9_\-]+)")
+
+    # Baidu Yun / Baidu Pan
+    baidu_re = re.compile(r"pan\.baidu\.com/s/([a-zA-Z0-9_\-]+)")
+
+    # Direct wget / curl / aria2 download URLs (not pypi/dockerhub/github)
+    wget_re = re.compile(
+        r"(?:wget|curl\s+-[LOo]+|aria2c)\s+(?:-[^\s]+\s+)*"
+        r"(https?://(?!pypi\.org|hub\.docker\.com|github\.com|raw\.githubusercontent\.com)[^\s'\"]+)"
+    )
+
+    # Checkpoint / pretrained weight references in README text
+    ckpt_ref_re = re.compile(
+        r"(?:pretrained|checkpoint|checkpoints?|weights?|model|download)[^.]*?['\"]?(/[^'\"<>\s]+\.(?:pth|pt|ckpt|bin|safetensors|pkl|npz))",
+        re.IGNORECASE,
+    )
+
+    # Download scripts shipped with the repo
+    download_script_re = re.compile(
+        r"(?:bash|sh|python[3]?)\s+((?:\./)?(?:scripts/|tools/|data/)?download[^\s`'\"]*\.(?:sh|py))",
+        re.IGNORECASE,
+    )
+
+    # Path references that suggest a data dir the script expects but that
+    # doesn't exist inside the repo (likely must be downloaded)
+    data_path_re = re.compile(
+        r"(?:--source_path|--data(?:_path|_dir|set)?|--dataset(?:_path|_root)?|-s\s+)(?:\s+|=)"
+        r"(/(?:data|datasets?|inputs?|checkpoints?)[^\s'\"<>]+)",
+        re.IGNORECASE,
+    )
+
+    def _add(kind: str, name: str, source: str, **kwargs) -> None:
+        uid = f"{source}:{name}"
+        if uid in seen_ids:
+            return
+        seen_ids.add(uid)
+        entry = {
+            "kind": kind,
+            "name": name,
+            "source": source,
+            "hf_id": kwargs.get("hf_id", ""),
+            "hf_type": kwargs.get("hf_type", ""),
+            "url": kwargs.get("url", ""),
+            "script": kwargs.get("script", ""),
+            "target_path": kwargs.get("target_path", ""),
+            "download_cmd": kwargs.get("download_cmd", ""),
+            "note": kwargs.get("note", ""),
+        }
+        assets.append(entry)
+
+    # ── Scan README ──────────────────────────────────────────────────────────
+
+    texts_to_scan: List[Tuple[str, str]] = []
+    if readme_content:
+        texts_to_scan.append(("README", readme_content))
+
+    # Also scan top-level shell scripts and Makefiles for download commands
+    for fname in ("Makefile", "makefile", "GNUmakefile", "setup.sh", "prepare_data.sh"):
+        fc = _read_file(os.path.join(repo_path, fname), max_chars=8000)
+        if fc:
+            texts_to_scan.append((fname, fc))
+
+    # And any scripts/ or data/ subdirectory with "download" in the filename
+    for subdir in ("scripts", "tools", "data", "."):
+        dpath = os.path.join(repo_path, subdir)
+        if not os.path.isdir(dpath):
+            continue
+        for fn in os.listdir(dpath):
+            if "download" in fn.lower() and fn.endswith((".sh", ".py", ".md")):
+                fpath = os.path.join(dpath, fn)
+                fc = _read_file(fpath, max_chars=6000)
+                if fc:
+                    rel = os.path.relpath(fpath, repo_path)
+                    texts_to_scan.append((rel, fc))
+                    # Register the script itself as a download asset
+                    _add("archive", fn, "script",
+                         script=rel,
+                         download_cmd=f"bash /repo/{rel}",
+                         note="Download script found in repo — run this first.")
+
+    for text_label, text in texts_to_scan:
+        # HF datasets
+        for pat in hf_dataset_patterns:
+            for m in pat.finditer(text):
+                hf_id = m.group(1)
+                _add("dataset", hf_id, "huggingface",
+                     hf_id=hf_id, hf_type="dataset",
+                     download_cmd=(
+                         f"pip install -q huggingface_hub && "
+                         f"python3 -c \"from huggingface_hub import snapshot_download; "
+                         f"snapshot_download(repo_id='{hf_id}', repo_type='dataset', "
+                         f"local_dir='/data/{hf_id.split('/')[-1].lower()}')\""
+                     ),
+                     note=f"Found in {text_label}")
+
+        # HF models / checkpoints
+        for pat in hf_model_patterns:
+            for m in pat.finditer(text):
+                hf_id = m.group(1)
+                # Skip short strings, non-repos, and false positives like 'datasets/org'
+                if len(hf_id) < 5 or "/" not in hf_id:
+                    continue
+                if hf_id.startswith("datasets/") or hf_id.startswith("spaces/"):
+                    continue
+                # Don't double-count something already found as dataset
+                uid = f"huggingface:{hf_id}"
+                if uid in seen_ids:
+                    continue
+                _add("checkpoint", hf_id, "huggingface",
+                     hf_id=hf_id, hf_type="model",
+                     download_cmd=(
+                         f"pip install -q huggingface_hub && "
+                         f"huggingface-cli download {hf_id} --local-dir /data/models/{hf_id.split('/')[-1].lower()}"
+                     ),
+                     note=f"Found in {text_label}")
+
+        # Google Drive
+        for m in gdrive_re.finditer(text):
+            drive_id = m.group(1)
+            _add("archive", f"gdrive:{drive_id[:16]}", "google_drive",
+                 url=f"https://drive.google.com/uc?id={drive_id}",
+                 download_cmd=(
+                     f"pip install -q gdown && "
+                     f"gdown https://drive.google.com/uc?id={drive_id} -O /data/gdrive_download"
+                 ),
+                 note=f"Google Drive link found in {text_label}. Check the README for the target directory.")
+
+        # Baidu Yun
+        for m in baidu_re.finditer(text):
+            _add("archive", f"baidu:{m.group(1)[:16]}", "baidu",
+                 url=f"https://pan.baidu.com/s/{m.group(1)}",
+                 note=f"Baidu Yun link in {text_label}. Requires a Baidu account or extraction code (pwd). "
+                      "Check the HuggingFace mirror first if one is mentioned alongside it.")
+
+        # Direct wget/curl
+        for m in wget_re.finditer(text):
+            url = m.group(1)
+            fname_guess = url.rstrip("/").split("/")[-1] or "download"
+            _add("archive", fname_guess, "direct_url",
+                 url=url,
+                 download_cmd=f"wget -q -O /data/{fname_guess} '{url}'",
+                 note=f"Direct download URL in {text_label}")
+
+        # Download scripts invoked from README
+        for m in download_script_re.finditer(text):
+            script_path = m.group(1).lstrip("./")
+            full = os.path.join(repo_path, script_path)
+            if os.path.isfile(full):
+                _add("archive", script_path, "script",
+                     script=script_path,
+                     download_cmd=f"bash /repo/{script_path}",
+                     note=f"Download script invoked in {text_label}")
+
+    # ── Scan Python source for from_pretrained / load_dataset calls ──────────
+    for root, dirs, files in os.walk(repo_path):
+        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("__pycache__", "node_modules")]
+        rel_root = os.path.relpath(root, repo_path)
+        if rel_root.count(os.sep) > 2:
+            continue
+        for fn in files:
+            if not fn.endswith(".py"):
+                continue
+            fpath = os.path.join(root, fn)
+            content = _read_file(fpath, max_chars=8000)
+            if not content:
+                continue
+            label = os.path.relpath(fpath, repo_path)
+            for pat in hf_dataset_patterns:
+                for m in pat.finditer(content):
+                    hf_id = m.group(1)
+                    _add("dataset", hf_id, "huggingface",
+                         hf_id=hf_id, hf_type="dataset",
+                         download_cmd=(
+                             f"pip install -q huggingface_hub && "
+                             f"python3 -c \"from huggingface_hub import snapshot_download; "
+                             f"snapshot_download(repo_id='{hf_id}', repo_type='dataset', "
+                             f"local_dir='/data/{hf_id.split('/')[-1].lower()}')\""
+                         ),
+                         note=f"load_dataset call in {label}")
+
+    return assets
+
+
 def _extract_readme_expected_outcomes(
     readme_content: Optional[str],
     readme_run_commands: List[Dict],
@@ -1224,6 +1459,92 @@ def _planner_external_notes(cuda_deps: List[str],
     return bounded
 
 
+# ── AMD ecosystem recommender ─────────────────────────────────────────────────
+
+def _build_amd_ecosystem_section(
+    import_counts: Dict[str, int],
+    config_contents: Dict[str, str],
+    rocm_mode: bool,
+) -> List[str]:
+    """
+    Match detected Python imports and config-file strings against the AMD ROCm
+    repo catalog and produce a concise, actionable section for the plan.
+
+    Only returns content when rocm_mode is True and at least one relevant AMD
+    library is identified.
+    """
+    if not rocm_mode:
+        return []
+
+    # Collect all import names and config strings for matching
+    import_names = list(import_counts.keys())
+    config_strings: List[str] = []
+    for content in config_contents.values():
+        config_strings.extend(content.split())
+
+    relevant = get_relevant_amd_repos(import_names, config_strings)
+    if not relevant:
+        return []
+
+    lines: List[str] = []
+    lines.append("AMD ROCm Ecosystem — Project-Specific Recommendations:")
+    lines.append(
+        "  The planner detected the following CUDA/NVIDIA imports and matched them"
+        " to AMD-native alternatives. Use these instead of the NVIDIA equivalents."
+    )
+    lines.append(
+        "  Full reference: /Repo2ROCm/build_agent/knowledge/amd_rocm_ecosystem.md"
+    )
+    lines.append("")
+
+    # Group by category for readability
+    by_category: Dict[str, List] = {}
+    for entry in relevant:
+        cat = entry.get("category", "other")
+        by_category.setdefault(cat, []).append(entry)
+
+    category_order = ["rendering", "ml", "dl", "inference", "vision", "math", "tooling", "other"]
+    for cat in category_order:
+        if cat not in by_category:
+            continue
+        cat_label = {
+            "rendering": "3D Rendering / Gaussian Splatting",
+            "ml": "ML Acceleration Libraries",
+            "dl": "Deep Learning Primitives",
+            "inference": "Inference / Graph Compilers",
+            "vision": "Computer Vision",
+            "math": "Math Libraries",
+            "tooling": "Tooling",
+            "other": "Other",
+        }.get(cat, cat.title())
+        lines.append(f"  [{cat_label}]")
+        for entry in by_category[cat]:
+            lines.append(f"  • {entry['amd_name']}  (replaces NVIDIA: {entry['nvidia_equiv']})")
+            lines.append(f"    Use case: {entry['use_case'][:200]}")
+            lines.append(f"    Status:   {entry['status']}")
+            if entry.get("install_cmd"):
+                # Compact: show just the first non-comment line of install_cmd
+                first_cmd = next(
+                    (l.strip() for l in entry["install_cmd"].splitlines() if l.strip() and not l.strip().startswith("#")),
+                    ""
+                )
+                if first_cmd:
+                    lines.append(f"    Install:  {first_cmd}")
+            if entry.get("notes"):
+                # Show up to 200 chars of notes
+                lines.append(f"    Notes:    {entry['notes'][:200]}")
+            lines.append(f"    GitHub:   {entry['github']}")
+            lines.append("")
+
+    lines.append(
+        "  IMPORTANT: If this is a Gaussian Splatting repo (detects diff_gaussian_rasterization"
+        " or simple_knn), use amd_gsplat INSTEAD of trying to compile those submodules from"
+        " source — they use CUDA-only headers that are very hard to patch correctly."
+    )
+    lines.append("")
+    return lines
+
+
 # ── main planner ─────────────────────────────────────────────────────────────
 
 def generate_plan(repo_path: str, full_name: str, rocm_mode: bool = False,
@@ -1234,7 +1555,8 @@ def generate_plan(repo_path: str, full_name: str, rocm_mode: bool = False,
                   reproduce_results: bool = False,
                   run_memory: Optional[Any] = None,
                   graphify_provider: Optional[Any] = None,
-                  learned_context: str = "") -> Tuple[str, Optional[str], Dict[str, Any]]:
+                  learned_context: str = "",
+                  run_mode: str = "env") -> Tuple[str, Optional[str], Dict[str, Any]]:
     """
     Deep-analyze the repository and produce a comprehensive strategic plan.
 
@@ -1336,6 +1658,19 @@ def generate_plan(repo_path: str, full_name: str, rocm_mode: bool = False,
         gated_count = sum(1 for r in model_references if r["gated"])
         ungated_count = sum(1 for r in model_references if r["ungated"])
         log_info(f"  Found {len(model_references)} model references ({ungated_count} ungated, {gated_count} gated)")
+
+    # 7b-2. Detect external datasets, checkpoints, archives that must be downloaded.
+    # GitHub enforces a 25 MB per-file limit so large data is ALWAYS hosted externally.
+    external_assets = _extract_external_assets(readme_content, repo_path)
+    if external_assets:
+        hf_assets = [a for a in external_assets if a["source"] == "huggingface"]
+        script_assets = [a for a in external_assets if a["source"] == "script"]
+        drive_assets = [a for a in external_assets if a["source"] == "google_drive"]
+        log_info(
+            f"  External assets: {len(external_assets)} total "
+            f"({len(hf_assets)} HuggingFace, {len(script_assets)} scripts, "
+            f"{len(drive_assets)} Google Drive)"
+        )
 
     # 7c. Extract expected outcomes from README
     expected_outcomes: List[Dict] = []
@@ -1463,6 +1798,32 @@ def generate_plan(repo_path: str, full_name: str, rocm_mode: bool = False,
 
     sections = []
 
+    _MODE_BANNERS = {
+        "env": (
+            "RUN MODE: 1 — ROCm Env Only\n"
+            "  Goal: install dependencies, migrate CUDA→ROCm, run a quick smoke test,\n"
+            "  then echo ROCM_ENV_VERIFIED. Training params may be scaled down.\n"
+            "  Paper reproduction is NOT required in this mode."
+        ),
+        "reproduce": (
+            "RUN MODE: 2 — Paper Reproduce\n"
+            "  Goal: download required datasets/checkpoints, run the paper experiment\n"
+            "  with the EXACT config from the paper/README (no scale-down), and\n"
+            "  compare results against the paper's reported metrics.\n"
+            "  env setup is a prerequisite but PAPER_RESULT_REPRODUCED/NOT_REPRODUCED\n"
+            "  is the primary success criterion. Do NOT synthesise fake data."
+        ),
+        "full": (
+            "RUN MODE: 3 — Full (Env + Paper Reproduce)\n"
+            "  Stage 1 — Echo ROCM_ENV_VERIFIED once the repo runs on the AMD GPU.\n"
+            "  Stage 2 — Download required assets, run the paper experiment with the\n"
+            "  EXACT paper config (no scale-down), compare against reported metrics,\n"
+            "  then echo PAPER_RESULT_REPRODUCED or PAPER_RESULT_NOT_REPRODUCED."
+        ),
+    }
+    banner = _MODE_BANNERS.get(run_mode, _MODE_BANNERS["env"])
+    sections.append(banner)
+    sections.append("")
     sections.append(f"Repository: {full_name}")
     sections.append(f"Top-level contents: {', '.join(top_level)}")
     sections.append("")
@@ -1504,6 +1865,17 @@ def generate_plan(repo_path: str, full_name: str, rocm_mode: bool = False,
         sections.append("External Lookup Notes (cached, planner-side):")
         sections.extend(f"  {line}" for line in ext_notes)
         sections.append("")
+
+    # ── AMD ecosystem recommendations (project-specific) ────────────────────
+
+    amd_ecosystem_lines = _build_amd_ecosystem_section(
+        import_counts=import_counts,
+        config_contents=config_contents,
+        rocm_mode=rocm_mode,
+    )
+    if amd_ecosystem_lines:
+        sections.extend(amd_ecosystem_lines)
+        log_info(f"  AMD ecosystem: {len(amd_ecosystem_lines)} recommendation lines added to plan")
 
     # ── Filtered requirements ────────────────────────────────────────────────
 
@@ -1610,6 +1982,51 @@ def generate_plan(repo_path: str, full_name: str, rocm_mode: bool = False,
                 for ctx_line in rc["context"].splitlines()[:3]:
                     if ctx_line.strip() and not ctx_line.strip().startswith("```"):
                         sections.append(f"    Context: {ctx_line.strip()}")
+        sections.append("")
+
+    # ── External assets (datasets, checkpoints, archives) ────────────────────
+
+    if external_assets:
+        sections.append(
+            "EXTERNAL ASSETS REQUIRED (DOWNLOAD BEFORE RUNNING SCRIPTS):"
+        )
+        sections.append(
+            "  CRITICAL: GitHub does not permit files > 25 MB in a repository."
+            " Datasets, pretrained checkpoints, pseudo-mask archives, and"
+            " annotation packages are ALWAYS hosted externally (HuggingFace,"
+            " Google Drive, direct URLs, etc.). These files will NOT be present"
+            " inside /repo. The agent MUST download them before running any"
+            " training / inference / evaluation script that references them."
+        )
+        sections.append("")
+        for a in external_assets:
+            sections.append(f"  [{a['kind'].upper()}] {a['name']}")
+            sections.append(f"    Source:  {a['source']}" + (f" ({a['hf_type']})" if a["hf_type"] else ""))
+            if a["hf_id"]:
+                sections.append(f"    HF id:   {a['hf_id']}")
+            if a["url"]:
+                sections.append(f"    URL:     {a['url']}")
+            if a["script"]:
+                sections.append(f"    Script:  /repo/{a['script']}")
+            if a["download_cmd"]:
+                sections.append(f"    Command: {a['download_cmd']}")
+            if a["target_path"]:
+                sections.append(f"    Target:  {a['target_path']}")
+            if a["note"]:
+                sections.append(f"    Note:    {a['note']}")
+            sections.append("")
+        sections.append(
+            "  STRATEGY: Check each asset with `ls <target_path>` BEFORE"
+            " running the script. If it is missing, run the Command above."
+            " For HuggingFace assets, also try `huggingface-cli download`."
+            " For Google Drive, use `gdown`. For Baidu Yun links,"
+            " prefer the HuggingFace mirror when one is mentioned alongside it."
+        )
+        sections.append(
+            "  If the download source is unclear, use `web_search` to find the"
+            " canonical download path — e.g."
+            " 'heshuting555/ReferSplat Ref-LERF dataset download HuggingFace'."
+        )
         sections.append("")
 
     # ── Model references and gating status ────────────────────────────────────
@@ -1752,6 +2169,14 @@ def generate_plan(repo_path: str, full_name: str, rocm_mode: bool = False,
         if training_params:
             sections.append(f"  {step}. Scale down training params before running scripts (sed commands above)")
             step += 1
+        if external_assets:
+            sections.append(f"  {step}. DOWNLOAD REQUIRED EXTERNAL ASSETS (see 'EXTERNAL ASSETS' section above):")
+            sections.append(f"       Check each asset is on disk BEFORE running any script that uses it.")
+            sections.append(f"       For HuggingFace: huggingface-cli download <id> --repo-type dataset/model")
+            sections.append(f"       For Google Drive: pip install gdown && gdown <url>")
+            sections.append(f"       For download scripts: bash /repo/<script>")
+            sections.append(f"       If source unclear: web_search '<repo_name> dataset download HuggingFace'")
+            step += 1
         if no_scale_down:
             sections.append(f"  {step}. Run the EXACT commands from the README as-is — do NOT scale down, do NOT use mock data")
         else:
@@ -1759,16 +2184,24 @@ def generate_plan(repo_path: str, full_name: str, rocm_mode: bool = False,
         step += 1
         sections.append(f"  {step}. Verify GPU execution (output must show cuda device, not cpu)")
         step += 1
-        sections.append(f"  {step}. echo ROCM_ENV_VERIFIED")
-        step += 1
+        if run_mode == 'reproduce':
+            # Mode 2: env check is a prerequisite but not the final goal — skip the explicit marker
+            sections.append(f"  {step}. GPU confirmed — proceed directly to asset download and paper experiment")
+            step += 1
+        else:
+            # Mode 1 / Mode 3: ROCM_ENV_VERIFIED is an explicit required milestone
+            sections.append(f"  {step}. echo ROCM_ENV_VERIFIED")
+            step += 1
         if reproduce_results:
+            sections.append(f"  {step}. Verify all EXTERNAL ASSETS exist before the paper experiment — do NOT synthesize fake data")
+            step += 1
             sections.append(f"  {step}. Run the Chosen experiment from PAPER REPRODUCTION TARGET (exact config, no scale-down)")
             step += 1
             sections.append(f"  {step}. Tee its output to /repo/paper_experiment.log")
             step += 1
             sections.append(f"  {step}. Invoke the paper-reproducer sub-agent to compare vs paper.pdf")
             step += 1
-            sections.append(f"  {step}. echo PAPER_RESULT_REPRODUCED <...> OR echo PAPER_RESULT_NOT_REPRODUCED <reason>")
+            sections.append(f"  {step}. echo PAPER_RESULT_REPRODUCED <metric=...> OR echo PAPER_RESULT_NOT_REPRODUCED <reason>")
         if no_scale_down:
             sections.append("")
             sections.append("*** NO-SCALE-DOWN MODE ACTIVE ***")
@@ -1880,6 +2313,25 @@ CRITICAL: If the raw analysis contains a section titled "EXPECTED OUTCOMES FROM 
 you MUST copy it into the plan VERBATIM — including every script/command and its expected
 outcome.  The execution agent will use this to validate its output.  Do NOT summarize,
 paraphrase, or omit any expected outcomes.
+
+CRITICAL: If the raw analysis contains a section titled
+"AMD ROCm Ecosystem — Project-Specific Recommendations", copy it VERBATIM into
+the plan. Do NOT summarise or drop any library entry. The executor uses these
+exact install commands to set up AMD-native alternatives.
+
+CRITICAL: If the raw analysis contains a section titled
+"EXTERNAL ASSETS REQUIRED (DOWNLOAD BEFORE RUNNING SCRIPTS)", you MUST:
+  a) Copy the entire section VERBATIM into the plan (every asset, every download command).
+  b) Add a dedicated step in the Execution Plan BEFORE any training/inference/evaluation
+     step: "Download required external assets (see EXTERNAL ASSETS section above)".
+  c) Note that GitHub does not allow files > 25 MB — large datasets, pretrained
+     checkpoints, and annotation archives will NEVER be present inside /repo and
+     must always be fetched externally.
+  d) If the download source is unclear for any asset, instruct the agent to run
+     web_search("<repo_name> <asset_name> download") to discover the canonical path
+     BEFORE attempting to create synthetic / mock data.
+  e) For paper-reproduction runs, explicitly state: "Do NOT synthesise fake data
+     or mock scenes — verify dataset and checkpoint existence first."
 
 RAW ANALYSIS:
 {raw_analysis}

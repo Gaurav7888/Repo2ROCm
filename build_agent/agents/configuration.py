@@ -104,7 +104,8 @@ class Configuration(Agent):
                  reproduce_results=False, paper_pdf_path=None,
                  paper_experiments=None, paper_title="",
                  run_memory=None, graphify_provider=None,
-                 observer_client=None):
+                 observer_client=None,
+                 run_mode: str = "env"):
         self.model = llm
         self.root_dir = root_dir
         self.max_turn = max_turn
@@ -125,6 +126,7 @@ class Configuration(Agent):
         self.run_memory = run_memory  # mempalace per-run store (Stage 2); may be None
         self.graphify_provider = graphify_provider  # per-repo code graph (Stage 4); may be None
         self.observer_client = observer_client
+        self.run_mode = run_mode  # "env" | "reproduce" | "full"
         # Track Stage-1 compaction savings for diagnostics.
         self._compaction_orig_chars = 0
         self._compaction_short_chars = 0
@@ -326,28 +328,33 @@ class Configuration(Agent):
             if isinstance(entry, dict) and "returncode" in entry
         ]
         recent_commands = []
-        for item in self.sandbox.commands[-5:]:
+        for item in self.sandbox.commands[-8:]:
             if not isinstance(item, dict):
                 continue
             recent_commands.append({
-                "command": str(item.get("command") or "")[:240],
+                "command": str(item.get("command") or "")[:480],
                 "returncode": item.get("returncode"),
                 "time": item.get("time"),
                 "dir": item.get("dir"),
             })
+        # Observation/response caps are intentionally generous: the observer
+        # sidecar reasons over the raw text the way a human reads CI logs, so
+        # cutting off mid-error-list (as the prior 2500-char cap did) hides
+        # the cascading-error pattern that signals a stuck loop. The on-disk
+        # event bus is cheap and the LLM can still rebudget per turn.
         payload = {
             "turn": turn,
             "stage": "stage2" if self._stage2_active else "stage1",
             "rocm_mode": self.rocm_mode,
             "paper_title": self.paper_title,
-            "assistant_response": str(assistant_response or "")[:2500],
+            "assistant_response": str(assistant_response or "")[:6000],
             "action_type": "bash" if commands else "diff" if diffs else "none",
-            "commands": [str(cmd)[:240] for cmd in commands[:3]],
+            "commands": [str(cmd)[:480] for cmd in commands[:5]],
             "diff_present": bool(diffs),
             "return_codes": return_codes,
             "duration_s": round(float(turn_elapsed_s), 2),
             "error_class": self._last_error_class,
-            "observation_excerpt": str(system_res or "")[:2500],
+            "observation_excerpt": str(system_res or "")[:8000],
             "tool_deltas": tool_deltas,
             "recent_commands": recent_commands,
             "paper_retrieval_used": self._paper_retrieval_used,
@@ -988,6 +995,39 @@ class Configuration(Agent):
             return verdict, stripped
         return None
 
+    def _mode_rule_block(self) -> str:
+        """Return a short, mode-specific rule block for the system prompt."""
+        mode = getattr(self, "run_mode", "env")
+        if mode == "env":
+            return (
+                "**RUN MODE: 1 — ROCm Env Only**\n"
+                "Your sole goal is ROCM_ENV_VERIFIED. Once the repo runs on the AMD GPU,\n"
+                "echo ROCM_ENV_VERIFIED and stop. Do NOT attempt paper experiments.\n"
+                "You MAY scale down training params (fewer epochs/steps) for a quick smoke test."
+            )
+        elif mode == "reproduce":
+            return (
+                "**RUN MODE: 2 — Paper Reproduce**\n"
+                "Your primary goal is PAPER_RESULT_REPRODUCED or PAPER_RESULT_NOT_REPRODUCED.\n"
+                "Complete env setup as fast as possible, then focus on:\n"
+                "  1. Downloading the required datasets and checkpoints (see EXTERNAL ASSETS section).\n"
+                "  2. Running the paper experiment with the EXACT paper config — no scale-down.\n"
+                "  3. Echoing the result marker with metric details.\n"
+                "You do NOT need to echo ROCM_ENV_VERIFIED — GPU confirmation is enough before moving on.\n"
+                "Do NOT synthesise fake data. If real data is unavailable, echo PAPER_RESULT_NOT_REPRODUCED."
+            )
+        else:  # "full"
+            return (
+                "**RUN MODE: 3 — Full (Env → Paper Reproduce)**\n"
+                "Two explicit stages:\n"
+                "  Stage 1: Configure env, verify GPU with a smoke test, then echo ROCM_ENV_VERIFIED.\n"
+                "  Stage 2: Download required assets, run paper experiment (exact config, no scale-down),\n"
+                "           invoke paper-reproducer sub-agent, echo PAPER_RESULT_REPRODUCED or\n"
+                "           PAPER_RESULT_NOT_REPRODUCED.\n"
+                "Do NOT skip Stage 1 — the ROCM_ENV_VERIFIED marker is required before Stage 2 begins.\n"
+                "Do NOT synthesise fake data."
+            )
+
     def _build_system_prompt(self, tools_list):
         """Build the system prompt, choosing plan-aware or full version."""
         has_plan = bool(self.plan)
@@ -1064,6 +1104,38 @@ do NOT trust static knowledge alone. Use deterministic lookups first
 (`pypi_versions`, `dockerhub_tags`) and then incorporate observer-provided
 internet research when it arrives.
 
+**AMD ROCm Ecosystem Reference:** A comprehensive NVIDIA→AMD mapping covering every ROCm
+library (rocBLAS, MIOpen, MIGraphX, amd_gsplat, flash-attention, bitsandbytes, xFormers,
+TunableOp, HIPIFY, etc.) with exact install commands and caveats is available at:
+  `/Repo2ROCm/build_agent/knowledge/amd_rocm_ecosystem.md`
+The plan's "AMD ROCm Ecosystem" section already lists the libraries relevant to THIS repo.
+Always consult it before manually searching for an AMD alternative to a CUDA package.
+
+**EXTERNAL DATA & MODEL ASSETS — read this before any training/inference step:**
+GitHub enforces a 25 MB per-file limit. Therefore:
+  - Large datasets are NEVER inside /repo. They live on HuggingFace, Google Drive,
+    Baidu Yun, or a direct download URL documented in the README.
+  - Pretrained checkpoints (.pth, .pt, .ckpt, .bin, .safetensors) are NEVER inside
+    /repo. They must be downloaded from HuggingFace Hub, Google Drive, or a URL.
+  - Pseudo-masks, annotation archives, and COLMAP sparse reconstructions that the
+    paper trained its model with are NEVER inside /repo.
+
+Before running any script that loads a dataset or checkpoint:
+  1. Check the plan's "EXTERNAL ASSETS REQUIRED" section for the exact HF id,
+     URL, or download script.
+  2. `ls <expected_path>` to see if it already exists on disk.
+  3. If missing: download it using the command in the plan.
+  4. For HuggingFace: `pip install -q huggingface_hub && huggingface-cli download <id> --repo-type dataset --local-dir /data/<name>`
+  5. For Google Drive: `pip install -q gdown && gdown <url> -O /data/<name>`
+  6. For download scripts in the repo: `bash /repo/<script>`
+  7. If the source is unclear: run `web_search "<repo_name> <asset_name> download HuggingFace"`
+     to find the canonical source BEFORE attempting to create synthetic or mock data.
+
+**DO NOT synthesise fake datasets or mock scenes** as a substitute for missing
+external data during paper-reproduction runs. A synthetic scene will never
+reproduce the paper's mIoU / PSNR / accuracy numbers. If the real dataset is
+unavailable, report `PAPER_RESULT_NOT_REPRODUCED missing_data: <reason>`.
+
 **Repo-discovery rule:** use `graphify_query` before broad `find`/`grep -r`
 across `/repo`. Shell-wide search is a fallback, not the first move.
 
@@ -1071,6 +1143,7 @@ across `/repo`. Shell-wide search is a fallback, not the first move.
 `graphify_query`, `paper_recall`) comes first. External web evidence should come
 through the observer so the execution loop stays focused on grounded actions.
 
+{self._mode_rule_block()}
 {INIT_PROMPT}
 {EDIT_PROMPT}
 

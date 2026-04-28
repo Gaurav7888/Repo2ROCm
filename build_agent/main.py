@@ -138,12 +138,21 @@ def main():
                         help='Run Claude Code in full agentic mode where it drives the entire '
                              'configuration process autonomously with its built-in tools. '
                              'Only used when --use-claude-code is set.')
+    parser.add_argument('--mode', type=str, default='env',
+                        choices=['env', 'reproduce', 'full'],
+                        help=(
+                            'Run mode:\n'
+                            '  env       — (default) Set up the repo to run on AMD GPU and verify '
+                            'with ROCM_ENV_VERIFIED. Quick smoke-test with scaled-down params.\n'
+                            '  reproduce — Download required datasets/checkpoints, run the paper '
+                            'experiment with the EXACT paper config (no scale-down), and compare '
+                            'results against the paper. Env setup happens as a prerequisite but '
+                            'PAPER_RESULT_REPRODUCED/NOT_REPRODUCED is the primary goal.\n'
+                            '  full      — Mode 1 first (ROCM_ENV_VERIFIED), then Mode 2 '
+                            '(paper experiment + result comparison). Both outputs produced.'
+                        ))
     parser.add_argument('--reproduce-results', action='store_true', default=False,
-                        help='After ROCM_ENV_VERIFIED, also run the shortest paper experiment '
-                             'whose code exists in the repo and verify its results match the '
-                             "paper's reported metrics (hybrid numeric + LLM-judge). "
-                             "Works with the default Configuration loop; in --claude-code-agentic "
-                             "mode it additionally spins up the paper-reproducer sub-agent.")
+                        help='Alias for --mode full. Kept for backward compatibility.')
     parser.add_argument('--paper-url', type=str, default=None,
                         help='Direct URL to the research paper PDF (e.g. an arXiv pdf link). '
                              'Used by --reproduce-results. If omitted, auto-discovered from README.')
@@ -203,17 +212,35 @@ def main():
     rocm_base_image = args.rocm_base_image
     no_scale_down = args.no_scale_down
     optimize_kernels = args.optimize_kernels
-    reproduce_results = args.reproduce_results
     paper_url = args.paper_url
     paper_pdf_arg = args.paper_pdf
     paper_source_mode = args.paper_source_mode
 
+    # ── Resolve run mode ────────────────────────────────────────────────────
+    # --reproduce-results is the legacy alias for --mode full.
+    run_mode = args.mode
+    if args.reproduce_results and run_mode == 'env':
+        run_mode = 'full'
+
+    # Mode 2 (reproduce) and Mode 3 (full) both need paper reproduction logic.
+    reproduce_results = run_mode in ('reproduce', 'full')
+
+    # Mode 2 always uses the exact paper config — no scale-down of params.
+    if run_mode == 'reproduce' and not no_scale_down:
+        no_scale_down = True
+
     if reproduce_results and not paper_url and not paper_pdf_arg:
-        log_info("--reproduce-results: no --paper-url or --paper-pdf given; "
+        log_info(f"--mode {run_mode}: no --paper-url or --paper-pdf given; "
                  "will auto-discover from README.")
 
+    _MODE_DESC = {
+        'env':       'Mode 1 — ROCm Env Only  (goal: ROCM_ENV_VERIFIED)',
+        'reproduce': 'Mode 2 — Paper Reproduce (goal: PAPER_RESULT_REPRODUCED/NOT_REPRODUCED)',
+        'full':      'Mode 3 — Full            (ROCM_ENV_VERIFIED → PAPER_RESULT_REPRODUCED/NOT_REPRODUCED)',
+    }
     log_header("REPO2ROCM", f"Self-Evolving Multi-Agent System")
     log_phase("CONFIGURATION")
+    log_info(f"Run mode:   {_MODE_DESC[run_mode]}")
     log_info(f"Repository: {full_name}")
     log_info(f"SHA: {sha}")
     log_info(f"LLM: {llm}")
@@ -223,13 +250,13 @@ def main():
     if optimize_kernels:
         log_info(f"Kernel Optimization: ON (Phase 2 performance tuning enabled)")
     if reproduce_results:
-        log_info(f"Reproduce-Results: ON (will run shortest paper experiment and verify)")
+        log_info(f"Paper reproduction: ON")
         if paper_pdf_arg:
-            log_info(f"Paper PDF (local): {paper_pdf_arg}")
+            log_info(f"  Paper PDF (local): {paper_pdf_arg}")
         elif paper_url:
-            log_info(f"Paper URL: {paper_url}")
+            log_info(f"  Paper URL: {paper_url}")
         else:
-            log_info(f"Paper source: auto-discover from README")
+            log_info(f"  Paper source: auto-discover from README")
     log_info(f"Root Path: {root_path}")
 
     # ── Initialize Intelligence Layer ──
@@ -443,6 +470,7 @@ def main():
         run_memory=run_memory,
         graphify_provider=graphify_provider,
         learned_context=learned_context,
+        run_mode=run_mode,
     )
     print_plan(plan)
     paper_experiments = paper_context.get("experiments", []) if reproduce_results else []
@@ -450,7 +478,9 @@ def main():
 
     with open(f'{root_path}/output/{full_name}/plan.txt', 'w') as pf:
         pf.write(plan)
-    log_success(f"Plan saved to output/{full_name}/plan.txt")
+    with open(f'{root_path}/output/{full_name}/run_mode.txt', 'w') as mf:
+        mf.write(f"{run_mode}\n{_MODE_DESC[run_mode]}\n")
+    log_success(f"Plan saved to output/{full_name}/plan.txt  [mode={run_mode}]")
 
     # Persist plan + paper-experiment shortlist + base-image decision into mempalace.
     # NOTE: raw paper text is no longer stored in mempalace; only references/state.
@@ -647,6 +677,8 @@ def main():
                 llm=llm,
                 api_key=args.api_key or os.environ.get("AMD_LLM_API_KEY", ""),
                 enabled=bool(llm),
+                use_claude_code=bool(use_claude_code),
+                claude_code_model=getattr(args, "claude_code_model", None),
             )
             observer_client.start()
             log_info("Observer sidecar: ON")
@@ -671,6 +703,7 @@ def main():
             run_memory=run_memory,
             graphify_provider=graphify_provider,
             observer_client=observer_client,
+            run_mode=run_mode,
         )
         try:
             msg, outer_commands = configuration_agent.run('/tmp', trajectory, waiting_list, conflict_list)

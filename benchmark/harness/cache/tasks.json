@@ -1,0 +1,823 @@
+[
+  {
+    "arxiv_id": "2410.06215",
+    "conference": "ICLR 2025",
+    "notes": [],
+    "paper_id": "113-dataenvgym-data-generation-agents-in-teacher-environments",
+    "paper_title": "DataEnvGym: Data Generation Agents in Teacher Environments",
+    "paper_url": "https://arxiv.org/pdf/2410.06215v3",
+    "repo_full_name": "codezakh/DataEnvGym",
+    "repo_sha": "f698f39c7d77fc655942099535d06a4d11b32e3b",
+    "repo_url": "https://github.com/codezakh/DataEnvGym",
+    "tags": "Generation/Diffusion"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "NeurIPS 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "27-class-aware-domain-knowledge-fusion-for-continual-test-time-",
+    "paper_title": "Class-aware Domain Knowledge Fusion for Continual Test-Time Adaptation",
+    "paper_url": null,
+    "repo_full_name": "zhoujiahuan1991/NeurIPS2025-KFF",
+    "repo_sha": "2ad5643446ec3a54fdd71956bd42b634ea46b2b0",
+    "repo_url": "https://github.com/zhoujiahuan1991/NeurIPS2025-KFF",
+    "tags": "General/Other"
+  },
+  {
+    "arxiv_id": "2506.01326",
+    "conference": "ACL 2025",
+    "notes": [],
+    "paper_id": "63-ormind-a-cognitive-inspired-end-to-end-reasoning-framework-f",
+    "paper_title": "ORMind: A Cognitive-Inspired End-to-End Reasoning Framework for OR",
+    "paper_url": "https://arxiv.org/pdf/2506.01326v2",
+    "repo_full_name": "XiaoAI1989/ORMind",
+    "repo_sha": "f22f6cccb74a55f9eeae2891ec353468e38980a3",
+    "repo_url": "https://github.com/XiaoAI1989/ORMind",
+    "tags": "General/Other"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ICLR 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "144-comres-semi-supervised-time-series-forecasting",
+    "paper_title": "CoMRes: Semi-Supervised Time Series Forecasting",
+    "paper_url": null,
+    "repo_full_name": "yjucho1/CoMRes",
+    "repo_sha": "79cb6df777f918014f9acf0e16b12114d0f6dda5",
+    "repo_url": "https://github.com/yjucho1/CoMRes",
+    "tags": "Time Series"
+  },
+  {
+    "arxiv_id": "2412.20292",
+    "conference": "ICML 2025",
+    "notes": [],
+    "paper_id": "133-an-analytic-theory-of-creativity-in-convolutional-diffusion-",
+    "paper_title": "An analytic theory of creativity in convolutional diffusion models",
+    "paper_url": "https://arxiv.org/pdf/2412.20292v2",
+    "repo_full_name": "Kambm/convolutional_diffusion",
+    "repo_sha": "6a87f3f7c6c72474ee5cffda384c1af0277e63f7",
+    "repo_url": "https://github.com/Kambm/convolutional_diffusion",
+    "tags": "Generation/Diffusion"
+  },
+  {
+    "arxiv_id": "2410.01779",
+    "conference": "NeurIPS 2025",
+    "notes": [],
+    "paper_id": "7-composing-global-solutions-to-reasoning-tasks-via-algebraic-",
+    "paper_title": "Composing Global Solutions to Reasoning Tasks Via Algebraic Objects",
+    "paper_url": "https://arxiv.org/pdf/2410.01779v4",
+    "repo_full_name": "facebookresearch/luckmatters",
+    "repo_sha": "625b5f7de69dc321f24376f5c6fe3446af3a364b",
+    "repo_url": "https://github.com/facebookresearch/luckmatters",
+    "tags": "General/Other"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ACL 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "61-ualberta-at-semeval-2025-task-2-prompting-for-entity-aware-t",
+    "paper_title": "UAlberta at SemEval-2025 Task 2: Prompting for Entity-Aware Translation",
+    "paper_url": null,
+    "repo_full_name": "UAlberta-NLP/SemEval2025-EAMT",
+    "repo_sha": "6005f26af45bc74e60bb99076545b3ace819a63b",
+    "repo_url": "https://github.com/UAlberta-NLP/SemEval2025-EAMT",
+    "tags": "Inference, NLP/LLM"
+  },
+  {
+    "arxiv_id": "2412.00537",
+    "conference": "ICLR 2029",
+    "notes": [
+      "git_ls_remote_failed"
+    ],
+    "paper_id": "184-exact-certification-of-graph-neural-networks-against-label-p",
+    "paper_title": "Exact Certification of (Graph) Neural Networks Against Label Poisoning",
+    "paper_url": "https://arxiv.org/pdf/2412.00537v2",
+    "repo_full_name": "saper0/qpcer",
+    "repo_sha": null,
+    "repo_url": "https://github.com/saper0/qpcert",
+    "tags": "General/Other"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "NeurIPS 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "30-llm-reproducibility",
+    "paper_title": "LLM Reproducibility",
+    "paper_url": null,
+    "repo_full_name": "nanomaoli/llm_reproducibility",
+    "repo_sha": "d7b87039068dd2a8af1145e0191fba9547b2bbb3",
+    "repo_url": "https://github.com/nanomaoli/llm_reproducibility",
+    "tags": "NLP/LLM"
+  },
+  {
+    "arxiv_id": "2503.01457",
+    "conference": "ACL 2025",
+    "notes": [
+      "git_ls_remote_failed"
+    ],
+    "paper_id": "41-structural-deep-encoding-for-table-question-answering",
+    "paper_title": "Structural Deep Encoding for Table Question Answering",
+    "paper_url": "https://arxiv.org/pdf/2503.01457v1",
+    "repo_full_name": "RaphaelMouravieff/TabStruc",
+    "repo_sha": null,
+    "repo_url": "https://github.com/RaphaelMouravieff/TabStruct",
+    "tags": "General/Other"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ICML 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "134-online-learning-in-risk-sensitive-constrained-mdp",
+    "paper_title": "Online Learning in Risk Sensitive constrained MDP",
+    "paper_url": null,
+    "repo_full_name": "mmoharami/Risk-Sensitive-CMDP",
+    "repo_sha": "08204b7cbeb01e74200938f905a4765875081833",
+    "repo_url": "https://github.com/mmoharami/Risk-Sensitive-CMDP",
+    "tags": "Training"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ICLR 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "82-knowledge-entropy-decay-hinders-new-knowledge-acquisition",
+    "paper_title": "Knowledge Entropy Decay Hinders New Knowledge Acquisition",
+    "paper_url": null,
+    "repo_full_name": "kaistAI/Knowledge-Entropy",
+    "repo_sha": "85315146a9431548c696ed4b6ebfd630f121aa87",
+    "repo_url": "https://github.com/kaistAI/Knowledge-Entropy",
+    "tags": "General/Other"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ICLR 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "104-multi-session-multi-task-neural-decoding-from-distinct-cell-",
+    "paper_title": "Multi-session, multi-task neural decoding from distinct cell-types",
+    "paper_url": null,
+    "repo_full_name": "neuro-galaxy/torch_brain",
+    "repo_sha": "5de0dbebf7be01c0e4d7673e8f49d7fa80a7e0ff",
+    "repo_url": "https://github.com/neuro-galaxy/torch_brain/tree/main/examples/poyo_plus",
+    "tags": "General/Other"
+  },
+  {
+    "arxiv_id": "2506.15564",
+    "conference": "NeurIPS 2025",
+    "notes": [],
+    "paper_id": "5-show-o2-improved-native-unified-multimodal-models",
+    "paper_title": "Show-o2: Improved Native Unified Multimodal Models",
+    "paper_url": "https://arxiv.org/pdf/2506.15564v3",
+    "repo_full_name": "showlab/Show-o",
+    "repo_sha": "45a5a2de01d1ebd10cd5864d29310a76476cdf23",
+    "repo_url": "https://github.com/showlab/Show-o",
+    "tags": "General/Other"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ICML 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "123-tarflow-normalizing-flows-are-capable-generative-models",
+    "paper_title": "TarFlow: Normalizing Flows are Capable Generative Models",
+    "paper_url": null,
+    "repo_full_name": "apple/ml-tarflow",
+    "repo_sha": "313120e9dfaec546b3f464d0fa87866eb0c309fa",
+    "repo_url": "https://github.com/apple/ml-tarflow",
+    "tags": "Generation/Diffusion"
+  },
+  {
+    "arxiv_id": "2502.09992",
+    "conference": "NeurIPS 2025",
+    "notes": [],
+    "paper_id": "3-large-language-diffusion-models",
+    "paper_title": "Large Language Diffusion Models",
+    "paper_url": "https://arxiv.org/pdf/2502.09992v3",
+    "repo_full_name": "ML-GSAI/LLaDA",
+    "repo_sha": "570f29032d6824ea14977c89a8eb402e6eb25f96",
+    "repo_url": "https://github.com/ML-GSAI/LLaDA",
+    "tags": "Generation/Diffusion"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ICLR 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "105-reducing-hallucinations-via-latent-space-steering",
+    "paper_title": "Reducing Hallucinations via Latent Space Steering",
+    "paper_url": null,
+    "repo_full_name": "shengliu66/VTI",
+    "repo_sha": "bb5dfee33a9e555f22af9faa7b3495c0ac3df69e",
+    "repo_url": "https://github.com/shengliu66/VTI",
+    "tags": "General/Other"
+  },
+  {
+    "arxiv_id": "2506.11097",
+    "conference": "NeurIPS 2025",
+    "notes": [],
+    "paper_id": "36-c-seo-bench-does-conversational-seo-work",
+    "paper_title": "C-SEO Bench: Does Conversational SEO Work?",
+    "paper_url": "https://arxiv.org/pdf/2506.11097v3",
+    "repo_full_name": "parameterlab/c-seo-bench",
+    "repo_sha": "352eba1133e2bb54c6d6d1a9f0e0aa3a15b99abd",
+    "repo_url": "https://github.com/parameterlab/c-seo-bench",
+    "tags": "General/Other"
+  },
+  {
+    "arxiv_id": "2407.07061",
+    "conference": "ICLR 2025",
+    "notes": [],
+    "paper_id": "90-internet-of-agents-weaving-a-web-of-heterogeneous-agents",
+    "paper_title": "Internet of Agents: Weaving a Web of Heterogeneous Agents",
+    "paper_url": "https://arxiv.org/pdf/2407.07061v2",
+    "repo_full_name": "OpenBMB/IoA",
+    "repo_sha": "9d78e88e47160eb42ee1ee8538c05e1c2c47877a",
+    "repo_url": "https://github.com/OpenBMB/IoA",
+    "tags": "General/Other"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ICML 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "128-earth-epidemiology-aware-neural-ode",
+    "paper_title": "EARTH: Epidemiology-Aware Neural ODE",
+    "paper_url": null,
+    "repo_full_name": "GuanchengWan/EARTH",
+    "repo_sha": "aeff23fcec2c138a9c859f6bf8897321d9babdbf",
+    "repo_url": "https://github.com/GuanchengWan/EARTH",
+    "tags": "Geospatial/3D/4D"
+  },
+  {
+    "arxiv_id": "2410.04577",
+    "conference": "ICLR 2025",
+    "notes": [
+      "git_ls_remote_failed"
+    ],
+    "paper_id": "91-robustness-reprogramming-for-representation-learning",
+    "paper_title": "Robustness Reprogramming for Representation Learning",
+    "paper_url": "https://arxiv.org/pdf/2410.04577v1",
+    "repo_full_name": "chris-hzc/Robustness-Reprogrammin",
+    "repo_sha": null,
+    "repo_url": "https://github.com/chris-hzc/Robustness-Reprogramming",
+    "tags": "General/Other"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "NeurIPS 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "9-prefixkv-adaptive-prefix-kv-cache-is-what-vision-instruction",
+    "paper_title": "PrefixKV: Adaptive Prefix KV Cache Is What Vision Instruction Models Need",
+    "paper_url": null,
+    "repo_full_name": "THU-MIG/PrefixKV",
+    "repo_sha": "597f1ab032704951550f93bcc8a23f1454b80aa4",
+    "repo_url": "https://github.com/THU-MIG/PrefixKV",
+    "tags": "Computer Vision"
+  },
+  {
+    "arxiv_id": "2501.16745",
+    "conference": "NeurIPS 2025",
+    "notes": [],
+    "paper_id": "19-toward-relative-positional-encoding-in-spiking-transformers",
+    "paper_title": "Toward Relative Positional Encoding in Spiking Transformers",
+    "paper_url": "https://arxiv.org/pdf/2501.16745v3",
+    "repo_full_name": "microsoft/SeqSNN",
+    "repo_sha": "15cbacb123362c97c0aa0f6f861c18f4f77e3e8f",
+    "repo_url": "https://github.com/microsoft/SeqSNN",
+    "tags": "General/Other"
+  },
+  {
+    "arxiv_id": "2502.14258",
+    "conference": "ACL 2025",
+    "notes": [],
+    "paper_id": "56-does-time-have-its-place-temporal-heads-in-language-models",
+    "paper_title": "Does Time Have Its Place? Temporal Heads in Language Models",
+    "paper_url": "https://arxiv.org/pdf/2502.14258v2",
+    "repo_full_name": "dmis-lab/TemporalHead",
+    "repo_sha": "96159c66581ebe07d606fecdadfe5a771c6faa85",
+    "repo_url": "https://github.com/dmis-lab/TemporalHead",
+    "tags": "NLP/LLM"
+  },
+  {
+    "arxiv_id": "2410.12261",
+    "conference": "ICLR 2025",
+    "notes": [],
+    "paper_id": "76-catch-channel-aware-multivariate-time-series-anomaly-detecti",
+    "paper_title": "CATCH: Channel-Aware Multivariate Time Series Anomaly Detection",
+    "paper_url": "https://arxiv.org/pdf/2410.12261v4",
+    "repo_full_name": "decisionintelligence/CATCH",
+    "repo_sha": "3647c69be5eb56649b072596cf89098e689e20c3",
+    "repo_url": "https://github.com/decisionintelligence/CATCH",
+    "tags": "Anomaly Detection, Time Series"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ACL 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "57-neural-incompatibility-the-gap-of-cross-scale-parametric-kno",
+    "paper_title": "Neural Incompatibility: The Gap of Cross-Scale Parametric Knowledge Transfer",
+    "paper_url": null,
+    "repo_full_name": "Trae1ounG/Neural_Incompatibility",
+    "repo_sha": "bba32ea1b6f0b78d3b0ccbcd9c8dd0f08a23e318",
+    "repo_url": "https://github.com/Trae1ounG/Neural_Incompatibility",
+    "tags": "General/Other"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ACL 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "47-what-makes-a-good-natural-language-prompt",
+    "paper_title": "What Makes a Good Natural Language Prompt?",
+    "paper_url": null,
+    "repo_full_name": "dxlong2000/NLPromptEval",
+    "repo_sha": "1b9998e0c0e82cbbafe91cd3027f0accea1a9761",
+    "repo_url": "https://github.com/dxlong2000/NLPromptEval",
+    "tags": "NLP/LLM"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ACL 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "48-modeling-uncertainty-in-composed-image-retrieval-via-probabi",
+    "paper_title": "Modeling Uncertainty in Composed Image Retrieval via Probabilistic Embeddings",
+    "paper_url": null,
+    "repo_full_name": "tanghme0w/ACL25-CoPE",
+    "repo_sha": "4af546df06836afd06eb01dd70bcb790b2e9511d",
+    "repo_url": "https://github.com/tanghme0w/ACL25-CoPE",
+    "tags": "Computer Vision, Inference"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ICLR 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "92-layerdag-diffusion-model-for-directed-acyclic-graph-generati",
+    "paper_title": "LayerDAG: Diffusion Model for Directed Acyclic Graph Generation",
+    "paper_url": null,
+    "repo_full_name": "Graph-COM/LayerDAG",
+    "repo_sha": "bc22fed6f112c3eef2e991551bb0677038df3467",
+    "repo_url": "https://github.com/Graph-COM/LayerDAG",
+    "tags": "Generation/Diffusion"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ICML 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "131-scaling-collapse-reveals-universal-dynamics",
+    "paper_title": "Scaling Collapse Reveals Universal Dynamics",
+    "paper_url": null,
+    "repo_full_name": "shikaiqiu/supercollapse",
+    "repo_sha": "003336f61d167a47cbe8a356faac85759daacdff",
+    "repo_url": "https://github.com/shikaiqiu/supercollapse",
+    "tags": "Physics"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ICML 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "118-healthgpt-medical-large-vision-language-model-via-h-lora",
+    "paper_title": "HealthGPT: Medical Large Vision-Language Model via H-LoRA",
+    "paper_url": null,
+    "repo_full_name": "DCDmllm/HealthGPT",
+    "repo_sha": "0af96cbeaa92d813691d8369930fd30f5b06c89f",
+    "repo_url": "https://github.com/DCDmllm/HealthGPT",
+    "tags": "Computer Vision, Medical/Healthcare, NLP/LLM"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ICML 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "114-harmonica-harmonizing-training-and-inference-for-better-feat",
+    "paper_title": "HarmoniCa: Harmonizing Training and Inference for Better Feature Caching",
+    "paper_url": null,
+    "repo_full_name": "ModelTC/HarmoniCa",
+    "repo_sha": "5d7f78d8019122b3d2c53620543ea79d24fa81f6",
+    "repo_url": "https://github.com/ModelTC/HarmoniCa",
+    "tags": "Inference, Training"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ICLR 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "111-generating-freeform-endoskeletal-robots",
+    "paper_title": "Generating Freeform Endoskeletal Robots",
+    "paper_url": null,
+    "repo_full_name": "iffiX/endoskeletal",
+    "repo_sha": "d5c2bead6aa39d16bdb952c4ff696cc67001692a",
+    "repo_url": "https://github.com/iffiX/endoskeletal",
+    "tags": "Generation/Diffusion"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "NeurIPS 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "2-gated-attention-for-large-language-models",
+    "paper_title": "Gated Attention for Large Language Models",
+    "paper_url": null,
+    "repo_full_name": "qiuzh20/gated_attention",
+    "repo_sha": "f4c2a5f6ffd6ec709e0c60072c95ed4f5ce5b5d2",
+    "repo_url": "https://github.com/qiuzh20/gated_attention",
+    "tags": "NLP/LLM"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "NeurIPS 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "26-4kagent-agentic-any-image-to-4k-super-resolution",
+    "paper_title": "4KAgent: Agentic Any Image to 4K Super-Resolution",
+    "paper_url": null,
+    "repo_full_name": "llmsresearch/paperbanana",
+    "repo_sha": "1d0ca44f90a8f2dfe6b22e55fd8d10d002e7e223",
+    "repo_url": "https://github.com/llmsresearch/paperbanana",
+    "tags": "Computer Vision"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "NeurIPS 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "75-ultrahr-100k-enhancing-uhr-image-synthesis",
+    "paper_title": "UltraHR-100K: Enhancing UHR Image Synthesis",
+    "paper_url": null,
+    "repo_full_name": "NJU-PCALab/UltraHR-100k",
+    "repo_sha": "f11d3325b887cb44f6a6f745f9251d91cf0b01da",
+    "repo_url": "https://github.com/NJU-PCALab/UltraHR-100k",
+    "tags": "Computer Vision, Generation/Diffusion"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ICLR 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "98-toponets-vision-and-language-models-with-brain-like-topograp",
+    "paper_title": "TopoNets: Vision and language models with brain-like topography",
+    "paper_url": null,
+    "repo_full_name": "murtylab/topoloss",
+    "repo_sha": "9148f32e28397c6b6f2a9aec1cb3658f73341d78",
+    "repo_url": "https://github.com/murtylab/topoloss",
+    "tags": "Computer Vision, NLP/LLM"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ACL 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "55-ladder-language-driven-slice-discovery-and-error-rectificati",
+    "paper_title": "LADDER: Language-Driven Slice Discovery and Error Rectification",
+    "paper_url": null,
+    "repo_full_name": "batmanlab/Ladder",
+    "repo_sha": "47ff4fcb209bf542593dc6aa0f20f538fa33c9bf",
+    "repo_url": "https://github.com/batmanlab/Ladder",
+    "tags": "General/Other"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ICLR 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "108-online-reinforcement-learning-in-non-stationary-environments",
+    "paper_title": "Online Reinforcement Learning in Non-Stationary Environments",
+    "paper_url": null,
+    "repo_full_name": "pouyahmdn/LCPO",
+    "repo_sha": "aeb93563cbd6ede13e145381ec3f90e0ac840c41",
+    "repo_url": "https://github.com/pouyahmdn/LCPO",
+    "tags": "General/Other"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ICML 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "136-orthogonal-subspace-decomposition-for-generalizable-ai-gener",
+    "paper_title": "Orthogonal Subspace Decomposition for Generalizable AI-Generated Image Detection",
+    "paper_url": null,
+    "repo_full_name": "YZY-stack/Effort-AIGI-Detection",
+    "repo_sha": "96f5dea2b534d400cfd7003f053c7e93c8e16461",
+    "repo_url": "https://github.com/YZY-stack/Effort-AIGI-Detection",
+    "tags": "Computer Vision, Generation/Diffusion"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ACL 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "43-leveraging-context-for-multimodal-fallacy-classification",
+    "paper_title": "Leveraging Context for Multimodal Fallacy Classification",
+    "paper_url": null,
+    "repo_full_name": "alessiopittiglio/mm-argfallacy",
+    "repo_sha": "8efe16a94edc75bdace2daf83261a804caa5c7b9",
+    "repo_url": "https://github.com/alessiopittiglio/mm-argfallacy",
+    "tags": "NLP/LLM"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "NeurIPS 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "20-timeemb-lightweight-static-dynamic-disentanglement",
+    "paper_title": "TimeEmb: Lightweight Static-Dynamic Disentanglement",
+    "paper_url": null,
+    "repo_full_name": "showmeon/TimeEmb",
+    "repo_sha": "9adf3fba801b34642e7191b45e08aff224b26e67",
+    "repo_url": "https://github.com/showmeon/TimeEmb",
+    "tags": "Physics"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ICML 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "117-automatically-identify-and-rectify-robust-deep-contrastive-m",
+    "paper_title": "Automatically Identify and Rectify: Robust Deep Contrastive Multi-view Clustering",
+    "paper_url": null,
+    "repo_full_name": "xihongyang1999/AIRMVC",
+    "repo_sha": "9c14ceda6f74ab7faaabacb1488ba5f204d06708",
+    "repo_url": "https://github.com/xihongyang1999/AIRMVC",
+    "tags": "General/Other"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ACL 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "65-elaboration-benchmark-on-human-llm-competitive-programming",
+    "paper_title": "ELABORATION: Benchmark on Human-LLM Competitive Programming",
+    "paper_url": null,
+    "repo_full_name": "SCUNLP/ELABORATION",
+    "repo_sha": "3000dfa229361d08db6c177ea0f513f6bee4acb6",
+    "repo_url": "https://github.com/SCUNLP/ELABORATION",
+    "tags": "NLP/LLM"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ACL 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "45-bookcoref-coreference-resolution-at-book-scale",
+    "paper_title": "BookCoref: Coreference Resolution at Book Scale",
+    "paper_url": null,
+    "repo_full_name": "sapienzanlp/bookcoref",
+    "repo_sha": "9283951b92978f97ae6cd60eeefe79bd3a7cb34c",
+    "repo_url": "https://github.com/sapienzanlp/bookcoref",
+    "tags": "General/Other"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ICLR 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)",
+      "git_ls_remote_failed"
+    ],
+    "paper_id": "89-physics-of-language-models-knowledge-capacity-scaling-laws",
+    "paper_title": "Physics of Language Models: Knowledge Capacity Scaling Laws",
+    "paper_url": null,
+    "repo_full_name": "zeyuanallen-zhu/physics-of-language-models",
+    "repo_sha": null,
+    "repo_url": "https://github.com/zeyuanallen-zhu/physics-of-language-models",
+    "tags": "NLP/LLM, Physics"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ICML 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)",
+      "git_ls_remote_failed"
+    ],
+    "paper_id": "120-refersplat-3d-gaussian-splatting-for-referring-expressions",
+    "paper_title": "ReferSplat: 3D Gaussian Splatting for Referring Expressions",
+    "paper_url": null,
+    "repo_full_name": "heshuting555/ReferSpla",
+    "repo_sha": null,
+    "repo_url": "https://github.com/heshuting555/ReferSplat",
+    "tags": "General/Other"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ACL 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "44-askqe-question-answering-as-automatic-evaluation-for-machine",
+    "paper_title": "AskQE: Question Answering as Automatic Evaluation for Machine Translation",
+    "paper_url": null,
+    "repo_full_name": "dayeonki/askqe",
+    "repo_sha": "7e4c22612018a005f257064d46433f65d776cc6b",
+    "repo_url": "https://github.com/dayeonki/askqe",
+    "tags": "Inference"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ICLR 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "112-analoggenie-automatic-discovery-of-analog-circuit-topologies",
+    "paper_title": "AnalogGenie: Automatic Discovery of Analog Circuit Topologies",
+    "paper_url": null,
+    "repo_full_name": "xz-group/AnalogGenie",
+    "repo_sha": "efc25358939c6bedd247f28d3df61066964f3a90",
+    "repo_url": "https://github.com/xz-group/AnalogGenie",
+    "tags": "General/Other"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ACL 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)",
+      "git_ls_remote_failed"
+    ],
+    "paper_id": "52-selfelicit-your-language-model-secretly-knows-where-is-the-r",
+    "paper_title": "SelfElicit: Your Language Model Secretly Knows Where is the Relevant Evidence!",
+    "paper_url": null,
+    "repo_full_name": "ZhiningLiu1998/SelfElic",
+    "repo_sha": null,
+    "repo_url": "https://github.com/ZhiningLiu1998/SelfElicit",
+    "tags": "NLP/LLM"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ICML 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "115-csl-mem-towards-memorization-estimation-fast-formal-and-free",
+    "paper_title": "CSL-Mem: Towards Memorization Estimation: Fast, Formal and Free",
+    "paper_url": null,
+    "repo_full_name": "DeepakTatachar/CSL-Mem",
+    "repo_sha": "e0b11f73569022fc00dd77a78ef58ec9f07d184b",
+    "repo_url": "https://github.com/DeepakTatachar/CSL-Mem",
+    "tags": "General/Other"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ICLR 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "145-mcnc-manifold-constrained-reparameterization-for-neural-comp",
+    "paper_title": "MCNC: Manifold-Constrained Reparameterization for Neural Compression",
+    "paper_url": null,
+    "repo_full_name": "mint-vu/MCNC",
+    "repo_sha": "bcf9ea3d3c30166d2ea17984134bc7ddd83ec055",
+    "repo_url": "https://github.com/mint-vu/MCNC",
+    "tags": "Training"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ICLR 2028",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "183-generalized-consistency-trajectory-models-for-image-manipula",
+    "paper_title": "Generalized Consistency Trajectory Models for Image Manipulation",
+    "paper_url": null,
+    "repo_full_name": "1202kbs/GCTM",
+    "repo_sha": "b716f36c754855e3b31489aa09738d9bd05d9bba",
+    "repo_url": "https://github.com/1202kbs/GCTM",
+    "tags": "Computer Vision"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ICLR 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "142-benchmarking-predictive-coding-networks-made-simple",
+    "paper_title": "Benchmarking Predictive Coding Networks -- Made Simple",
+    "paper_url": null,
+    "repo_full_name": "liukidar/pcx",
+    "repo_sha": "1a06453235d2474353a6724aeec1b64fc561f28a",
+    "repo_url": "https://github.com/liukidar/pcx",
+    "tags": "General/Other"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ICLR 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "83-language-representations-can-be-what-recommenders-need",
+    "paper_title": "Language Representations Can be What Recommenders Need",
+    "paper_url": null,
+    "repo_full_name": "LehengTHU/AlphaRec",
+    "repo_sha": "4b6c6cf378f292c31dd75b09a8075e8344561415",
+    "repo_url": "https://github.com/LehengTHU/AlphaRec",
+    "tags": "Recommender Systems"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ACL 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "46-evaluating-design-decisions-for-dual-encoder-based-entity-di",
+    "paper_title": "Evaluating Design Decisions for Dual Encoder-based Entity Disambiguation",
+    "paper_url": null,
+    "repo_full_name": "flairNLP/VerbalizED",
+    "repo_sha": "3819f82a955fdc8e32f32ae82d5653e9b420b940",
+    "repo_url": "https://github.com/flairNLP/VerbalizED",
+    "tags": "Inference"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "NeurIPS 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "8-scalable-best-of-n-selection-for-large-language-models-via-s",
+    "paper_title": "Scalable Best-of-N Selection for Large Language Models Via Self-Certainty",
+    "paper_url": null,
+    "repo_full_name": "backprop07/Self-Certainty",
+    "repo_sha": "b17d021eac56609741671b7a730e5aa8b3cd9546",
+    "repo_url": "https://github.com/backprop07/Self-Certainty",
+    "tags": "NLP/LLM"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ICML 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "126-stacey-promoting-stochastic-steepest-descent",
+    "paper_title": "Stacey: Promoting Stochastic Steepest Descent",
+    "paper_url": null,
+    "repo_full_name": "xinyuluo8561/Stacey",
+    "repo_sha": "dd5b295c5fa6893d1ca5a769c3d97fbe9060a71d",
+    "repo_url": "https://github.com/xinyuluo8561/Stacey",
+    "tags": "General/Other"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ICLR 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "138-top-erl-transformer-based-off-policy-episodic-reinforcement-",
+    "paper_title": "TOP-ERL: Transformer-based Off-Policy Episodic Reinforcement Learning",
+    "paper_url": null,
+    "repo_full_name": "BruceGeLi/TOP_ERL_ICLR25",
+    "repo_sha": "d3a049bc9bd50ff4ff2283486716a6fbff62e9e9",
+    "repo_url": "https://github.com/BruceGeLi/TOP_ERL_ICLR25",
+    "tags": "General/Other"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ICML 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "122-lora-one-subspace-alignment-for-low-rank-adaptation",
+    "paper_title": "LoRA-One: Subspace Alignment for Low-Rank Adaptation",
+    "paper_url": null,
+    "repo_full_name": "YuanheZ/LoRA-One",
+    "repo_sha": "b797a10dcb818e9553b57fa060baa7b00df4484d",
+    "repo_url": "https://github.com/YuanheZ/LoRA-One",
+    "tags": "General/Other"
+  }
+]
