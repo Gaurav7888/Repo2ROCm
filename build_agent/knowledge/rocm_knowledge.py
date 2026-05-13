@@ -750,7 +750,8 @@ def generate_rocm_prompt_section(no_scale_down=False):
     """
     image_list = ""
     for wtype, info in ROCM_IMAGE_CATALOG.items():
-        keywords_str = ", ".join(info["keywords"])
+        keywords = info.get("keywords") or [wtype, info.get("image", "")]
+        keywords_str = ", ".join(k for k in keywords if k)
         image_list += f"  - If the repo uses [{keywords_str}]: `change_base_image {info['image']}:{info['default_tag']}`\n"
 
     preinstalled_str = ""

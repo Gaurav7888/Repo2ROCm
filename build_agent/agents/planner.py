@@ -26,6 +26,10 @@ from knowledge.rocm_knowledge import (
     CUDA_TO_ROCM_MAPPING,
     BANNED_NVIDIA_PACKAGES,
 )
+from knowledge.rocm_dynamic import (
+    build_dynamic_package_guidance,
+    select_image_with_jaccard,
+)
 from knowledge.amd_rocm_repos import get_relevant_amd_repos
 from utils.json_utils import load_json_loose
 from utils.llm import get_llm_response
@@ -538,7 +542,10 @@ def _produce_filtered_requirements(
                 mapping = CUDA_TO_ROCM_MAPPING.get(pkg_name) or CUDA_TO_ROCM_MAPPING.get(
                     pkg_name.lower().replace("_", "-"))
                 if mapping:
-                    flagged_pkgs.append(f"{full_spec} -> ROCm: `{mapping['install_cmd']}`")
+                    flagged_pkgs.append(
+                        f"{full_spec} -> CUDA-sensitive; see context-aware ROCm package guidance "
+                        f"(static default: `{mapping['install_cmd']}`)"
+                    )
                 else:
                     flagged_pkgs.append(f"{full_spec} (needs CUDA->ROCm mapping)")
             else:
@@ -712,6 +719,61 @@ def _gather_image_evidence(import_counts: Dict[str, int],
     return "\n".join(bounded)
 
 
+def _enrich_image_selection_with_live_scoring(
+    selection: dict,
+    import_counts: Dict[str, int],
+    config_contents: Dict[str, str],
+) -> dict:
+    """Refresh the selected image/tag with live DockerHub + Jaccard evidence."""
+    if not selection:
+        selection = {}
+    preferred_workload = selection.get("workload", "")
+    try:
+        dynamic = select_image_with_jaccard(
+            import_counts=import_counts,
+            config_contents=config_contents,
+            preferred_workload=preferred_workload,
+            preferred_python=_detect_python_version(config_contents) or "",
+        )
+    except Exception as e:
+        reasoning = list(selection.get("reasoning") or [])
+        reasoning.append(f"Dynamic image scoring unavailable: {e}")
+        selection["reasoning"] = reasoning
+        return selection
+
+    workload = dynamic.get("selected_workload") or preferred_workload or "pytorch"
+    entry = ROCM_IMAGE_CATALOG.get(workload, ROCM_IMAGE_CATALOG["pytorch"])
+    selection.update({
+        "image": dynamic.get("selected_image_ref") or selection.get("image"),
+        "tag": dynamic.get("selected_tag") or selection.get("tag"),
+        "workload": workload,
+        "description": entry.get("description", selection.get("description", "")),
+        "dynamic_image_scores": dynamic.get("scores", []),
+        "dynamic_desired_tokens": dynamic.get("desired_tokens", []),
+        "dynamic_tag_info": dynamic.get("tag_info", {}),
+    })
+    reasoning = list(selection.get("reasoning") or [])
+    tag_info = dynamic.get("tag_info", {})
+    top_scores = dynamic.get("scores", [])[:3]
+    if tag_info:
+        reasoning.append(
+            "Live DockerHub refresh selected tag "
+            f"`{selection.get('tag')}` for `{entry.get('image')}` "
+            f"({tag_info.get('source')}: {tag_info.get('reason')})."
+        )
+    if top_scores:
+        score_bits = [
+            f"{row['workload']}={row['score']} (overlap: {', '.join(row.get('overlap', [])[:5]) or 'none'})"
+            for row in top_scores
+        ]
+        reasoning.append(
+            "Container Jaccard scoring over repo-required packages/features: "
+            + "; ".join(score_bits)
+        )
+    selection["reasoning"] = reasoning
+    return selection
+
+
 def _llm_select_rocm_image(
     import_counts: Dict[str, int],
     config_contents: Dict[str, str],
@@ -814,11 +876,14 @@ Respond with ONLY a JSON object (no markdown fences, no extra text):
         if response and response[0]:
             log_info(f"LLM image selection: {usage.get('total_tokens', 0)} tokens used "
                      f"(evidence chars={len(evidence)})")
-            return _parse_image_selection_response(response[0])
+            selection = _parse_image_selection_response(response[0])
+            return _enrich_image_selection_with_live_scoring(
+                selection, import_counts, config_contents,
+            )
     except Exception as e:
         log_warning(f"LLM image selection failed ({e}), falling back to heuristic")
 
-    return _fallback_image_selection(import_counts)
+    return _fallback_image_selection(import_counts, config_contents)
 
 
 def _parse_image_selection_response(response_text: str) -> dict:
@@ -846,7 +911,8 @@ def _parse_image_selection_response(response_text: str) -> dict:
     }
 
 
-def _fallback_image_selection(import_counts: Dict[str, int]) -> dict:
+def _fallback_image_selection(import_counts: Dict[str, int],
+                              config_contents: Optional[Dict[str, str]] = None) -> dict:
     """Simple heuristic fallback when LLM is not available or fails."""
     imports_lower = {k.lower(): v for k, v in import_counts.items()}
 
@@ -862,13 +928,16 @@ def _fallback_image_selection(import_counts: Dict[str, int]) -> dict:
     for pkgs, workload in priority_checks:
         if any(p in imports_lower for p in pkgs):
             entry = ROCM_IMAGE_CATALOG[workload]
-            return {
+            selection = {
                 "image": f"{entry['image']}:{entry['default_tag']}",
                 "tag": entry["default_tag"],
                 "workload": workload,
                 "description": entry["description"],
                 "reasoning": [f"Fallback heuristic: detected {workload}-related imports"],
             }
+            return _enrich_image_selection_with_live_scoring(
+                selection, import_counts, config_contents or {},
+            )
 
     jax_freq = imports_lower.get("jax", 0) + imports_lower.get("flax", 0)
     torch_freq = imports_lower.get("torch", 0)
@@ -881,13 +950,16 @@ def _fallback_image_selection(import_counts: Dict[str, int]) -> dict:
         workload = "pytorch"
 
     entry = ROCM_IMAGE_CATALOG[workload]
-    return {
+    selection = {
         "image": f"{entry['image']}:{entry['default_tag']}",
         "tag": entry["default_tag"],
         "workload": workload,
         "description": entry["description"],
         "reasoning": [f"Fallback heuristic: primary framework is {workload}"],
     }
+    return _enrich_image_selection_with_live_scoring(
+        selection, import_counts, config_contents or {},
+    )
 
 
 # ── other detectors ──────────────────────────────────────────────────────────
@@ -1359,9 +1431,27 @@ def _detect_python_version(config_contents: Dict[str, str]) -> Optional[str]:
     return None
 
 
-def _build_rocm_migration_section(cuda_deps: List[str]) -> str:
+def _build_rocm_migration_section(
+    cuda_deps: List[str],
+    import_counts: Optional[Dict[str, int]] = None,
+    config_contents: Optional[Dict[str, str]] = None,
+    no_scale_down: bool = False,
+    reproduce_results: bool = False,
+    run_mode: str = "env",
+) -> str:
     if not cuda_deps:
         return "No CUDA/NVIDIA-specific dependencies detected."
+    dynamic_lines = build_dynamic_package_guidance(
+        cuda_deps=cuda_deps,
+        import_counts=import_counts or {},
+        config_contents=config_contents or {},
+        no_scale_down=no_scale_down,
+        reproduce_results=reproduce_results,
+        run_mode=run_mode,
+    )
+    if dynamic_lines:
+        return "\n".join(dynamic_lines)
+
     lines = ["CUDA-to-ROCm Migration Steps:"]
     for dep in cuda_deps:
         dep_lower = dep.lower().replace("_", "-")
@@ -1781,7 +1871,7 @@ def generate_plan(repo_path: str, full_name: str, rocm_mode: bool = False,
                 llm=llm,
             )
         else:
-            image_selection = _fallback_image_selection(import_counts)
+            image_selection = _fallback_image_selection(import_counts, config_contents)
 
         base_image_name = image_selection["image"]
         preinstalled = ROCM_PREINSTALLED_PACKAGES.get(
@@ -1955,10 +2045,35 @@ def generate_plan(repo_path: str, full_name: str, rocm_mode: bool = False,
                 sections.append("  Selection reasoning:")
                 for reason in image_selection["reasoning"]:
                     sections.append(f"    - {reason}")
+            if image_selection.get("dynamic_image_scores"):
+                sections.append("  Dynamic container scoring (repo requirements vs image inventory):")
+                for row in image_selection["dynamic_image_scores"][:5]:
+                    overlap = ", ".join(row.get("overlap", [])[:8]) or "none"
+                    missing = ", ".join(row.get("missing", [])[:8]) or "none"
+                    live = ", ".join(row.get("live_tags", [])[:3]) or "no live tags"
+                    sections.append(
+                        f"    - {row.get('workload')}: score={row.get('score')} "
+                        f"jaccard={row.get('jaccard')} overlap=[{overlap}] "
+                        f"missing=[{missing}] live_tags=[{live}]"
+                    )
+            if image_selection.get("dynamic_tag_info"):
+                tag_info = image_selection["dynamic_tag_info"]
+                sections.append(
+                    "  Live tag refresh: "
+                    f"tag={tag_info.get('tag')} source={tag_info.get('source')} "
+                    f"checked={tag_info.get('live_tags_checked', 0)}"
+                )
         if preinstalled:
             sections.append(f"  Pre-installed (DO NOT reinstall): {', '.join(preinstalled)}")
         sections.append("")
-        sections.append(_build_rocm_migration_section(cuda_deps))
+        sections.append(_build_rocm_migration_section(
+            cuda_deps,
+            import_counts=import_counts,
+            config_contents=config_contents,
+            no_scale_down=no_scale_down,
+            reproduce_results=reproduce_results,
+            run_mode=run_mode,
+        ))
         sections.append("")
 
     # ── Target scripts ───────────────────────────────────────────────────────

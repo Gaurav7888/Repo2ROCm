@@ -251,6 +251,41 @@ def dockerhub_tags(image: str, limit: int = _DEFAULT_LIMIT,
     return body, 0
 
 
+def dockerhub_tags_structured(image: str, limit: int = 25) -> Tuple[List[Dict[str, Any]], Optional[str]]:
+    """
+    Fetch Docker Hub tags as structured records for planner-side scoring.
+
+    This is intentionally separate from the prompt-facing `dockerhub_tags`
+    observation above: the planner needs raw fields such as `name`,
+    `last_updated`, and `full_size` to refresh stale static tags and rank
+    candidate containers.
+    """
+    img = (image or "").strip()
+    if "/" not in img:
+        img = f"library/{img}"
+    if not img or "/" not in img or not all(_safe_name(p) for p in img.split("/")):
+        return [], f"invalid image {image!r}"
+
+    repo_url = f"https://registry.hub.docker.com/v2/repositories/{urllib.parse.quote(img, safe='/')}"
+    page_size = max(1, min(100, int(limit)))
+    url = f"{repo_url}/tags/?page_size={page_size}&ordering=last_updated"
+    data, err = _http_get_json(url)
+    if err or not data:
+        return [], err or "no data"
+
+    rows: List[Dict[str, Any]] = []
+    for tag in data.get("results") or []:
+        rows.append({
+            "name": tag.get("name") or "",
+            "last_updated": tag.get("last_updated") or "",
+            "full_size": tag.get("full_size") or 0,
+            "digest": tag.get("digest") or "",
+        })
+    if not rows:
+        return [], "no tags found"
+    return rows, None
+
+
 # ── Validation ────────────────────────────────────────────────────────────────
 
 import re as _re
