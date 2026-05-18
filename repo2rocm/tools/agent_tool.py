@@ -42,7 +42,10 @@ class Agent(BaseTool[AgentInput, AgentOutput]):
         return False
 
     def is_read_only(self, parsed: AgentInput) -> bool:
-        return False
+        # Spawning a sub-agent is pure delegation — not a mutation.
+        # The sub-agent's own permission_mode (inherited from parent — see
+        # agents/lifecycle.py) decides what IT can do.
+        return True
 
     async def call(self, parsed: AgentInput, ctx: ToolUseContext) -> ToolResult[AgentOutput]:
         # Lazy import to avoid a cycle.
@@ -123,7 +126,8 @@ class SendMessage(BaseTool[SendMessageInput, SendMessageOutput]):
         return False
 
     def is_read_only(self, parsed: SendMessageInput) -> bool:
-        return False
+        # Inter-agent messaging is orchestration, not mutation.
+        return True
 
     async def call(
         self, parsed: SendMessageInput, ctx: ToolUseContext
@@ -173,7 +177,8 @@ class TaskStop(BaseTool[TaskStopInput, TaskStopOutput]):
         return False
 
     def is_read_only(self, parsed: TaskStopInput) -> bool:
-        return False
+        # Killing a task is control-plane, not data mutation.
+        return True
 
     async def call(
         self, parsed: TaskStopInput, ctx: ToolUseContext

@@ -41,7 +41,8 @@ class ChangeBaseImage(BaseTool[ChangeBaseImageInput, ChangeBaseImageOutput]):
                 is_error=True,
             )
         await ctx.sandbox.stop()
-        ctx.sandbox.cfg.base_image = parsed.base_image
+        ctx.sandbox.current_image = parsed.base_image
+        ctx.sandbox.cfg.base_image = parsed.base_image  # operator chose a new base; this IS the new portable base
         await ctx.sandbox.start()
         return ToolResult(
             data=ChangeBaseImageOutput(new_image=parsed.base_image),
@@ -83,7 +84,8 @@ class ChangePythonVersion(BaseTool[ChangePythonInput, ChangePythonOutput]):
             )
         new_image = f"python:{parsed.python_version}"
         await ctx.sandbox.stop()
-        ctx.sandbox.cfg.base_image = new_image
+        ctx.sandbox.current_image = new_image
+        ctx.sandbox.cfg.base_image = new_image  # operator-chosen base
         await ctx.sandbox.start()
         return ToolResult(
             data=ChangePythonOutput(python_version=parsed.python_version),

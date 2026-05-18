@@ -44,7 +44,17 @@ class Bootstrap:
         if s.llm_provider == "mock":
             return MockClient(model=m)
         if s.llm_provider == "amd_gateway":
-            return AMDGatewayClient(model=m, api_key=s.llm_api_key())
+            # Pick the right gateway endpoint based on the model name:
+            #   Claude models live at /claude3 (model-in-path, Anthropic shape)
+            #   GPT-oss / Llama / Qwen / DeepSeek live at /OnPrem (model-in-body, OpenAI shape)
+            base_url = s.amd_gateway_base_url
+            if not base_url:
+                base_url = (
+                    "https://llm-api.amd.com/claude3"
+                    if "claude" in m.lower()
+                    else "https://llm-api.amd.com/OnPrem"
+                )
+            return AMDGatewayClient(model=m, api_key=s.llm_api_key(), base_url=base_url)
         return AnthropicClient(model=m, api_key=s.llm_api_key())
 
 

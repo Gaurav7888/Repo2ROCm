@@ -56,6 +56,44 @@ from repo2rocm.tools.base import BaseTool, ReadFileState, ToolUseContext
 log = get_logger(__name__)
 
 
+# ── Event hooks for live console rendering ──────────────────────────────────
+
+
+@dataclass
+class _AgentStartEvent:
+    """Synthesized event emitted to `on_event` just before the query loop runs.
+    Lets the console renderer print a header for each (sub-)agent."""
+    agent_id: str
+    agent_type: str
+    permission_mode: str
+    kind: str = "agent_start"
+
+
+def _with_agent_id(ev: Any, agent_id: str, agent_type: str) -> Any:
+    """Attach agent identity to a LoopEvent so the console printer can label it."""
+    try:
+        setattr(ev, "_agent_id", agent_id)
+        setattr(ev, "_agent_type", agent_type)
+    except Exception:
+        pass
+    return ev
+
+
+# Permission-mode strictness, from most → least restrictive.
+# A sub-agent inherits the STRICTER of (parent_mode, agent_def.permission_mode).
+# This is the invariant from Ch. 8 of the Claude Code book — a child can never
+# escape a stricter mode set by its parent.
+#   PLAN  >  DEFAULT/BUBBLE  >  ACCEPT_EDITS  >  AUTO  >  BYPASS
+_STRICTNESS: dict[PermissionMode, int] = {
+    PermissionMode.PLAN: 5,
+    PermissionMode.DEFAULT: 4,
+    PermissionMode.BUBBLE: 4,
+    PermissionMode.ACCEPT_EDITS: 3,
+    PermissionMode.AUTO: 2,
+    PermissionMode.BYPASS: 1,
+}
+
+
 @dataclass
 class RunAgentResult:
     task: AgentTaskState
@@ -77,6 +115,9 @@ class RunAgentParams:
     skill_catalog: SkillCatalog | None = None
     memory_store: MemoryStore | None = None
     is_async: bool = False
+    # Optional callback invoked for every LoopEvent (text/tool_use/tool_result/usage/error)
+    # the agent's query loop yields. Use this to wire up a live console renderer.
+    on_event: Any | None = None  # Callable[[LoopEvent], None] | None
     parent_messages: list[Message] | None = None  # fork shares parent history
 
 
@@ -119,18 +160,15 @@ async def run_agent(params: RunAgentParams) -> RunAgentResult:
             except Exception:
                 recall_text = ""
 
-        # Step 5: permission isolation
+        # Step 5: permission isolation — parent's mode wins if more restrictive.
         if params.parent_ctx is not None:
             parent_mode = params.parent_ctx.permission_mode
-            # parent's strong modes win
-            if parent_mode in (
-                PermissionMode.BYPASS,
-                PermissionMode.ACCEPT_EDITS,
-                PermissionMode.AUTO,
-            ):
-                effective_mode = parent_mode
-            else:
-                effective_mode = params.agent_def.permission_mode
+            child_mode = params.agent_def.permission_mode
+            effective_mode = (
+                parent_mode
+                if _STRICTNESS.get(parent_mode, 0) >= _STRICTNESS.get(child_mode, 0)
+                else child_mode
+            )
         else:
             effective_mode = params.agent_def.permission_mode
 
@@ -234,9 +272,26 @@ async def run_agent(params: RunAgentParams) -> RunAgentResult:
             max_turns=params.agent_def.max_turns,
             agent_type=params.agent_def.name,
         )
-        try:
-            async for _ev in runner:
+        # Notify event sink that this agent is starting
+        if params.on_event is not None:
+            try:
+                params.on_event(_AgentStartEvent(
+                    agent_id=agent_id,
+                    agent_type=params.agent_def.name,
+                    permission_mode=effective_mode.value,
+                ))
+            except Exception:
                 pass
+
+        try:
+            async for ev in runner:
+                if params.on_event is not None:
+                    try:
+                        # Augment LoopEvent with the agent context so the printer
+                        # can label which (sub-)agent each event came from.
+                        params.on_event(_with_agent_id(ev, agent_id, params.agent_def.name))
+                    except Exception:
+                        pass  # never let a printer error kill the agent
         except asyncio.CancelledError:
             task.mark_terminal(TaskStatus.KILLED)
             raise

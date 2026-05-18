@@ -1,0 +1,113 @@
+# ── Repo2ROCm runtime artifacts ──────────────────────────────────────────────
+# All migration output (cloned repos, sessions, transcripts, generated
+# Dockerfiles, captured patches, inner_commands.json, etc).
+work/
+output/
+sessions/
+
+# Persistent KB + trajectory store (defaults to ~/.repo2rocm but if a user
+# overrides --root-path to a repo-local dir, ignore those too).
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+kb.db
+trajectories.db
+
+# Per-run JSONL transcripts (also covered by output/ above, but explicit).
+*.jsonl
+
+# Example run output the user may produce alongside the package.
+examples/out/
+examples/output/
+
+# Tool-result overflow files (persisted by BaseTool when results exceed cap).
+tool-results/
+
+# ── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.envrc
+
+# pip / poetry / uv
+pip-log.txt
+pip-delete-this-directory.txt
+poetry.lock
+uv.lock
+
+# ── Tooling caches ───────────────────────────────────────────────────────────
+.mypy_cache/
+.dmypy.json
+.pytest_cache/
+.ruff_cache/
+.pyre/
+.pytype/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
+.cache/
+nosetests.xml
+
+# ── Editor / IDE ─────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ── Secrets / local config ───────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+*.secret
+secrets.json
+*.pem
+*.key
+
+# ── Docker leftovers ─────────────────────────────────────────────────────────
+# Patches written next to a generated Dockerfile (covered by output/ but kept
+# explicit because some users copy a Dockerfile into the repo root).
+agent_edits.diff
+patches/
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Observability ────────────────────────────────────────────────────────────
+# Prometheus / Jaeger local data dirs if anyone runs them from inside the repo.
+prom_data/
+jaeger_data/
+otel_data/

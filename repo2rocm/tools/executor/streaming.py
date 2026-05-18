@@ -214,7 +214,18 @@ def _should_cascade(tool_name: str) -> bool:
 
 
 class _UnknownTool:
-    name = "<unknown>"
+    """Stand-in for a tool the model named that we don't have registered.
+
+    Carries the requested name so the failure message in the conversation says
+    *which* tool the model tried (otherwise the model never learns it should
+    use a different tool name).
+    """
+
+    def __init__(self, name: str = "<unknown>"):
+        self.name = name
 
     def is_concurrency_safe(self, _: object) -> bool:
+        return False
+
+    def is_read_only(self, _: object) -> bool:
         return False

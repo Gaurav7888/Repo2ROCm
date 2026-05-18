@@ -199,6 +199,27 @@ class QueryRun:
                                     continue
                             msg = stream_error.message if stream_error else "no response"
                             err_class = stream_error.error_class if stream_error else "unknown"
+                            if self.tool_use_context.transcript is not None:
+                                try:
+                                    self.tool_use_context.transcript.append(
+                                        {
+                                            "kind": "stream_error",
+                                            "turn": state.turn_count,
+                                            "error_class": err_class,
+                                            "message": msg[:2000],
+                                            "recoverable": (
+                                                stream_error.recoverable if stream_error else False
+                                            ),
+                                        }
+                                    )
+                                except Exception:
+                                    pass
+                            log.error(
+                                "model error",
+                                turn=state.turn_count,
+                                error_class=err_class,
+                                msg=msg[:500],
+                            )
                             if "prompt is too long" in msg.lower() or err_class.startswith(
                                 "http_413"
                             ):
@@ -213,6 +234,24 @@ class QueryRun:
                                     error_class=err_class,
                                 )
                             break
+
+                        # 4b. Record the assistant message every turn (for debugging)
+                        if self.tool_use_context.transcript is not None:
+                            try:
+                                self.tool_use_context.transcript.append(
+                                    {
+                                        "kind": "assistant_turn",
+                                        "turn": state.turn_count,
+                                        "text": assistant_msg.text()[:4000],
+                                        "tool_uses": [
+                                            {"id": t.id, "name": t.name, "input": t.input}
+                                            for t in assistant_msg.tool_uses()
+                                        ],
+                                        "stop_reason": assistant_msg.stop_reason,
+                                    }
+                                )
+                            except Exception:
+                                pass
 
                         # 5. Decision: tool_use? continue. Otherwise done.
                         tool_uses = assistant_msg.tool_uses()
@@ -272,14 +311,18 @@ class QueryRun:
             ).inc()
             if self.tool_use_context.transcript is not None:
                 try:
-                    self.tool_use_context.transcript.append(
-                        {
-                            "kind": "terminal",
-                            "reason": self.terminal.reason,
-                            "turns": self.terminal.turns,
-                            "usage": self.terminal.usage.model_dump(),
-                        }
-                    )
+                    rec = {
+                        "kind": "terminal",
+                        "reason": self.terminal.reason,
+                        "turns": self.terminal.turns,
+                        "usage": self.terminal.usage.model_dump(),
+                    }
+                    # surface message+error_class for failure terminals
+                    for attr in ("message", "error_class", "final_text", "hook_name"):
+                        v = getattr(self.terminal, attr, None)
+                        if v:
+                            rec[attr] = v[:1000] if isinstance(v, str) else v
+                    self.tool_use_context.transcript.append(rec)
                 except Exception:
                     pass
 

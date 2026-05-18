@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import time
 from collections.abc import AsyncGenerator, AsyncIterator
 from dataclasses import dataclass, field
@@ -251,8 +252,10 @@ class AnthropicClient:
                         d = ev["delta"]
                         dt = d.get("type")
                         if dt == "text_delta":
-                            partial_text[idx] = partial_text.get(idx, "") + d["text"]
-                            yield ChunkText(text=d["text"], block_index=idx)
+                            clean = _strip_chat_template_tokens(d["text"])
+                            partial_text[idx] = partial_text.get(idx, "") + clean
+                            if clean:
+                                yield ChunkText(text=clean, block_index=idx)
                         elif dt == "input_json_delta":
                             partial_tool_json[idx] += d.get("partial_json", "")
                         elif dt == "thinking_delta":
@@ -268,7 +271,7 @@ class AnthropicClient:
                             tool_meta = partial_tool_meta.get(idx, {})
                             tu = ToolUseBlock(
                                 id=tool_meta.get("id", f"toolu_{idx}"),
-                                name=tool_meta.get("name", "unknown"),
+                                name=_sanitize_tool_name(tool_meta.get("name", "unknown")),
                                 input=tool_input,
                             )
                             assembled_blocks.append(tu)
@@ -344,29 +347,57 @@ class AnthropicClient:
 
 @dataclass
 class AMDGatewayClient:
-    """AMD LLM API Gateway — OpenAI-style chat-completions wrapper around Claude.
+    """AMD LLM API Gateway (On-Prem) — pure OpenAI chat-completions wrapper.
 
-    Differences from Anthropic Direct:
-      * URL: POST {base_url}/{model}/chat/completions   (model in PATH, not body)
-      * Auth: `Ocp-Apim-Subscription-Key: <key>` header (not `x-api-key`)
-      * Body: OpenAI shape ({messages: [{role, content}], temperature, tools, ...})
-      * Response: JSON (no SSE); gateway may return EITHER Anthropic `content[].text`
-        format OR OpenAI `choices[].message.content` format. We accept both.
+    Reference invocation (the AMD-supplied example):
+
+        openai.OpenAI(
+            base_url="https://llm-api.amd.com/OnPrem",
+            api_key="dummy",
+            default_headers={
+                "Ocp-Apim-Subscription-Key": "<key>",
+                "user": os.getlogin(),
+            },
+        ).chat.completions.create(model="GPT-oss-20B", ...)
+
+    So:
+      * URL: POST {base_url}/chat/completions   (model goes in BODY, OpenAI-style)
+      * Headers: `Ocp-Apim-Subscription-Key` + `user` (required by the gateway)
+      * Body: OpenAI {model, messages: [{role, content}], temperature, tools, ...}
+      * Response: JSON. Gateway may return EITHER OpenAI (`choices[0].message.*`)
+        OR Anthropic-shaped (`content[]`) — we accept both.
       * Tool calling: OpenAI `tools` / `tool_calls` format.
 
-    The agent loop is identical — we just emit the same StreamChunk sequence
-    (one ChunkText / ChunkToolUse per emitted item + ChunkUsage + ChunkDone).
+    The agent loop is unchanged; we just emit the same StreamChunk sequence
+    (ChunkText / ChunkToolUse / ChunkUsage / ChunkDone).
     """
 
     model: str
     api_key: str = ""
-    base_url: str = "https://llm-api.amd.com/claude3"
+    base_url: str = "https://llm-api.amd.com/OnPrem"
+    user: str = ""  # the AMD gateway requires a `user` header
     timeout: float = 600.0
     name: str = "amd_gateway"
+    # `protocol` is auto-derived from base_url in __post_init__ unless caller sets it.
+    #   "openai"    → /OnPrem style: model in BODY, OpenAI-shape tools/messages
+    #   "anthropic" → /claude3 style: model in PATH, Anthropic-shape tools/system
+    protocol: str = ""
 
     def __post_init__(self) -> None:
         if not self.api_key:
             self.api_key = os.environ.get("AMD_LLM_API_KEY", "")
+        if not self.user:
+            self.user = (
+                os.environ.get("REPO2ROCM_AMD_GATEWAY_USER")
+                or os.environ.get("USER")
+                or os.environ.get("USERNAME")
+                or "repo2rocm"
+            )
+        # auto-detect protocol from URL unless caller forced one
+        if not self.protocol:
+            self.protocol = (
+                "anthropic" if "/claude3" in self.base_url else "openai"
+            )
         self._client: httpx.AsyncClient | None = None
 
     async def _get_client(self) -> httpx.AsyncClient:
@@ -392,31 +423,53 @@ class AMDGatewayClient:
         # The gateway caps output around 16K tokens regardless of model.
         capped_max_tokens = min(max_tokens, 16_000)
 
-        # Build OpenAI-shaped body. System prompt becomes a leading system message.
-        openai_messages: list[dict[str, Any]] = []
-        sys_text = "\n\n".join(b.text for b in system.blocks).strip()
-        if sys_text:
-            openai_messages.append({"role": "system", "content": sys_text})
-        openai_messages.extend(_messages_to_openai(messages))
-
-        body: dict[str, Any] = {
-            "messages": openai_messages,
-            "temperature": temperature,
-            "stream": False,
-            "max_tokens": capped_max_tokens,
-            "max_completion_tokens": capped_max_tokens,
-        }
-        if tools:
-            body["tools"] = [_tool_spec_to_openai(t) for t in tools]
-            body["tool_choice"] = "auto"
-
         headers = {
             "Ocp-Apim-Subscription-Key": self.api_key,
+            "user": self.user,
             "Content-Type": "application/json",
+            "Accept": "application/json",
         }
-        url = f"{self.base_url.rstrip('/')}/{self.model}/chat/completions"
 
-        with span("llm.stream", model=self.model, provider="amd_gateway"):
+        if self.protocol == "anthropic":
+            # /claude3/<model>/chat/completions — model in PATH, Anthropic body shape
+            sys_text = "\n\n".join(b.text for b in system.blocks).strip()
+            body: dict[str, Any] = {
+                "messages": _messages_to_api(messages),  # Anthropic style
+                "max_tokens": capped_max_tokens,
+                "temperature": temperature,
+                "stream": False,
+            }
+            if sys_text:
+                body["system"] = sys_text
+            if tools:
+                body["tools"] = [_tool_spec_to_api(t) for t in tools]
+            url = f"{self.base_url.rstrip('/')}/{self.model}/chat/completions"
+        else:
+            # /OnPrem/chat/completions — model in BODY, OpenAI shape
+            openai_messages: list[dict[str, Any]] = []
+            sys_text = "\n\n".join(b.text for b in system.blocks).strip()
+            if sys_text:
+                openai_messages.append({"role": "system", "content": sys_text})
+            openai_messages.extend(_messages_to_openai(messages))
+
+            body = {
+                "model": self.model,
+                "messages": openai_messages,
+                "temperature": temperature,
+                "stream": False,
+                "max_completion_tokens": capped_max_tokens,
+            }
+            if tools:
+                body["tools"] = [_tool_spec_to_openai(t) for t in tools]
+                body["tool_choice"] = "auto"
+            url = f"{self.base_url.rstrip('/')}/chat/completions"
+
+        with span(
+            "llm.stream",
+            model=self.model,
+            provider="amd_gateway",
+            protocol=self.protocol,
+        ):
             with METRICS.time_llm(self.model):
                 async for chunk in self._post_and_parse(url, headers, body, stop_event):
                     yield chunk
@@ -463,18 +516,22 @@ class AMDGatewayClient:
         stop_reason: str | None = None
         usage = TokenUsage()
 
+        # NOTE: small models (notably gpt-oss-20b) leak Harmony chat-template tokens
+        # into `function.name` — e.g. "Agent<|channel|>commentary" instead of "Agent".
+        # Sanitize at parse time so the tool registry lookup succeeds.
+
         # Anthropic-style: {"content": [{"type":"text","text":...}, {"type":"tool_use",...}]}
         if isinstance(data.get("content"), list):
             for block in data["content"]:
                 btype = block.get("type")
                 if btype == "text":
-                    t = block.get("text", "")
+                    t = _strip_chat_template_tokens(block.get("text", ""))
                     text_parts.append(t)
                 elif btype == "tool_use":
                     tool_uses.append(
                         ToolUseBlock(
                             id=block.get("id", f"toolu_{len(tool_uses)}"),
-                            name=block.get("name", "unknown"),
+                            name=_sanitize_tool_name(block.get("name", "unknown")),
                             input=block.get("input", {}),
                         )
                     )
@@ -489,7 +546,7 @@ class AMDGatewayClient:
             msg = data["choices"][0].get("message") or {}
             content = msg.get("content")
             if isinstance(content, str) and content:
-                text_parts.append(content)
+                text_parts.append(_strip_chat_template_tokens(content))
             for tc in msg.get("tool_calls") or []:
                 fn = tc.get("function") or {}
                 raw_args = fn.get("arguments", "{}")
@@ -503,7 +560,7 @@ class AMDGatewayClient:
                 tool_uses.append(
                     ToolUseBlock(
                         id=tc.get("id", f"toolu_{len(tool_uses)}"),
-                        name=fn.get("name", "unknown"),
+                        name=_sanitize_tool_name(fn.get("name", "unknown")),
                         input=parsed_args,
                     )
                 )
@@ -648,6 +705,41 @@ def _block_to_api(block: Any) -> dict[str, Any]:
     return d
 
 
+_HARMONY_TOKEN_RE = re.compile(r"<\|[^|>]*\|>")
+_HARMONY_NAME_TAIL_RE = re.compile(r"<\|[^|]*\|>.*$")
+
+
+def _sanitize_tool_name(raw: str) -> str:
+    """Strip model-template artifacts (e.g. Harmony `<|channel|>commentary`) from tool names.
+
+    Small open-source models (gpt-oss-20b in particular) leak chat-template channel
+    markers into the OpenAI `function.name` field, producing names like
+    `Agent<|channel|>commentary`. We strip everything from the first `<|...|>` onward
+    so the registry lookup succeeds.
+    """
+    if not raw:
+        return "unknown"
+    name = _HARMONY_NAME_TAIL_RE.sub("", raw).strip()
+    # also strip any whitespace or non-identifier trailing junk
+    # The OpenAI tools spec requires name ~ /^[A-Za-z0-9_-]{1,64}$/
+    name = re.sub(r"[^A-Za-z0-9_\-]+", "", name)
+    return name or "unknown"
+
+
+def _strip_chat_template_tokens(text: str | None) -> str:
+    """Strip embedded Harmony chat-template tokens from text body.
+
+    GPT-OSS-20B (and similar Harmony-format models) sometimes emit literal
+    `<|end|>`, `<|start|>assistant`, `<|channel|>commentary`, `<|message|>`
+    inside their content. If we echo that text back in the next turn's messages,
+    the gateway tokenizer rejects it with HTTP 400. Strip the markers so the
+    conversation history stays well-formed.
+    """
+    if not text:
+        return text or ""
+    return _HARMONY_TOKEN_RE.sub("", text)
+
+
 def _tool_spec_to_api(spec: ToolSpec) -> dict[str, Any]:
     out: dict[str, Any] = {
         "name": spec.name,
@@ -690,7 +782,7 @@ def _messages_to_openai(messages: list[Message]) -> list[dict[str, Any]]:
         for b in m.content:
             btype = getattr(b, "type", None)
             if btype == "text":
-                text_parts.append(b.text)
+                text_parts.append(_strip_chat_template_tokens(b.text))
             elif btype == "tool_use":
                 tool_calls.append(
                     {

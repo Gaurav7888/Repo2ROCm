@@ -23,6 +23,8 @@ from repo2rocm.core.api import (
     StreamChunk,
     ToolSpec,
     _messages_to_openai,
+    _sanitize_tool_name,
+    _strip_chat_template_tokens,
     _tool_spec_to_openai,
 )
 from repo2rocm.core.messages import (
@@ -222,7 +224,7 @@ def _amd_handler(payload_capture: dict, response_body: dict):
 async def test_amd_gateway_request_shape_and_openai_response():
     """End-to-end: AMDGatewayClient builds an OpenAI-shape POST, parses OpenAI response."""
     captured: dict = {}
-    client = AMDGatewayClient(model="claude-sonnet-4", api_key="fake-amd-key")
+    client = AMDGatewayClient(model="GPT-oss-20B", api_key="fake-amd-key", user="testuser")
     client._client = httpx.AsyncClient(
         transport=httpx.MockTransport(_amd_handler(captured, _OPENAI_RESPONSE_WITH_TOOL_CALL))
     )
@@ -248,12 +250,14 @@ async def test_amd_gateway_request_shape_and_openai_response():
     finally:
         await client.aclose()
 
-    # The URL must include the model in the path, not in the body.
-    assert captured["url"].endswith("/claude3/claude-sonnet-4/chat/completions"), captured["url"]
-    # AMD-specific auth header
+    # /OnPrem/chat/completions — model goes in BODY, not the path
+    assert captured["url"].endswith("/OnPrem/chat/completions"), captured["url"]
+    # AMD-specific headers — both subscription key AND user are required
     assert captured["headers"].get("ocp-apim-subscription-key") == "fake-amd-key"
+    assert captured["headers"].get("user") == "testuser"
     # OpenAI body shape
     body = captured["body"]
+    assert body["model"] == "GPT-oss-20B"  # model in body, NOT in URL
     assert body["stream"] is False
     assert "messages" in body and isinstance(body["messages"], list)
     # system became a leading {"role":"system",...}
@@ -278,10 +282,68 @@ async def test_amd_gateway_request_shape_and_openai_response():
 
 
 @pytest.mark.asyncio
+async def test_amd_gateway_claude3_endpoint_uses_anthropic_protocol():
+    """Regression: when base_url contains /claude3, the client must:
+      - put the model in the URL path (not the body)
+      - send Anthropic-shape body (system as top-level, no `tool_choice`)
+      - parse the Anthropic-shape response correctly.
+    """
+    captured: dict = {}
+    client = AMDGatewayClient(
+        model="claude-sonnet-4",
+        api_key="fake",
+        user="u",
+        base_url="https://llm-api.amd.com/claude3",
+    )
+    assert client.protocol == "anthropic"
+    client._client = httpx.AsyncClient(
+        transport=httpx.MockTransport(_amd_handler(captured, _ANTHROPIC_SHAPED_RESPONSE))
+    )
+    try:
+        chunks = await _collect(
+            client.stream(
+                messages=[UserMessage(content="hi")],
+                system=SystemPrompt.from_text("you are a test agent"),
+                tools=[
+                    ToolSpec(
+                        name="Read",
+                        description="read a file",
+                        input_schema={
+                            "type": "object",
+                            "properties": {"file_path": {"type": "string"}},
+                            "required": ["file_path"],
+                        },
+                    )
+                ],
+                max_tokens=2048,
+            )
+        )
+    finally:
+        await client.aclose()
+
+    # URL must include the model in the path
+    assert captured["url"].endswith("/claude3/claude-sonnet-4/chat/completions"), captured["url"]
+    body = captured["body"]
+    # model should NOT be in the body when using anthropic protocol
+    assert "model" not in body
+    # system is a top-level field, not a message
+    assert body.get("system") == "you are a test agent"
+    # tools are anthropic-shape: name + description + input_schema (no `type: function`)
+    assert body["tools"][0]["name"] == "Read"
+    assert body["tools"][0]["input_schema"]["type"] == "object"
+    assert "function" not in body["tools"][0]
+    # no tool_choice in anthropic mode
+    assert "tool_choice" not in body
+    # response parses cleanly
+    text = "".join(c.text for c in chunks if isinstance(c, ChunkText))
+    assert text == "hello from anthropic shape"
+
+
+@pytest.mark.asyncio
 async def test_amd_gateway_accepts_anthropic_shape_response():
     """Some gateway models return Anthropic-style {content:[{type:...}]}."""
     captured: dict = {}
-    client = AMDGatewayClient(model="claude-sonnet-4", api_key="fake")
+    client = AMDGatewayClient(model="claude-sonnet-4", api_key="fake", user="u")
     client._client = httpx.AsyncClient(
         transport=httpx.MockTransport(_amd_handler(captured, _ANTHROPIC_SHAPED_RESPONSE))
     )
@@ -311,7 +373,7 @@ async def test_amd_gateway_404_yields_chunkerror():
     def h(request: httpx.Request) -> httpx.Response:
         return httpx.Response(404, text='{"error":"Resource Not Found"}')
 
-    client = AMDGatewayClient(model="bad-model", api_key="fake")
+    client = AMDGatewayClient(model="bad-model", api_key="fake", user="u")
     client._client = httpx.AsyncClient(transport=httpx.MockTransport(h))
     try:
         chunks = await _collect(
@@ -361,6 +423,141 @@ def test_messages_to_openai_emits_tool_message_for_results():
     assert out[0]["role"] == "tool"
     assert out[0]["tool_call_id"] == "tu1"
     assert out[0]["content"] == "file contents here"
+
+
+def test_strip_chat_template_tokens_removes_harmony_markers():
+    """Harmony-format models (gpt-oss-20b) leak `<|...|>` tokens into TEXT bodies.
+    Echoing those back to the gateway → HTTP 400. Strip on the way in.
+
+    We strip ONLY the `<|...|>` token markers; any prose between them is preserved
+    (we don't know which prose was the model's actual thought vs template scaffold).
+    The key invariant: the result contains no `<|` or `|>` substrings.
+    """
+    out = _strip_chat_template_tokens("hello<|end|><|start|>assistant<|channel|>commentary")
+    assert "<|" not in out
+    assert "|>" not in out
+    assert out.startswith("hello")
+
+    assert _strip_chat_template_tokens("clean text") == "clean text"
+    assert _strip_chat_template_tokens("") == ""
+    assert _strip_chat_template_tokens(None) == ""
+    assert _strip_chat_template_tokens("<|message|>only") == "only"
+
+    # The original failure mode from the live run — the entire prose must survive.
+    poisoned = "need to provide description field. Let's craft.<|end|><|start|>assistant<|channel|>commentary"
+    cleaned = _strip_chat_template_tokens(poisoned)
+    assert "need to provide description field" in cleaned
+    assert "<|" not in cleaned and "|>" not in cleaned
+
+
+@pytest.mark.asyncio
+async def test_amd_gateway_strips_harmony_tokens_from_response_text():
+    """Regression: gateway response contains Harmony tokens in content → must be stripped."""
+    poisoned = {
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "need to provide description<|end|><|start|>assistant<|channel|>commentary",
+                },
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": {"prompt_tokens": 5, "completion_tokens": 3},
+    }
+    captured: dict = {}
+    client = AMDGatewayClient(model="gpt-oss-20b", api_key="k", user="u")
+    client._client = httpx.AsyncClient(
+        transport=httpx.MockTransport(_amd_handler(captured, poisoned))
+    )
+    try:
+        chunks = await _collect(
+            client.stream(
+                messages=[UserMessage(content="go")],
+                system=SystemPrompt.from_text("test"),
+                tools=[],
+                max_tokens=64,
+            )
+        )
+    finally:
+        await client.aclose()
+    text = "".join(c.text for c in chunks if isinstance(c, ChunkText))
+    assert "<|" not in text and "|>" not in text
+    assert "need to provide description" in text
+
+
+def test_messages_to_openai_strips_harmony_from_outgoing_text():
+    """Defense-in-depth: even if a TextBlock somehow has Harmony tokens, the outgoing
+    serializer must strip them so the gateway's tokenizer accepts the request."""
+    asst = AssistantMessage(
+        content=[TextBlock(text="hello<|end|><|start|>assistant world")]
+    )
+    out = _messages_to_openai([asst])
+    assert "<|" not in out[0]["content"]
+    assert "|>" not in out[0]["content"]
+
+
+def test_sanitize_tool_name_strips_harmony_marker():
+    """gpt-oss-20b leaks `<|channel|>commentary` into tool names; must be stripped."""
+    assert _sanitize_tool_name("Agent<|channel|>commentary") == "Agent"
+    assert _sanitize_tool_name("Read<|message|>final") == "Read"
+    assert _sanitize_tool_name("Agent") == "Agent"
+    assert _sanitize_tool_name("WaitingListAdd") == "WaitingListAdd"
+    assert _sanitize_tool_name("") == "unknown"
+    # whitespace / nonsense suffix
+    assert _sanitize_tool_name("Read garbage") == "Readgarbage"
+    assert _sanitize_tool_name("Bash(echo)") == "Bashecho"
+
+
+@pytest.mark.asyncio
+async def test_amd_gateway_sanitizes_tool_name_in_response():
+    """End-to-end: gateway returns tool_call with Harmony marker → we strip it before
+    handing the ToolUseBlock to the executor."""
+    bad = {
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "tc_1",
+                            "type": "function",
+                            "function": {
+                                "name": "Agent<|channel|>commentary",
+                                "arguments": '{"description":"explore","prompt":"scan","subagent_type":"explore"}',
+                            },
+                        }
+                    ],
+                },
+                "finish_reason": "tool_calls",
+            }
+        ],
+        "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+    }
+    captured: dict = {}
+    client = AMDGatewayClient(model="gpt-oss-20b", api_key="k", user="u")
+    client._client = httpx.AsyncClient(
+        transport=httpx.MockTransport(_amd_handler(captured, bad))
+    )
+    try:
+        chunks = await _collect(
+            client.stream(
+                messages=[UserMessage(content="go")],
+                system=SystemPrompt.from_text("test"),
+                tools=[],
+                max_tokens=128,
+            )
+        )
+    finally:
+        await client.aclose()
+    tu_chunks = [c for c in chunks if isinstance(c, ChunkToolUse)]
+    assert len(tu_chunks) == 1
+    assert tu_chunks[0].tool_use.name == "Agent", (
+        f"expected sanitized 'Agent', got {tu_chunks[0].tool_use.name!r}"
+    )
 
 
 def test_tool_spec_to_openai_shape():

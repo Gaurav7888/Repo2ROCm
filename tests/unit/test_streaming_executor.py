@@ -61,6 +61,23 @@ def _ctx(tmp_path: Path) -> ToolUseContext:
 
 
 @pytest.mark.asyncio
+async def test_unknown_tool_yields_error_without_crashing(tmp_path: Path):
+    """Regression: model calls a tool name we don't have; must produce an error result,
+    not raise TypeError. The Coordinator needs the failure surfaced so it can correct."""
+    clear_registry()
+    ctx = _ctx(tmp_path)
+    executor = StreamingToolExecutor(ctx)
+    executor.add_tool(ToolUseBlock(id="t-x", name="DefinitelyNotARealTool", input={}))
+    out = []
+    async for t in executor.get_remaining_results():
+        out.append(t)
+    assert len(out) == 1
+    assert out[0].result is not None
+    assert out[0].result.is_error
+    assert "DefinitelyNotARealTool" in out[0].result.text or "Unknown tool" in out[0].result.text
+
+
+@pytest.mark.asyncio
 async def test_safe_tools_run_concurrently_preserve_order(tmp_path: Path):
     clear_registry()
     register_tool(_SlowSafeTool)

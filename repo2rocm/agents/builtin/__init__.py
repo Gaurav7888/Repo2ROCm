@@ -1,4 +1,5 @@
 """Built-in agent definitions."""
+from repo2rocm.agents.builtin.configuration import CONFIGURATION
 from repo2rocm.agents.builtin.coordinator import COORDINATOR
 from repo2rocm.agents.builtin.explore import EXPLORE
 from repo2rocm.agents.builtin.planner import PLANNER
@@ -10,7 +11,8 @@ from repo2rocm.agents.builtin.general_purpose import GENERAL_PURPOSE
 
 def get_builtin_agents() -> dict:
     return {
-        "coordinator": COORDINATOR,
+        "configuration": CONFIGURATION,    # default — single-agent, full perms in sandbox
+        "coordinator": COORDINATOR,        # optional — multi-agent
         "explore": EXPLORE,
         "planner": PLANNER,
         "migrator": MIGRATOR,
@@ -22,6 +24,7 @@ def get_builtin_agents() -> dict:
 
 __all__ = [
     "get_builtin_agents",
+    "CONFIGURATION",
     "COORDINATOR",
     "EXPLORE",
     "PLANNER",

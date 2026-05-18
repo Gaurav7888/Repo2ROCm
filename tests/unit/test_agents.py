@@ -3,6 +3,21 @@ from __future__ import annotations
 
 from repo2rocm.agents.builtin import get_builtin_agents
 from repo2rocm.core.permissions import PermissionMode
+from repo2rocm.tools.agent_tool import Agent, SendMessage, TaskStop
+
+
+def test_orchestration_tools_are_read_only():
+    """Agent / SendMessage / TaskStop are delegation/control-plane, not mutation.
+
+    They MUST be allowed in PLAN mode so a Coordinator can dry-run a migration
+    (spawn Explore/Planner, synthesize, but never actually mutate anything).
+    """
+    a, sm, ts = Agent(), SendMessage(), TaskStop()
+    assert a.is_read_only(
+        Agent.input_model(description="x", prompt="y", subagent_type="explore")
+    )
+    assert sm.is_read_only(SendMessage.input_model(to="x", message="y"))
+    assert ts.is_read_only(TaskStop.input_model(task_id="t"))
 
 
 def test_coordinator_has_only_three_tools():

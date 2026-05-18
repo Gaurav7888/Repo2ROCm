@@ -22,6 +22,13 @@ class Settings(BaseSettings):
     llm_max_tokens: int = 8_192
     anthropic_api_key: str = ""
     amd_api_key: str = ""
+    amd_gateway_base_url: str = Field(
+        "",
+        description=(
+            "Override AMD gateway URL. Defaults: /claude3 for Claude models, "
+            "/OnPrem for everything else (auto-routed by model name)."
+        ),
+    )
 
     # Filesystem
     root_dir: Path = Field(Path.cwd())
@@ -36,7 +43,6 @@ class Settings(BaseSettings):
 
     # Behavior
     rocm_mode: bool = True
-    permission_mode: str = "acceptEdits"
     max_workers_in_flight: int = 3
     enable_streaming: bool = True
     enable_speculative_tools: bool = True
@@ -52,7 +58,7 @@ class Settings(BaseSettings):
 
 _DEFAULT_MODELS = {
     "anthropic": "claude-3-5-sonnet-20241022",
-    "amd_gateway": "claude-sonnet-4",
+    "amd_gateway": "claude-sonnet-4",  # per AMD gateway reference example
     "openai": "gpt-4o-2024-08-06",
     "mock": "mock-model",
 }
