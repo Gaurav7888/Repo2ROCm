@@ -2,7 +2,16 @@
 
 The lesson from Ch. 10: the coordinator's power comes from having FEWER tools.
 It cannot touch files or run shells. Its job is to decompose, dispatch, synthesize.
-"""
+
+Permission note: the coordinator runs in BYPASS mode (the Docker sandbox is the
+safety boundary, exactly like the single-agent `configuration` flow). PLAN looked
+tempting here because the coordinator "doesn't write" — but PLAN on the parent
+cascades to every child via the strictness rule in `agents/lifecycle.py` step 5,
+which would trap migrators in read-only mode and silently break Phase 3. The
+coordinator's own toolset (Agent/SendMessage/TaskStop) is already read-only at
+the tool level, so BYPASS adds no actual privilege to the coordinator itself —
+it only lets sub-agents use their own declared modes (Explore/Planner/Verifier
+still self-declare PLAN; Migrator/PaperReproducer self-declare ACCEPT_EDITS)."""
 from __future__ import annotations
 
 from repo2rocm.agents.definition import AgentDefinition
@@ -59,7 +68,7 @@ COORDINATOR = AgentDefinition(
     name="coordinator",
     description="Top-level orchestrator. Decomposes; delegates; synthesizes.",
     allowed_tools=["Agent", "SendMessage", "TaskStop"],
-    permission_mode=PermissionMode.PLAN,
+    permission_mode=PermissionMode.BYPASS,
     max_turns=80,
     system_prompt_template=_PROMPT,
     color="cyan",

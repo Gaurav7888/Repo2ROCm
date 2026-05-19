@@ -66,11 +66,19 @@ class Grep(BaseTool[GrepInput, GrepOutput]):
     async def _rg(
         self, parsed: GrepInput, root: Path, ctx: ToolUseContext
     ) -> ToolResult[GrepOutput]:
-        args = ["rg", "-n", "--no-heading", "--max-count", str(parsed.head_limit)]
+        # -H/--with-filename forces ripgrep to always prefix matches with the
+        # filename. Without it, rg omits the filename when given a single file
+        # path, which breaks our `file:line:body` parser (we'd misread the
+        # line number as a filename and try int() on the match body).
+        args = [
+            "rg", "-H", "-n", "--no-heading",
+            "--max-count", str(parsed.head_limit),
+        ]
         if parsed.case_insensitive:
             args.append("-i")
         if parsed.glob:
             args.extend(["-g", parsed.glob])
+        args.append("--")
         args.append(parsed.pattern)
         args.append(str(root))
         proc = await asyncio.create_subprocess_exec(
@@ -86,8 +94,15 @@ class Grep(BaseTool[GrepInput, GrepOutput]):
                 file_part, line_no, body = line.split(":", 2)
             except ValueError:
                 continue
+            try:
+                lineno_int = int(line_no)
+            except ValueError:
+                # Defense in depth: if rg ever emits an unexpected prefix
+                # (e.g. a path containing ':' on Windows-style hosts), skip
+                # the line instead of crashing the whole tool call.
+                continue
             matches.append(
-                GrepMatch(file=file_part, line=int(line_no), text=body[:500])
+                GrepMatch(file=file_part, line=lineno_int, text=body[:500])
             )
         truncated = len(matches) >= parsed.head_limit
         return ToolResult(

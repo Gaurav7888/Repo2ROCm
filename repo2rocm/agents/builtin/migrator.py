@@ -1,4 +1,18 @@
-"""Migrator — the write-heavy worker. Full tool set, one per file group."""
+"""Migrator — the write-heavy worker. Full tool set, one per file group.
+
+Permission note: the migrator runs in BYPASS, symmetric with the single-agent
+`configuration` flow. The migrator does exactly the same kind of work as the
+configuration agent (edit files, DockerExec to install/build, DockerCommit,
+Download, ChangeBaseImage, etc.) — just split into focused sub-tasks dispatched
+by the coordinator. The Docker sandbox is the safety boundary in both flows;
+there is no host-level gating to add value here.
+
+Historical note: this used to be ACCEPT_EDITS, which only auto-allows
+Read/Edit/Write/ApplyDiff and turns every non-edit tool (DockerExec,
+DockerCommit, Download, ChangeBaseImage, ...) into ASK. The executor in
+tools/base.py currently silently passes ASK through, so things appeared to
+work — but it's a latent footgun: any future tightening of ASK handling
+would silently disable the migrator's install/build path."""
 from repo2rocm.agents.definition import AgentDefinition
 from repo2rocm.core.permissions import PermissionMode
 
@@ -31,7 +45,7 @@ MIGRATOR = AgentDefinition(
     description="Write-heavy worker. Full tool set; one per file group.",
     allowed_tools=None,  # all tools
     disallowed_tools=["Agent", "SendMessage", "TaskStop"],
-    permission_mode=PermissionMode.ACCEPT_EDITS,
+    permission_mode=PermissionMode.BYPASS,  # container is the safety boundary
     max_turns=60,
     max_tokens=8_192,
     preload_skills=["cuda_to_rocm_mapping", "py312_compat", "flash_attn_amd_install"],

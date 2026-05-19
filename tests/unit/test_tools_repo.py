@@ -51,6 +51,25 @@ async def test_grep_finds_matches(ctx):
 
 
 @pytest.mark.asyncio
+async def test_grep_single_file_path_with_colons_in_match(ctx, tmp_workdir):
+    # Regression: when `path` points at a single file, ripgrep would historically
+    # omit the filename prefix, and a match body containing a ':' caused the
+    # parser to crash with `int("def foo(d")`. Now we force -H/--with-filename.
+    (tmp_workdir / "src" / "rotated.py").write_text(
+        "import torch\n"
+        "def generate_rotation_matrix(d: int, device: str = \"cpu\"):\n"
+        "    return torch.eye(d, device=device)\n"
+    )
+    r = await Grep().call(
+        GrepInput(pattern="device|cuda", path="src/rotated.py"),
+        ctx,
+    )
+    assert not r.is_error
+    assert any("rotated.py" in m.file for m in r.data.matches)
+    assert any(m.line == 2 for m in r.data.matches)
+
+
+@pytest.mark.asyncio
 async def test_glob_lists_python_files(ctx):
     r = await Glob().call(GlobInput(pattern="**/*.py"), ctx)
     assert not r.is_error

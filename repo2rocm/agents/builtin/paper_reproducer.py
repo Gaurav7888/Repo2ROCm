@@ -25,7 +25,10 @@ PAPER_REPRODUCER = AgentDefinition(
     name="paper-reproducer",
     description="Runs the paper experiment + calls PaperVerify. No fabrication.",
     allowed_tools=["Read", "Grep", "Glob", "Fetch", "DockerExec", "PaperVerify"],
-    permission_mode=PermissionMode.ACCEPT_EDITS,
+    # Same reasoning as migrator: needs DockerExec to actually run experiments,
+    # and the Docker sandbox is the safety boundary. ACCEPT_EDITS would turn
+    # DockerExec into ASK, which is a footgun if ASK ever stops passing through.
+    permission_mode=PermissionMode.BYPASS,
     max_turns=40,
     max_tokens=8_192,
     system_prompt_template=_PROMPT,
