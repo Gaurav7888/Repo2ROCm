@@ -1,0 +1,26 @@
+include README.md
+include LICENSE
+include pyproject.toml
+include setup.py
+
+recursive-include repo2rocm *.py
+recursive-include repo2rocm *.md
+recursive-include repo2rocm *.json
+recursive-include repo2rocm *.yaml
+recursive-include repo2rocm *.yml
+recursive-include repo2rocm *.txt
+recursive-include repo2rocm py.typed
+
+# Exclude transient / runtime artifacts that should never ship in the sdist.
+prune work
+prune output
+prune sessions
+prune tests/golden
+global-exclude __pycache__
+global-exclude *.py[cod]
+global-exclude *.so
+global-exclude .DS_Store
+global-exclude *.jsonl
+global-exclude *.sqlite
+global-exclude *.sqlite-wal
+global-exclude *.sqlite-shm

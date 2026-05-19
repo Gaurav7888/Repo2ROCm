@@ -9,13 +9,46 @@ snapshots, file-based memory with LLM recall, MCP, and end-to-end observability.
 
 ## Quick start
 
+Requires **Python ≥ 3.10**. From a fresh clone:
+
 ```bash
+git clone <repo-url> Repo2ROCm
+cd Repo2ROCm
+
+# (Recommended) isolate from system site-packages
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip setuptools wheel
+
+# Runtime install
+pip install .
+
+# …or editable + dev extras for hacking on the code
 pip install -e ".[dev]"
-repo2rocm doctor                       # bootstrap diagnostics
+```
+
+Then run:
+
+```bash
+repo2rocm doctor                                     # bootstrap diagnostics
 repo2rocm migrate owner/repo --sha <sha> --mode env
-repo2rocm reproduce owner/repo --sha <sha>          # env + paper reproduction
+repo2rocm reproduce owner/repo --sha <sha>           # env + paper reproduction
 repo2rocm mcp serve docker-hub                       # spawn an MCP stdio server
 ```
+
+### Troubleshooting install
+
+If you cannot use a venv and `pip install` complains about a build-backend
+dependency (e.g. an old `pathspec` / `hatchling` / `pip` on the host), force
+setuptools' isolated build path and skip PEP 517 build isolation:
+
+```bash
+python -m pip install --upgrade pip setuptools wheel
+pip install --no-build-isolation -e ".[dev]"
+```
+
+On Ubuntu 20.04 / 22.04 where `pip` ships at 22.x, upgrading pip first
+(`python -m pip install --upgrade pip`) is almost always sufficient.
 
 ## Architecture in 60 seconds
 
