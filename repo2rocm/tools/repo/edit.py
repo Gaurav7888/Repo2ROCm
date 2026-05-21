@@ -3,12 +3,12 @@ from __future__ import annotations
 
 import hashlib
 import os
-from pathlib import Path
 from typing import ClassVar
 
 from pydantic import BaseModel, Field
 
 from repo2rocm.tools.base import BaseTool, ToolResult, ToolUseContext
+from repo2rocm.tools.repo.pathing import RepoPathResolutionError, resolve_repo_path
 
 
 class EditInput(BaseModel):
@@ -41,10 +41,24 @@ class Edit(BaseTool[EditInput, EditOutput]):
     def validate_semantic(self, parsed: EditInput, ctx: ToolUseContext) -> str | None:
         if parsed.old_string == parsed.new_string:
             return "old_string == new_string (no-op edit rejected)"
+        if str(ctx.options.get("run_mode") or "").lower() == "reproduce":
+            low_path = parsed.file_path.lower()
+            if "paper_experiment" in low_path and low_path.endswith(".log"):
+                return (
+                    "Reproduce-mode guard: refusing to edit a paper experiment log. "
+                    "PaperVerify must read the real experiment output."
+                )
         return None
 
     async def call(self, parsed: EditInput, ctx: ToolUseContext) -> ToolResult[EditOutput]:
-        path = (ctx.workdir / parsed.file_path).resolve()
+        try:
+            path = resolve_repo_path(ctx, parsed.file_path)
+        except RepoPathResolutionError as exc:
+            return ToolResult(
+                data=EditOutput(file_path=parsed.file_path, replacements=0),
+                text=str(exc),
+                is_error=True,
+            )
         if not path.is_file():
             return ToolResult(
                 data=EditOutput(file_path=parsed.file_path, replacements=0),

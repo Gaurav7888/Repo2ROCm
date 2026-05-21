@@ -10,6 +10,7 @@ from typing import ClassVar
 
 from pydantic import BaseModel, Field
 
+from repo2rocm.paper.types import CommandSpec, PaperContext
 from repo2rocm.tools.base import BaseTool, ToolResult, ToolUseContext
 
 
@@ -41,6 +42,15 @@ _NEUTRAL_COMMANDS = {"echo", "printf", "true", "false", ":"}
 _SAFE_COMMANDS = _SEARCH_COMMANDS | _READ_COMMANDS | _LIST_COMMANDS
 
 _SPLIT_RE = re.compile(r"(?:&&|\|\||;|\|)")
+_REPRO_PLACEHOLDER_PATTERNS = (
+    r"test_data\.json",
+    r"test_image\.(?:jpg|jpeg|png)",
+    r"What is in this image\?",
+    r"A test image",
+    r"Image\.fromarray\(np\.random",
+)
+
+_EXEC_LAUNCHERS = ("accelerate launch", "torchrun", "python", "python3", "bash", "sh")
 
 
 def _classify_command_str(cmd: str) -> bool:
@@ -80,6 +90,81 @@ def _classify_command_str(cmd: str) -> bool:
     return True
 
 
+def _coerce_paper_context(obj) -> PaperContext | None:
+    if obj is None:
+        return None
+    if isinstance(obj, PaperContext):
+        return obj
+    try:
+        return PaperContext.model_validate(obj)
+    except Exception:
+        return None
+
+
+def _norm_script(script: str) -> str:
+    return script.strip().lstrip("./")
+
+
+def _norm_value(value: str) -> str:
+    return re.sub(r"\s+", " ", str(value).strip().strip("\"'"))
+
+
+def _looks_like_experiment_run(cmd: str, chosen_script: str) -> bool:
+    low = cmd.lower()
+    if any(low.startswith(prefix) for prefix in ("cat ", "rg ", "grep ", "ls ", "head ", "tail ", "sed ", "wc ")):
+        return False
+    return (
+        "paper_experiment.log" in low
+        or _norm_script(chosen_script).lower() in low
+    ) and any(tok in low for tok in _EXEC_LAUNCHERS)
+
+
+def _reproduce_command_guard(cmd: str, paper_ctx_obj) -> str | None:
+    paper_ctx = _coerce_paper_context(paper_ctx_obj)
+    chosen = paper_ctx.chosen() if paper_ctx is not None else None
+    if chosen is None:
+        return None
+    # The new pipeline emits a fully-bound `suggested_command`; parse it on the
+    # fly here so we can drift-check whatever the reproducer actually runs.
+    expected = CommandSpec.from_command(chosen.suggested_command)
+    if expected is None or not expected.script:
+        return None
+    if not _looks_like_experiment_run(cmd, expected.script):
+        return None
+    actual = CommandSpec.from_command(cmd)
+    if actual is None:
+        return (
+            "Reproduce-mode guard: could not parse the final experiment command. "
+            "Run the chosen PaperContext command exactly instead of improvising."
+        )
+    if _norm_script(actual.script) != _norm_script(expected.script):
+        return (
+            "Reproduce-mode guard: final run script drifted from the chosen "
+            f"experiment (`{expected.script}` expected, got `{actual.script}`)."
+        )
+    expected_launcher = expected.launcher.replace("python3", "python")
+    actual_launcher = actual.launcher.replace("python3", "python")
+    if expected_launcher and actual_launcher and expected_launcher != actual_launcher:
+        return (
+            "Reproduce-mode guard: final run launcher drifted from the chosen "
+            f"experiment (`{expected.launcher}` expected, got `{actual.launcher}`)."
+        )
+    mismatches: list[str] = []
+    for key, exp_value in expected.args.items():
+        act_value = actual.args.get(key)
+        if act_value is None:
+            mismatches.append(f"{key}=<missing>")
+            continue
+        if _norm_value(act_value) != _norm_value(exp_value):
+            mismatches.append(f"{key}={act_value} (expected {exp_value})")
+    if mismatches:
+        return (
+            "Reproduce-mode guard: final run drifted from the chosen experiment "
+            "arguments: " + ", ".join(mismatches[:6]) + "."
+        )
+    return None
+
+
 class DockerExec(BaseTool[DockerExecInput, DockerExecOutput]):
     name: ClassVar[str] = "DockerExec"
     description: ClassVar[str] = (
@@ -95,6 +180,30 @@ class DockerExec(BaseTool[DockerExecInput, DockerExecOutput]):
 
     def is_read_only(self, parsed: DockerExecInput) -> bool:
         return _classify_command_str(parsed.command)
+
+    def validate_semantic(self, parsed: DockerExecInput, ctx: ToolUseContext) -> str | None:
+        if str(ctx.options.get("run_mode") or "").lower() == "reproduce":
+            mutates_placeholder = bool(
+                re.search(r"(?<!2)>(?!\s*&\s*\d)", parsed.command)
+                or "Image.fromarray(np.random" in parsed.command
+                or ".save('/repo/data/test_image" in parsed.command
+                or '.save("/repo/data/test_image' in parsed.command
+            )
+            if mutates_placeholder and any(
+                re.search(pat, parsed.command) for pat in _REPRO_PLACEHOLDER_PATTERNS
+            ):
+                return (
+                    "Reproduce-mode guard: refusing to create synthetic placeholder paper "
+                    "inputs inside the sandbox. Use authoritative repo/paper artifacts, "
+                    "or stop with `PAPER_RUN_FAILED`."
+                )
+            drift_msg = _reproduce_command_guard(
+                parsed.command,
+                ctx.options.get("paper_context"),
+            )
+            if drift_msg:
+                return drift_msg
+        return None
 
     async def call(
         self, parsed: DockerExecInput, ctx: ToolUseContext

@@ -425,6 +425,24 @@ def test_messages_to_openai_emits_tool_message_for_results():
     assert out[0]["content"] == "file contents here"
 
 
+def test_messages_to_openai_never_emits_empty_user_content():
+    """Vertex/OpenAI-compatible gateways reject `role=user, content=''`.
+    Serializer must always emit a non-empty placeholder instead."""
+    out = _messages_to_openai([UserMessage(content=[])])
+    assert len(out) == 1
+    assert out[0]["role"] == "user"
+    assert out[0]["content"] == "[internal-empty-user-message]"
+
+
+def test_messages_to_openai_never_emits_empty_tool_result_content():
+    out = _messages_to_openai(
+        [UserMessage(content=[ToolResultBlock(tool_use_id="tu1", content="")])]
+    )
+    assert len(out) == 1
+    assert out[0]["role"] == "tool"
+    assert out[0]["content"] == "[internal-empty-tool-result]"
+
+
 def test_strip_chat_template_tokens_removes_harmony_markers():
     """Harmony-format models (gpt-oss-20b) leak `<|...|>` tokens into TEXT bodies.
     Echoing those back to the gateway → HTTP 400. Strip on the way in.

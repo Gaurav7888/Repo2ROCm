@@ -159,3 +159,74 @@ async def test_loop_max_turns(tmp_path: Path):
         pass
     assert runner.terminal is not None
     assert runner.terminal.reason in ("max_turns", "completed")
+
+
+@pytest.mark.asyncio
+async def test_loop_synthesizes_tool_result_when_model_emits_tool_use_without_chunk(
+    tmp_path: Path,
+):
+    """Regression for the Vertex 400 from the PrefixKV run.
+
+    If the assistant message contains a tool_use block but the streaming layer
+    never emitted the corresponding ChunkToolUse (so the executor has no tracked
+    tool and therefore no tool_result), the next user message used to be empty
+    and Vertex rejected it. The loop now synthesizes an internal error
+    ToolResultBlock so the next turn is always well-formed.
+    """
+    clear_registry()
+    register_tool(_PingTool)
+    tools, specs = assemble_tool_pool(allowed=["Ping"])
+
+    # Turn 1: assistant message contains a tool_use block, but we OMIT the
+    # ChunkToolUse event on purpose to reproduce the edge-case.
+    turn1_chunks = [
+        ChunkDone(
+            assistant_message=AssistantMessage(
+                content=[ToolUseBlock(id="tu_missing", name="Ping", input={"message": "hi"})]
+            ),
+            stop_reason="tool_use",
+        ),
+    ]
+    turn2_chunks = [
+        ChunkDone(
+            assistant_message=AssistantMessage(content=[TextBlock(text="recovered")]),
+            stop_reason="end_turn",
+        ),
+    ]
+    client = MockClient(scripted_responses=[turn1_chunks, turn2_chunks])
+
+    ctx = ToolUseContext(
+        agent_id="a",
+        session_id="s",
+        workdir=tmp_path,
+        abort_event=asyncio.Event(),
+        permission_mode=PermissionMode.BYPASS,
+        read_file_state=ReadFileState(),
+    )
+
+    runner = query(
+        messages=[UserMessage(content="please ping")],
+        system_prompt=SystemPrompt.from_text("you are a test agent"),
+        tools=tools,
+        tool_specs=specs,
+        client=client,
+        tool_use_context=ctx,
+        max_turns=10,
+    )
+    async for _ in runner:
+        pass
+
+    assert runner.terminal is not None
+    assert runner.terminal.reason == "completed"
+    assert getattr(runner.terminal, "final_text", "") == "recovered"
+    assert runner.final_state is not None
+    assert any(
+        isinstance(m, UserMessage)
+        and isinstance(m.content, list)
+        and any(
+            getattr(b, "type", None) == "tool_result"
+            and "[internal-tool-error]" in str(getattr(b, "content", ""))
+            for b in m.content
+        )
+        for m in runner.final_state.messages
+    )

@@ -16,6 +16,7 @@ from typing import ClassVar
 from pydantic import BaseModel, Field
 
 from repo2rocm.tools.base import BaseTool, ToolResult, ToolUseContext
+from repo2rocm.tools.repo.pathing import RepoPathResolutionError, resolve_repo_path
 
 
 @dataclass
@@ -137,7 +138,14 @@ class WaitingListAddFile(BaseTool[WLFileInput, WLFileOutput]):
         return False
 
     async def call(self, parsed: WLFileInput, ctx: ToolUseContext) -> ToolResult[WLFileOutput]:
-        path = (ctx.workdir / parsed.file_path).resolve()
+        try:
+            path = resolve_repo_path(ctx, parsed.file_path)
+        except RepoPathResolutionError as exc:
+            return ToolResult(
+                data=WLFileOutput(added_count=0, messages=[]),
+                text=str(exc),
+                is_error=True,
+            )
         if not path.is_file():
             return ToolResult(
                 data=WLFileOutput(added_count=0, messages=[]),

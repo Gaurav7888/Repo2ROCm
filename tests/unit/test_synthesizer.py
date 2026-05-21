@@ -234,6 +234,69 @@ def test_synth_skips_bare_set_e_lines():
     assert "RUN pip install torch" in text
 
 
+def test_synth_promotes_inline_export_to_env():
+    """Bug fix: `export FOO=BAR && rest` dies at the end of a RUN line. The
+    synthesizer must lift the export to an `ENV FOO=BAR` directive so the
+    var actually persists at container runtime."""
+    sb = _FakeSandbox()
+    sb.commands = [
+        _exec("export HSA_OVERRIDE_GFX_VERSION=9.4.2 && python -c \"import torch\""),
+        _exec("pip install scipy"),
+    ]
+    synth = synthesize_dockerfile(sb)
+    text = synth.dockerfile_text
+    assert "ENV HSA_OVERRIDE_GFX_VERSION=9.4.2" in text
+    # The cleaned RUN line should NOT include the leading export.
+    assert "RUN export HSA_OVERRIDE_GFX_VERSION" not in text
+    assert 'RUN python -c "import torch"' in text
+    assert synth.promoted_envs == {"HSA_OVERRIDE_GFX_VERSION": "9.4.2"}
+
+
+def test_synth_promotes_bashrc_export_to_env():
+    """`echo 'export FOO=BAR' >> /root/.bashrc` is the persistence idiom the
+    agent reaches for; the synthesizer must promote it to ENV and drop the
+    bashrc echo (which is useless in a Dockerfile)."""
+    sb = _FakeSandbox()
+    sb.commands = [
+        _exec("echo 'export HSA_OVERRIDE_GFX_VERSION=9.4.2' >> /root/.bashrc"),
+        _exec("pip install torch"),
+    ]
+    text = synthesize_dockerfile(sb).dockerfile_text
+    assert "ENV HSA_OVERRIDE_GFX_VERSION=9.4.2" in text
+    assert "bashrc" not in text
+    assert "RUN pip install torch" in text
+
+
+def test_synth_does_not_promote_export_buried_in_multiline_script():
+    """`export FOO=BAR` inside a multi-line install script is part of the
+    script's own logic — DO NOT hoist that to a top-level ENV (it would
+    leak into unrelated RUN steps)."""
+    sb = _FakeSandbox()
+    sb.commands = [
+        _exec(
+            "git clone https://github.com/Dao-AILab/flash-attention /tmp/fa && "
+            "cd /tmp/fa && "
+            "export FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE && "
+            "python setup.py install"
+        ),
+    ]
+    synth = synthesize_dockerfile(sb)
+    # The leading `git clone` keeps the inline export buried — no promotion.
+    assert "ENV FLASH_ATTENTION_TRITON_AMD_ENABLE" not in synth.dockerfile_text
+    assert "FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE" in synth.dockerfile_text
+
+
+def test_synth_dedupes_promoted_envs_last_value_wins():
+    sb = _FakeSandbox()
+    sb.commands = [
+        _exec("export HSA_OVERRIDE_GFX_VERSION=9.0.0 && python -c 'pass'"),
+        _exec("export HSA_OVERRIDE_GFX_VERSION=9.4.2 && python -c 'pass'"),
+    ]
+    synth = synthesize_dockerfile(sb)
+    assert synth.promoted_envs == {"HSA_OVERRIDE_GFX_VERSION": "9.4.2"}
+    assert synth.dockerfile_text.count("ENV HSA_OVERRIDE_GFX_VERSION") == 1
+
+
 def test_write_dockerfile_also_copies_patches_next_to_dockerfile(tmp_path: Path):
     """`docker build .` needs the .diff file in its build context."""
     sb = _FakeSandbox()

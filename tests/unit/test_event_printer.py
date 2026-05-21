@@ -36,6 +36,22 @@ class _FakeTracked:
     result: _FakeResult
 
 
+class _FlushTrackingConsole:
+    def __init__(self) -> None:
+        self.file = self
+        self.flush_count = 0
+        self.calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
+
+    def print(self, *args: Any, **kwargs: Any) -> None:
+        self.calls.append(("print", args, kwargs))
+
+    def rule(self, *args: Any, **kwargs: Any) -> None:
+        self.calls.append(("rule", args, kwargs))
+
+    def flush(self) -> None:
+        self.flush_count += 1
+
+
 def _stamp(ev: LoopEvent, agent_id: str = "a1", agent_type: str = "configuration") -> LoopEvent:
     # The lifecycle hook normally stamps these; do it here for the test.
     setattr(ev, "_agent_id", agent_id)
@@ -123,3 +139,17 @@ def test_unknown_event_kind_is_ignored_silently():
     p(LoopEvent("usage", None))
     p(LoopEvent("error", None))
     # printer survived; nothing meaningful printed (no AttributeError)
+
+
+def test_visible_events_flush_console_sink():
+    console = _FlushTrackingConsole()
+    p = EventPrinter()
+    p.console = console
+    p(_AgentStartEvent(agent_id="a1", agent_type="configuration", permission_mode="bypassPermissions"))
+    p(_stamp(LoopEvent("text", ChunkText(text="checking README", block_index=0))))
+    p(_stamp(LoopEvent("tool_use", ChunkToolUse(
+        tool_use=ToolUseBlock(id="t1", name="Read", input={"file_path": "README.md"}),
+        block_index=1,
+    ))))
+    p(_stamp(LoopEvent("usage", ChunkUsage(usage=TokenUsage(input_tokens=10, output_tokens=2)))))
+    assert console.flush_count >= 4

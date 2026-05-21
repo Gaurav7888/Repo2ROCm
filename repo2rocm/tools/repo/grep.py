@@ -10,6 +10,11 @@ from typing import ClassVar
 from pydantic import BaseModel, Field
 
 from repo2rocm.tools.base import BaseTool, ToolResult, ToolUseContext
+from repo2rocm.tools.repo.pathing import (
+    RepoPathResolutionError,
+    display_repo_path,
+    resolve_repo_path,
+)
 
 
 class GrepInput(BaseModel):
@@ -50,7 +55,14 @@ class Grep(BaseTool[GrepInput, GrepOutput]):
         return True
 
     async def call(self, parsed: GrepInput, ctx: ToolUseContext) -> ToolResult[GrepOutput]:
-        root = (ctx.workdir / parsed.path).resolve()
+        try:
+            root = resolve_repo_path(ctx, parsed.path)
+        except RepoPathResolutionError as exc:
+            return ToolResult(
+                data=GrepOutput(matches=[], truncated=False),
+                text=str(exc),
+                is_error=True,
+            )
         if not root.exists():
             return ToolResult(
                 data=GrepOutput(matches=[], truncated=False),
@@ -61,7 +73,7 @@ class Grep(BaseTool[GrepInput, GrepOutput]):
         # try ripgrep first
         if shutil.which("rg"):
             return await self._rg(parsed, root, ctx)
-        return self._py_re(parsed, root)
+        return self._py_re(parsed, root, ctx)
 
     async def _rg(
         self, parsed: GrepInput, root: Path, ctx: ToolUseContext
@@ -102,15 +114,17 @@ class Grep(BaseTool[GrepInput, GrepOutput]):
                 # the line instead of crashing the whole tool call.
                 continue
             matches.append(
-                GrepMatch(file=file_part, line=lineno_int, text=body[:500])
+                GrepMatch(
+                    file=display_repo_path(ctx, Path(file_part)),
+                    line=lineno_int,
+                    text=body[:500],
+                )
             )
         truncated = len(matches) >= parsed.head_limit
-        return ToolResult(
-            data=GrepOutput(matches=matches, truncated=truncated),
-            text=text or "(no matches)",
-        )
+        rendered = "\n".join(f"{m.file}:{m.line}:{m.text}" for m in matches) or "(no matches)"
+        return ToolResult(data=GrepOutput(matches=matches, truncated=truncated), text=rendered)
 
-    def _py_re(self, parsed: GrepInput, root: Path) -> ToolResult[GrepOutput]:
+    def _py_re(self, parsed: GrepInput, root: Path, ctx: ToolUseContext) -> ToolResult[GrepOutput]:
         flags = re.IGNORECASE if parsed.case_insensitive else 0
         try:
             regex = re.compile(parsed.pattern, flags)
@@ -129,7 +143,11 @@ class Grep(BaseTool[GrepInput, GrepOutput]):
                     for i, line in enumerate(f, start=1):
                         if regex.search(line):
                             matches.append(
-                                GrepMatch(file=str(fp), line=i, text=line.rstrip()[:500])
+                                GrepMatch(
+                                    file=display_repo_path(ctx, fp),
+                                    line=i,
+                                    text=line.rstrip()[:500],
+                                )
                             )
                             if len(matches) >= parsed.head_limit:
                                 break

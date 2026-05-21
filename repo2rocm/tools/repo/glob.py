@@ -7,6 +7,7 @@ from typing import ClassVar
 from pydantic import BaseModel, Field
 
 from repo2rocm.tools.base import BaseTool, ToolResult, ToolUseContext
+from repo2rocm.tools.repo.pathing import normalize_glob_pattern, repo_root
 
 
 class GlobInput(BaseModel):
@@ -33,11 +34,12 @@ class Glob(BaseTool[GlobInput, GlobOutput]):
         return True
 
     async def call(self, parsed: GlobInput, ctx: ToolUseContext) -> ToolResult[GlobOutput]:
-        root = ctx.workdir
+        root = repo_root(ctx)
+        pattern = normalize_glob_pattern(ctx, parsed.pattern)
         try:
             paths = [
                 str(p.relative_to(root))
-                for p in sorted(root.glob(parsed.pattern))
+                for p in sorted(root.glob(pattern))
                 if p.is_file()
             ]
         except Exception as exc:  # noqa: BLE001

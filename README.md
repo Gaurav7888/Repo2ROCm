@@ -31,10 +31,41 @@ Then run:
 
 ```bash
 repo2rocm doctor                                     # bootstrap diagnostics
-repo2rocm migrate owner/repo --sha <sha> --mode env
-repo2rocm reproduce owner/repo --sha <sha>           # env + paper reproduction
+repo2rocm migrate owner/repo --sha <sha> --mode functional   # CUDA → ROCm
+repo2rocm reproduce owner/repo --sha <sha>           # functional + paper reproduction
 repo2rocm mcp serve docker-hub                       # spawn an MCP stdio server
 ```
+
+### Modes
+
+* `functional` — make the repo build and run on AMD ROCm; verifier echoes `ROCM_ENV_VERIFIED`.
+* `reproduce` — functional, then the paper-reproducer runs the paper's chosen
+  experiment and compares the measured metric against the published value via
+  the `PaperVerify` tool (typed verdict).
+
+The legacy mode names `env` / `full` are still accepted on the CLI and mapped
+to `functional` / `reproduce` with a deprecation note.
+
+### Pipeline per migration
+
+1. **Recon** (deterministic, no LLM): scan imports/configs/README; pick the
+   ROCm base image; partition `requirements.txt` into INSTALL / SKIP-banned /
+   SKIP-preinstalled / SPECIAL; collect Python-3.12 and pin hazards.
+2. **PaperResearch** (reproduce only): the `paper-research` agent navigates
+   the paper (`PaperFetch` → `PaperOutline` → `PaperRead`) and explores the
+   repo (`Glob`/`Grep`/`Read`) under the guidance of the
+   `paper_navigation` / `paper_experiment_extraction` / `repo_config_discovery`
+   / `paper_repo_binding` skills, then persists a fully-bound `PaperContext`
+   via `EmitPaperContext`. No regex pipeline; the LLM decides what to read.
+3. **Planner**: the `planner` agent consumes the Recon Report + workflow
+   template + (optional) PaperContext and emits a typed `MigrationPlan` via
+   the `EmitPlan` tool.
+4. **Sandbox**: a ROCm Docker container is started from the plan's base image.
+5. **Execute**: the `configuration` agent (single-agent) — or `coordinator`
+   (multi-agent) dispatching one `migrator` per plan step — runs the plan and
+   commits the container at each step.
+6. **Dockerfile synthesis**: the successful command log + captured patches
+   become a reproducible Dockerfile.
 
 ### Troubleshooting install
 

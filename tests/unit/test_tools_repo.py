@@ -98,6 +98,31 @@ async def test_edit_rejects_no_op(ctx):
     assert sem is not None
 
 
+def test_write_rejects_synthetic_paper_log_in_reproduce_mode(ctx):
+    ctx.options["run_mode"] = "reproduce"
+    sem = Write().validate_semantic(
+        WriteInput(
+            file_path="/repo/paper_experiment_formatted.log",
+            content="perplexity: 5.53\n",
+        ),
+        ctx,
+    )
+    assert sem is not None
+
+
+def test_edit_rejects_paper_log_mutation_in_reproduce_mode(ctx):
+    ctx.options["run_mode"] = "reproduce"
+    sem = Edit().validate_semantic(
+        EditInput(
+            file_path="/repo/paper_experiment.log",
+            old_string="old",
+            new_string="new",
+        ),
+        ctx,
+    )
+    assert sem is not None
+
+
 @pytest.mark.asyncio
 async def test_apply_diff(ctx):
     await Write().call(WriteInput(file_path="d.txt", content="alpha\nbeta\ngamma\n"), ctx)

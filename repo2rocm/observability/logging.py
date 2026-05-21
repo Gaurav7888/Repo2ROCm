@@ -39,6 +39,23 @@ def configure_logging(*, level: str = "INFO", json_output: bool | None = None) -
         level=level_num,
     )
 
+    # Third-party transport libraries like httpx emit one INFO line per request
+    # ("HTTP Request: POST ..."). In interactive single-agent runs these drown
+    # out the Rich event printer, making the CLI hard to follow. Keep them
+    # quiet by default, but allow opt-in via REPO2ROCM_LOG_HTTP=1 for debugging.
+    if not os.environ.get("REPO2ROCM_LOG_HTTP"):
+        noisy_loggers = (
+            "httpx",
+            "httpcore",
+            "httpcore.connection",
+            "httpcore.http11",
+            "httpcore.http2",
+            "urllib3",
+            "urllib3.connectionpool",
+        )
+        for name in noisy_loggers:
+            logging.getLogger(name).setLevel(logging.WARNING)
+
     if not _STRUCTLOG:
         return
 

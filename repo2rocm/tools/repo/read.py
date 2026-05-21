@@ -3,12 +3,12 @@ from __future__ import annotations
 
 import hashlib
 import os
-from pathlib import Path
 from typing import ClassVar
 
 from pydantic import BaseModel, Field
 
 from repo2rocm.tools.base import BaseTool, ToolResult, ToolUseContext
+from repo2rocm.tools.repo.pathing import RepoPathResolutionError, resolve_repo_path
 
 
 class ReadInput(BaseModel):
@@ -41,7 +41,20 @@ class Read(BaseTool[ReadInput, ReadOutput]):
         return True
 
     async def call(self, parsed: ReadInput, ctx: ToolUseContext) -> ToolResult[ReadOutput]:
-        path = (ctx.workdir / parsed.file_path).resolve()
+        try:
+            path = resolve_repo_path(ctx, parsed.file_path)
+        except RepoPathResolutionError as exc:
+            return ToolResult(
+                data=ReadOutput(
+                    file_path=str(parsed.file_path),
+                    total_lines=0,
+                    returned_lines=0,
+                    content="",
+                    sha="",
+                ),
+                text=str(exc),
+                is_error=True,
+            )
         if not path.is_file():
             return ToolResult(
                 data=ReadOutput(

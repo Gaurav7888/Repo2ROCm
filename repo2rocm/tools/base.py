@@ -182,6 +182,23 @@ class BaseTool(Generic[I, O]):
             if decision.kind == PermissionDecisionKind.DENY:
                 outcome = "permission_denied"
                 METRICS.tool_calls.labels(tool=self.name, outcome=outcome).inc()
+                # Surface denies in the transcript — otherwise an agent that retries
+                # a denied tool 20× looks identical to a silent agent in the log,
+                # which is exactly what caused the original "planner just hung" bug.
+                if ctx.transcript is not None:
+                    try:
+                        ctx.transcript.append(
+                            {
+                                "kind": "tool_result",
+                                "tool": self.name,
+                                "outcome": outcome,
+                                "reason": decision.reason,
+                                "input": raw_input,
+                                "permission_mode": ctx.permission_mode.value,
+                            }
+                        )
+                    except Exception:
+                        pass
                 return ToolResult(
                     data=self._empty_output(),  # type: ignore[arg-type]
                     text=f"Permission denied: {decision.reason}",

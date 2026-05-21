@@ -1,0 +1,48 @@
+mode: reproduce
+description: >
+  Functional mode + reproduce the paper's chosen experiment on AMD ROCm and
+  compare the metric to the published value via PaperVerify. The plan's FINAL
+  step is the paper-reproducer; ROCM_ENV_VERIFIED is mid-flight, not terminal.
+
+phases:
+  - id: P1
+    name: Setup base image
+    purpose: Decide and commit the ROCm base image.
+    agent: migrator
+    skills: [rocm_image_selection]
+    success: base image committed
+
+  - id: P2
+    name: Install dependencies
+    purpose: Install non-banned, non-preinstalled requirements with SPECIAL recipes applied.
+    agent: migrator
+    skills: [nvidia_alternatives, banned_nvidia_packages, pin_hazards, amd_dependencies]
+
+  - id: P3
+    name: Patch code
+    purpose: Apply hazard fixes (py312 stdlib, hardcoded cuda flags, deprecated APIs).
+    agent: migrator
+    skills: [pin_hazards]
+
+  - id: P4
+    name: Verify environment
+    purpose: >
+      Confirm the env runs on AMD GPU before the paper experiment. Mid-flight
+      marker only — DO NOT TERMINATE on ROCM_ENV_VERIFIED in reproduce mode.
+    agent: verifier
+    success_marker: ROCM_ENV_VERIFIED
+    terminal: false
+
+  - id: P5
+    name: Reproduce paper experiment
+    purpose: >
+      Run the experiment chosen by paper-research (PaperRecall to load it),
+      capture its log, and call PaperVerify against the headline_metric and
+      related_metrics. Emit the verdict token (PAPER_REPRODUCED / PAPER_MISMATCH
+      / PAPER_RUN_FAILED). If PaperRecall fails or the real required artifacts
+      cannot be obtained from authoritative repo/paper instructions, fail fast
+      with PAPER_RUN_FAILED instead of fabricating placeholder inputs.
+    agent: paper-reproducer
+    skills: [paper_reproduction_recipes, paper_metric_portability]
+    success_marker: PAPER_REPRODUCED|PAPER_MISMATCH|PAPER_RUN_FAILED
+    terminal: true

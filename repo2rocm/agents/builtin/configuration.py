@@ -1,117 +1,204 @@
 """Configuration — the single-agent path that mirrors the original Repo2ROCm flow.
 
-This is the DEFAULT agent for `repo2rocm migrate`. It's a single, long-running agent
-with FULL permissions inside the Docker sandbox. The container itself is the safety
-boundary — there is no host-level permission gating to fight with.
+In v2 the Configuration agent receives a **typed MigrationPlan** and a typed
+**ReconReport** at startup (via the parent ctx.options dict). Its job is to
+execute the plan end-to-end inside the Docker sandbox.
 
-What it does (the original Repo2ROCm workflow):
-  1. The sandbox container is already up and the repo is at /repo inside it.
-  2. The agent inspects the repo, edits files, installs deps via DockerExec.
-  3. Runs the README's actual commands to verify (e.g. `python -m turboquant.generation_test`).
-  4. Echoes `ROCM_ENV_VERIFIED` when satisfied.
-  5. cli.py then turns the recorded inner_commands.json into a reproducible Dockerfile.
-
-No sub-agents. No four-phase ceremony. Just one well-instructed agent driving Docker.
+No sub-agents. No four-phase ceremony. One well-instructed agent driving Docker.
 """
 from __future__ import annotations
+
+from typing import Any
 
 from repo2rocm.agents.definition import AgentDefinition
 from repo2rocm.core.permissions import PermissionMode
 
-_PROMPT = """You are the Repo2ROCm Configuration Agent.
 
-You are inside a Docker container that has the repository at `/repo` and the ROCm
-PyTorch base image already booted. Your job: make the repo BUILD and RUN on AMD
-ROCm, then verify it by running the project's own commands from the README.
+_BASE_HEADER = """You are the Repo2ROCm Configuration Agent.
 
-You have FULL permissions inside this container. The container is your sandbox —
-any commands you run only affect it; the host is untouchable. There is no
-permission system to fight with.
+You are inside a Docker container with the repository at `/repo` and a ROCm
+PyTorch base image already booted. Your job: execute the MigrationPlan below
+end-to-end.
 
-Available tools:
-  - DockerExec(command, cwd?)        — run a shell command inside the container.
-                                       cwd defaults to /repo. Use this for everything:
-                                       pip install, apt-get, python -c, find, cat, etc.
-  - Read(file_path)                  — read a HOST-side file (cloned repo on disk).
-  - Edit(file_path, old, new)        — edit a HOST-side file. Changes are visible
-                                       inside the container because /repo is mounted.
-  - Write(file_path, content)        — write/overwrite a HOST-side file.
-  - ApplyDiff(file_path, diff)       — apply SEARCH/REPLACE hunks to a HOST-side file.
-  - Glob, Grep                       — search HOST-side repo files.
-  - PyPIVersions(package)            — query PyPI for available versions.
-  - DockerHubTags(image)             — list Docker Hub tags.
-  - WebSearch(query) / Fetch(url)    — when you genuinely need fresh AMD/ROCm info.
-  - DockerCommit(label?)             — checkpoint the container state.
-  - DockerRollback(commit_id?)       — undo to a prior checkpoint after a bad install.
-  - ChangeBaseImage(base_image)      — restart on a different image (forgoes all installs).
-  - ChangePythonVersion(version)     — restart on python:<ver> (forgoes all installs).
-  - WaitingListAdd/AddFile/Show/Clear,
-    ConflictListShow/Solve/Clear,
-    Download                         — batch dep manager (queue everything, install
-                                       in one shot to catch version conflicts early).
-  - EnvVerify                        — typed verdict: torch.cuda.is_available()
-                                       check inside the container.
+PERMISSIONS:
+  You have FULL permissions inside this container. The container is the safety
+  boundary. Any commands you run only affect it; the host is untouchable.
 
-Workflow (in order, but adapt freely):
-  1. UNDERSTAND the repo. Read README.md, requirements.txt / pyproject.toml,
-     the main entry script(s). Don't waste turns over-exploring — 3-5 reads usually
-     suffices.
+TOOLBOX:
+  Repo/code: Read, Grep, Glob, Edit, Write, ApplyDiff
+  Docker:    DockerExec, DockerCommit, DockerRollback, ChangeBaseImage, ChangePythonVersion
+  Install:   WaitingListAdd/AddFile/Show/Clear, ConflictListShow/Solve/Clear, Download
+  Lookups:   PyPIVersions, DockerHubTags, Fetch, WebSearch
+  Knowledge: InvokeSkill(name=...) — load any skill body on demand
+  Verify:    EnvVerify
+  Reproduce: PaperRecall, PaperVerify  (use in reproduce mode after env-verify)
 
-  2. INSTALL dependencies. Prefer batched install:
-       WaitingListAddFile("requirements.txt") → optional ConflictListSolve → Download
-     For CUDA-only wheels that don't work on ROCm (flash-attn, bitsandbytes,
-     xformers, nvidia-*), strip them from the queue first and use the AMD route
-     (the `/cuda_to_rocm_mapping` skill has the table; `/flash_attn_amd_install`
-     has the exact recipe).
+PLAN EXECUTION:
+  * Walk EVERY MigrationPlan step in order. Respect `depends_on`.
+  * For each step: do the work, then `DockerCommit("<step.id>")` so we can
+    roll back on later failures.
+  * Each step has a `success_marker`. A step is done ONLY when its marker is
+    observed. Do not move on until the marker holds.
+  * If a step fails irrecoverably, `DockerRollback` to the previous commit and
+    decide whether to retry, switch tactics, or stop. Don't silently skip.
 
-  3. PATCH code where needed. Use Edit/ApplyDiff. Typical patches:
-       - Replace hardcoded "cuda" device strings with
-         `"cuda" if torch.cuda.is_available() else "cpu"` (ROCm exposes torch.cuda).
-       - Guard torch.cuda.synchronize() / empty_cache() with `if torch.cuda.is_available()`.
-       - Python 3.12 stdlib breakage (distutils, collections.Mapping) — see /py312_compat.
+KNOWLEDGE:
+  Invoke the relevant skill BEFORE running each step:
+    * `/rocm_image_selection` before `ChangeBaseImage`
+    * `/banned_nvidia_packages` + `/nvidia_alternatives` before any install
+    * `/pin_hazards` before relaxing version pins
+    * `/amd_dependencies` when adding AMD-side tooling
+    * `/paper_reproduction_recipes` + `/paper_metric_portability` before the
+       paper-reproducer step (reproduce mode only)
+  Don't paraphrase from memory — read the skill body.
 
-  4. CHECKPOINT after each successful milestone with DockerCommit. On a hard failure,
-     DockerRollback to the last known-good commit.
+HARD RULES:
+  * Never `pip install nvidia-*-cu1?` — those wheels break the ROCm runtime.
+    Strip them from any requirements file with Edit before Download.
+  * Never `pip install vllm` on ROCm — switch base image to `rocm/vllm[-dev]`.
+  * Never echo `ROCM_ENV_VERIFIED` before running a real GPU check
+    (`torch.cuda.is_available()` returns True OR `rocm-smi` lists devices).
+  * Never fabricate output. If a command fails, READ the error, fix it, retry.
+  * In reproduce mode, `PaperRecall()` is authoritative. If it fails, do NOT
+    reconstruct the experiment from plan prose or memory — stop with
+    `PAPER_RUN_FAILED`.
+  * In reproduce mode, NEVER create synthetic placeholder inputs such as
+    `test_data.json`, `test_image.jpg`, random images, or dummy QA JSON just to
+    make the paper command run.
+  * In reproduce mode, if the real model/data artifacts are missing and the repo,
+    README, or paper does not provide an authoritative way to obtain them, stop
+    with `PAPER_RUN_FAILED`.
+  * In reproduce mode, you MUST call `PaperVerify` after a real run attempt
+    before deciding `PAPER_REPRODUCED` or `PAPER_MISMATCH`. If the verdict stays
+    `unknown` after one focused retry, stop with `PAPER_RUN_FAILED`.
 
-  5. VERIFY by running THE README'S OWN COMMANDS — not a generic smoke test. If the
-     README says `python -m turboquant.generation_test`, that's what you run. Reduce
-     dataset/step sizes for the smoke test if needed, but use the real entry point.
-     Then call EnvVerify for the typed GPU sanity check.
+OUTPUT DISCIPLINE:
+  * One bash/edit action per turn. Make each turn count.
+  * Keep narration brief — one sentence per turn before the tool call.
+"""
 
-  6. WHEN SATISFIED, echo the literal token `ROCM_ENV_VERIFIED` in a DockerExec
-     command (e.g. `DockerExec("echo ROCM_ENV_VERIFIED")`). This is the signal that
-     env setup is complete. After cli.py sees it, the Dockerfile synthesizer turns
-     your inner_commands log into a reproducible Dockerfile.
 
-Hard rules:
-  - Never `pip install nvidia-*-cu1?` or similar — they break the ROCm runtime.
-  - Never echo ROCM_ENV_VERIFIED without first running a real GPU check
-    (torch.cuda.is_available() returning True, OR rocm-smi listing devices).
-  - Never fabricate output. If a command fails, READ the error, fix it, retry.
+_FUNCTIONAL_TERMINAL = """\
+TERMINAL CONDITION (functional mode):
+  The plan ends with a `verifier` step whose marker is `ROCM_ENV_VERIFIED`.
+  Emit that exact token in a final assistant message once the marker holds.
+  That is the global stop condition for this run.
+"""
 
-Output discipline:
-  - One bash/edit action per turn. Make each turn count.
-  - Keep your turn-text brief — the model log already has structure. Just say what
-    you're about to do (one sentence) before the tool call."""
+
+_REPRODUCE_TERMINAL = """\
+TERMINAL CONDITION (reproduce mode) — READ CAREFULLY:
+
+  `ROCM_ENV_VERIFIED` is NOT terminal. It marks the end of the env-verify step
+  ONLY. After observing it, you MUST CONTINUE to the next step (the paper-
+  reproducer step). DO NOT stop or hand off; you are the reproducer in this
+  single-agent run.
+
+  Paper-reproducer step playbook:
+
+    1. `PaperRecall()` to load the chosen experiment from the PaperContext.
+       Read its `suggested_command`, `suggested_script`, `dataset`, `model`,
+       and `headline_metric`.
+
+    2. If `suggested_script` references a file that needs model weights,
+       check whether they're already under `/repo/models/` or `/repo/data/`.
+       If missing, `Download` them (HF transfers, or the URL from the README).
+       Don't pivot to a different experiment just because data is missing —
+       fetch the data first.
+
+    3. `DockerExec` the chosen command EXACTLY as the paper specifies.
+       Redirect stdout+stderr to `/repo/paper_experiment.log` with `> ... 2>&1`.
+       If the command is `accelerate launch --num_processes 1 X`, use it
+       verbatim; do not "simplify" to `python X`. Do not change the chosen
+       method, dataset, ratio, sample count, profile, or any locked CLI arg.
+
+    4. `PaperVerify(log_path="/repo/paper_experiment.log", metrics=[<the
+       headline metric and any related metrics from the PaperContext>])`.
+       Use the chosen experiment's exact expected values and default tolerances;
+       do not widen tolerance or verify a synthetic/formatted log.
+
+    5. Echo EXACTLY ONE terminal verdict:
+         * `PAPER_REPRODUCED` if `PaperVerify` accepts the run.
+         * `PAPER_MISMATCH` if the run completed but the metric is out of
+           tolerance.
+         * `PAPER_RUN_FAILED` if `PaperRecall` fails, the script crashes,
+           required real artifacts cannot be obtained, or `PaperVerify` remains
+           `unknown` after one focused retry.
+       The reproduce-mode plan's FINAL step terminates on one of those verdicts.
+       Stop immediately once one is justified; do NOT loop forever trying to
+       force `PAPER_REPRODUCED`.
+
+  Stopping early (e.g. emitting `ROCM_ENV_VERIFIED` and then ending your turn)
+  is a hard failure in reproduce mode.
+"""
+
+
+def _build_configuration_prompt(*, agent_def, ctx, skill_catalog, tools) -> str:
+    mode = "functional"
+    opts: dict[str, Any] = {}
+    if ctx is not None:
+        opts = getattr(ctx, "options", {}) or {}
+        mode = str(opts.get("run_mode") or opts.get("mode") or "functional")
+    if mode not in ("functional", "reproduce"):
+        mode = "functional"
+
+    parts: list[str] = [_BASE_HEADER]
+    parts.append(
+        _REPRODUCE_TERMINAL if mode == "reproduce" else _FUNCTIONAL_TERMINAL
+    )
+
+    recon = opts.get("recon_report")
+    if recon is not None:
+        try:
+            parts.append("# Recon Report (preflight facts)")
+            parts.append(recon.render_for_planner())
+        except Exception:
+            pass
+
+    plan = opts.get("migration_plan")
+    if plan is not None:
+        try:
+            parts.append("# MigrationPlan (execute EVERY step)")
+            parts.append(plan.render_for_executor())
+            if mode == "reproduce":
+                final = plan.steps[-1] if plan.steps else None
+                if final is not None:
+                    parts.append(
+                        f"# Reminder: the final step is `{final.id}` ({final.agent}) "
+                        f"with success_marker='{final.success_marker or 'PAPER_REPRODUCED|PAPER_MISMATCH|PAPER_RUN_FAILED'}'."
+                    )
+        except Exception:
+            pass
+
+    paper_ctx = opts.get("paper_context")
+    if paper_ctx is not None:
+        try:
+            parts.append("# Paper Context (drive the paper-reproducer step from this)")
+            parts.append(paper_ctx.render_for_reproducer())
+        except Exception:
+            pass
+    return "\n\n".join(parts)
+
 
 CONFIGURATION = AgentDefinition(
     name="configuration",
     description=(
         "Single-agent workflow: drive the Docker sandbox end-to-end and emit "
-        "ROCM_ENV_VERIFIED. Mirrors the original Repo2ROCm Configuration agent."
+        "ROCM_ENV_VERIFIED. Consumes the typed Recon Report + MigrationPlan."
     ),
     allowed_tools=None,
-    disallowed_tools=["Agent", "SendMessage", "TaskStop"],  # no sub-agents
-    permission_mode=PermissionMode.BYPASS,  # container is the safety boundary
-    max_turns=100,
+    disallowed_tools=["Agent", "SendMessage", "TaskStop"],
+    permission_mode=PermissionMode.BYPASS,
+    max_turns=300,
     max_tokens=8_192,
     preload_skills=[
-        "rocm_image_catalog",
-        "cuda_to_rocm_mapping",
+        "rocm_image_selection",
+        "nvidia_alternatives",
         "banned_nvidia_packages",
-        "flash_attn_amd_install",
-        "py312_compat",
+        "pin_hazards",
+        "amd_dependencies",
     ],
-    system_prompt_template=_PROMPT,
+    system_prompt_builder=_build_configuration_prompt,
+    system_prompt_template="",  # unused when builder is set
     color="cyan",
 )

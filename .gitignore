@@ -4,6 +4,7 @@
 work/
 output/
 sessions/
+repos/
 
 # Persistent KB + trajectory store (defaults to ~/.repo2rocm but if a user
 # overrides --root-path to a repo-local dir, ignore those too).

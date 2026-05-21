@@ -2,10 +2,14 @@
 
 Commands:
   migrate     — full pipeline on one repo
+  reproduce   — alias for `migrate --mode reproduce`
   batch       — fan-out over a list of repos
   mcp serve   — run an MCP server (docker-hub | pypi)
-  reproduce   — env + paper reproduction (alias for `migrate --mode reproduce`)
-  doctor      — print bootstrap checkpoints, KB stats, prompt-cache estimate
+  doctor      — print bootstrap checkpoints, KB stats, tools, skills
+
+Modes (only two):
+  functional  — make the repo build and run on AMD ROCm; emit ROCM_ENV_VERIFIED
+  reproduce   — functional + reproduce the paper's chosen experiment with PaperVerify
 """
 from __future__ import annotations
 
@@ -26,9 +30,24 @@ from repo2rocm.observability.checkpoints import get_registry
 app = typer.Typer(no_args_is_help=True, add_completion=False)
 mcp_app = typer.Typer(no_args_is_help=True)
 app.add_typer(mcp_app, name="mcp", help="MCP server commands.")
-# soft_wrap stops long tool_use input lines from disappearing in narrow terminals;
-# stderr=False keeps our pretty output on stdout, separate from httpx INFO noise.
 console = Console(soft_wrap=True)
+
+
+VALID_MODES = ("functional", "reproduce")
+
+
+def _normalize_mode(mode: str) -> str:
+    """Accept old `env`/`full` names with a deprecation hint."""
+    m = mode.lower().strip()
+    if m == "env":
+        console.print("[yellow]Note: mode 'env' is deprecated; using 'functional'.")
+        return "functional"
+    if m == "full":
+        console.print("[yellow]Note: mode 'full' is deprecated; using 'reproduce'.")
+        return "reproduce"
+    if m not in VALID_MODES:
+        raise typer.BadParameter(f"--mode must be one of {VALID_MODES}, got {mode!r}")
+    return m
 
 
 # ── migrate ───────────────────────────────────────────────────────────────────
@@ -39,44 +58,48 @@ def migrate(
     repo: str = typer.Argument(..., help="GitHub owner/repo or local path."),
     sha: Optional[str] = typer.Option(None, help="Git SHA to check out."),
     root_path: Path = typer.Option(Path.cwd(), help="Working directory."),
-    mode: str = typer.Option("env", help="env | reproduce | full"),
+    mode: str = typer.Option("functional", help="functional | reproduce"),
     rocm_base_image: str = typer.Option(
-        "rocm/pytorch:latest",
-        help="ROCm Docker base image to start the sandbox from.",
+        "",
+        help=(
+            "Override the recon's recommended ROCm Docker base image. Leave empty "
+            "to use the deterministic preflight pick."
+        ),
     ),
     agent_mode: str = typer.Option(
         "single",
-        help="single | coordinator. Default 'single' = one configuration agent "
-             "drives the sandbox end-to-end (original Repo2ROCm flow). "
-             "'coordinator' = multi-agent (Explore/Planner/Migrator/Verifier).",
+        help=(
+            "single | coordinator. Default 'single' = one configuration agent "
+            "executes the MigrationPlan end-to-end. 'coordinator' = multi-agent."
+        ),
     ),
-    output_dir: Optional[Path] = typer.Option(None, help="Where to write Dockerfile + transcripts."),
-    max_turns: int = typer.Option(100, help="Hard cap on agent turns."),
-    no_sandbox: bool = typer.Option(
-        False,
-        help="DEV: skip starting the Docker container. Agent runs without DockerExec; useful for testing.",
+    paper_url: Optional[str] = typer.Option(
+        None, help="In reproduce mode: direct paper PDF URL."
     ),
-    quiet: bool = typer.Option(
-        False,
-        help="Suppress live per-turn event output (default OFF: stream every turn / tool / result).",
+    paper_arxiv_id: Optional[str] = typer.Option(
+        None, help="In reproduce mode: explicit arXiv id."
     ),
-    show_thinking: bool = typer.Option(
-        False,
-        help="Also print the model's extended-thinking blocks (verbose).",
-    ),
+    output_dir: Optional[Path] = typer.Option(None, help="Where to write artifacts."),
+    max_turns: int = typer.Option(300, help="Hard cap on configuration agent turns."),
+    no_sandbox: bool = typer.Option(False, help="DEV: skip starting the Docker container."),
+    quiet: bool = typer.Option(False, help="Suppress live event stream."),
+    show_thinking: bool = typer.Option(False, help="Also print extended-thinking blocks."),
 ) -> None:
     """Migrate a repo to AMD ROCm.
 
-    The default flow:
-      1. Clone the repo (if not already cloned).
-      2. Start a ROCm Docker container with /repo mounted from the host clone.
-      3. Run the configuration agent — it inspects, edits, installs, runs the
-         README's verification commands, and echoes ROCM_ENV_VERIFIED.
-      4. Synthesize a reproducible Dockerfile from the recorded successful commands
-         + any code patches the agent applied (extracted via `git diff` of the
-         host clone).
-      5. Stop the container.
+    Pipeline:
+      0. Clone the repo (if not already cloned).
+      1. Recon (deterministic): scan imports/configs/README; pick base image;
+         partition requirements; collect hazards.
+      2. (reproduce only) PaperResearch agent: navigate the paper, explore the
+         repo, bind-check, and persist a typed PaperContext.
+      3. Planner agent: emit a typed MigrationPlan via the EmitPlan tool.
+      4. Start the Docker sandbox.
+      5. Run Configuration (single-agent) or Coordinator (multi-agent) to
+         execute the plan.
+      6. Synthesize a reproducible Dockerfile from the recorded commands.
     """
+    mode = _normalize_mode(mode)
     boot = bootstrap()
     output_dir = output_dir or (root_path / "output" / repo.replace("/", "_"))
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -89,6 +112,8 @@ def migrate(
         mode=mode,
         rocm_base_image=rocm_base_image,
         agent_mode=agent_mode,
+        paper_url=paper_url,
+        paper_arxiv_id=paper_arxiv_id,
         output_dir=output_dir,
         max_turns=max_turns,
         no_sandbox=no_sandbox,
@@ -99,22 +124,27 @@ def migrate(
 
 async def _run_migration(
     *, boot, repo, sha, root_path, mode, rocm_base_image, agent_mode,
-    output_dir, max_turns, no_sandbox, quiet=False, show_thinking=False,
+    paper_url, paper_arxiv_id, output_dir, max_turns, no_sandbox,
+    quiet=False, show_thinking=False,
 ):
-    """End-to-end migration flow — mirrors the original Repo2ROCm workflow."""
-    from repo2rocm.agents.builtin import CONFIGURATION, COORDINATOR
+    from repo2rocm.agents.builtin import (
+        CONFIGURATION,
+        COORDINATOR,
+        PAPER_RESEARCH,
+        PLANNER,
+    )
     from repo2rocm.agents.lifecycle import RunAgentParams, run_agent
     from repo2rocm.core.permissions import PermissionMode
     from repo2rocm.dockerfile import synthesize_dockerfile
     from repo2rocm.dockerfile.synthesizer import write_dockerfile
     from repo2rocm.learning import KBStore, TrajectoryStore, BuildAttempt, TrajectoryDistiller
     from repo2rocm.observability import TranscriptStore
+    from repo2rocm.recon import run_recon
     from repo2rocm.sandbox import Sandbox, SandboxConfig
 
     settings = get_settings()
     client = boot.make_client()
 
-    # 1. Clone the repo if needed
     repo_path = _resolve_repo(repo, sha=sha, root_path=root_path)
     transcript_store = TranscriptStore(output_dir)
     kb = KBStore(settings.kb_path)
@@ -123,30 +153,196 @@ async def _run_migration(
     traj.start_attempt(attempt)
 
     console.rule(f"[bold cyan]repo2rocm migrate {repo}")
-    console.print(f"  agent_mode={agent_mode}  mode={mode}")
+    console.print(f"  mode={mode}   agent_mode={agent_mode}")
     console.print(f"  repo_path={repo_path}")
-    console.print(f"  rocm_base_image={rocm_base_image}")
     console.print(f"  output_dir={output_dir}")
     console.print(f"  metrics: http://127.0.0.1:{settings.metrics_port}/metrics")
 
-    # 2. Start the Docker sandbox (unless dev-mode disabled)
+    # Live event printer for every agent we spawn (paper-research, planner,
+    # configuration). Without this, sub-agent activity is silent and the user
+    # only sees the deterministic phases + a single summary line per agent.
+    printer = None
+    if not quiet:
+        from repo2rocm.ui.event_printer import EventPrinter
+
+        printer = EventPrinter(console=console, show_thinking=show_thinking)
+
+    # ── Phase 1: deterministic recon ────────────────────────────────────────
+    console.rule("[cyan]Recon (deterministic preflight)")
+    recon = run_recon(
+        repo_path=repo_path,
+        repo_full_name=repo,
+        mode=mode,
+        sha=sha or "",
+        rocm_base_image_override=rocm_base_image,
+    )
+    recon_path = output_dir / "recon_report.json"
+    recon_path.write_text(recon.model_dump_json(indent=2), encoding="utf-8")
+    console.print(recon.render_for_planner())
+    console.print(f"\n[dim]Recon report: {recon_path}")
+
+    base_image = rocm_base_image or (
+        f"{recon.image_selection.image}:{recon.image_selection.tag}"
+        if recon.image_selection
+        else "rocm/pytorch:latest"
+    )
+
+    # Parent context that flows into every agent we spawn pre-sandbox.
+    from repo2rocm.tools.base import ReadFileState, ToolUseContext
+
+    def _make_parent_ctx(sandbox=None, agent_id="root") -> ToolUseContext:
+        return ToolUseContext(
+            agent_id=agent_id,
+            session_id=transcript_store.session_id,
+            workdir=output_dir,
+            abort_event=asyncio.Event(),
+            permission_mode=PermissionMode.BYPASS,
+            read_file_state=ReadFileState(),
+            sandbox=sandbox,
+            transcript=transcript_store.main(),
+            messages=[],
+            options={
+                "client": client,
+                "client_factory": boot.make_client,
+                "transcript_store": transcript_store,
+                "skill_catalog": boot.skill_catalog,
+                "rocm_base_image": base_image,
+                "run_mode": mode,
+                "repo_full_name": repo,
+                "sha": sha or "",
+                "recon_report": recon,
+                "paper_hint": _paper_hint(paper_arxiv_id, paper_url),
+                "repo_path": str(repo_path),
+                "repo_container_path": "/repo",
+            },
+            gate_state=boot.gate_state,
+        )
+
+    # ── Phase 2 (reproduce only): PaperResearch agent ───────────────────────
+    paper_ctx = None
+    if mode == "reproduce":
+        console.rule("[cyan]PaperResearch (LLM-driven, skill-taught)")
+
+        pr_ctx = _make_parent_ctx(agent_id="paper-research-root")
+        pr_prompt = _build_paper_research_prompt(
+            recon=recon, paper_arxiv_id=paper_arxiv_id, paper_url=paper_url
+        )
+        pr_result = await run_agent(
+            RunAgentParams(
+                agent_def=PAPER_RESEARCH,
+                prompt=pr_prompt,
+                parent_ctx=pr_ctx,
+                client=client,
+                client_factory=boot.make_client,
+                transcript_store=transcript_store,
+                skill_catalog=boot.skill_catalog,
+                on_event=printer,
+            )
+        )
+        # Sub-agents get a COPY of ctx.options, so EmitPaperContext mutations
+        # don't bubble back. The persisted JSON in output_dir/papers/ is the
+        # source of truth across the agent boundary.
+        paper_ctx = _load_latest_paper_context(output_dir)
+        console.print(
+            f"[dim]paper-research turns={pr_result.terminal.turns} "
+            f"reason={pr_result.terminal.reason}"
+        )
+
+        if paper_ctx is not None:
+            recon.paper_arxiv_id = paper_ctx.metadata.arxiv_id
+            recon.paper_title = paper_ctx.metadata.title
+            console.print(f"  paper: {paper_ctx.metadata.title or '(unknown)'}")
+            console.print(
+                f"  chosen experiment: {paper_ctx.chosen_experiment_id or '(none)'}"
+            )
+            chosen = paper_ctx.chosen()
+            if chosen is not None:
+                chosen.ensure_back_compat()
+                bits = []
+                if chosen.suggested_script:
+                    bits.append(chosen.suggested_script)
+                if chosen.dataset:
+                    bits.append(f"dataset={chosen.dataset}")
+                if chosen.model_checkpoint:
+                    bits.append(f"model={chosen.model_checkpoint}")
+                if chosen.estimated_runtime_min:
+                    bits.append(f"runtime~{chosen.estimated_runtime_min}m")
+                console.print("  target: " + ("  ".join(bits) or "(no script)"))
+                if chosen.metric is not None:
+                    console.print(f"  metric: {chosen.metric.display()}")
+                if chosen.hyperparameters:
+                    console.print(
+                        f"  hyperparams: {len(chosen.hyperparameters)} "
+                        f"(bound {len(chosen.repo_bindings)}, "
+                        f"unbound {len(chosen.unbound_hyperparameters)})"
+                    )
+                if chosen.suggested_command:
+                    cmd = " ".join(chosen.suggested_command.split())
+                    if len(cmd) > 140:
+                        cmd = cmd[:137] + "..."
+                    console.print(f"  command: {cmd}")
+        else:
+            console.print("[yellow]No PaperContext produced.")
+
+        if paper_ctx is None or not paper_ctx.chosen_experiment_id:
+            console.print(
+                "[red]No runnable paper experiment could be selected. "
+                "Aborting reproduce mode before planning."
+            )
+            return
+
+    # ── Phase 3: Planner emits MigrationPlan ────────────────────────────────
+    console.rule("[cyan]Planner (emit typed MigrationPlan)")
+    planner_ctx = _make_parent_ctx(agent_id="planner-root")
+    planner_ctx.options["paper_context"] = paper_ctx
+    planner_prompt = _build_planner_prompt(repo=repo, mode=mode, base_image=base_image)
+
+    planner_result = await run_agent(
+        RunAgentParams(
+            agent_def=PLANNER,
+            prompt=planner_prompt,
+            parent_ctx=planner_ctx,
+            client=client,
+            client_factory=boot.make_client,
+            transcript_store=transcript_store,
+            skill_catalog=boot.skill_catalog,
+            on_event=printer,
+        )
+    )
+    # Same context-isolation issue — read the plan back from disk.
+    plan, plan_path = _load_migration_plan(output_dir)
+    if plan is None:
+        console.print(
+            "[red]Planner did not emit a MigrationPlan. Aborting before sandbox."
+        )
+        console.print(
+            f"[dim]planner turns={planner_result.terminal.turns} "
+            f"reason={planner_result.terminal.reason}"
+        )
+        return
+    console.print(f"  steps={len(plan.steps)}  base_image={plan.base_image}")
+    console.print(f"[dim]MigrationPlan: {plan_path}")
+    console.print(
+        f"[dim]planner turns={planner_result.terminal.turns} "
+        f"reason={planner_result.terminal.reason}"
+    )
+
+    # ── Phase 4: start the sandbox ──────────────────────────────────────────
     sandbox = None
     if not no_sandbox:
         try:
             sandbox = Sandbox(SandboxConfig(
-                base_image=rocm_base_image,
+                base_image=plan.base_image,
                 repo_host_path=repo_path,
                 repo_container_path="/repo",
                 rocm_mode=True,
                 pull_image=True,
             ))
-            # Live pull progress so the user isn't staring at a black screen
-            # while a 20 GB ROCm image downloads.
-            console.print(f"[cyan]· Starting sandbox from [/]{rocm_base_image}[cyan] ...[/]")
+            console.print(f"[cyan]· Starting sandbox from [/]{plan.base_image} ...")
             from rich.status import Status
 
             with Status(
-                f"Pulling [bold]{rocm_base_image}[/] (skipped if already local)...",
+                f"Pulling [bold]{plan.base_image}[/] (skipped if already local)...",
                 console=console,
                 spinner="dots",
             ) as status:
@@ -159,51 +355,22 @@ async def _run_migration(
             )
         except Exception as exc:
             console.print(f"[red]✗ Sandbox failed to start: {exc}")
-            console.print("[yellow]Continuing without a sandbox (DockerExec calls will error).")
             sandbox = None
     else:
         console.print("[yellow]Sandbox disabled (--no-sandbox)")
 
-    # 3. Build the parent ToolUseContext — full permissions inside the sandbox
-    from repo2rocm.tools.base import ReadFileState, ToolUseContext
-    parent_ctx = ToolUseContext(
-        agent_id="root",
-        session_id=transcript_store.session_id,
-        workdir=repo_path,
-        abort_event=asyncio.Event(),
-        permission_mode=PermissionMode.BYPASS,  # the container IS the safety boundary
-        read_file_state=ReadFileState(),
-        sandbox=sandbox,
-        transcript=transcript_store.main(),
-        messages=[],
-        options={
-            "client": client,
-            "client_factory": boot.make_client,
-            "transcript_store": transcript_store,
-            "skill_catalog": boot.skill_catalog,
-            "rocm_base_image": rocm_base_image,
-            "run_mode": mode,
-            "repo_full_name": repo,
-            "sha": sha or "",
-        },
-        gate_state=boot.gate_state,
-    )
+    # ── Phase 5: execute the plan ───────────────────────────────────────────
+    parent_ctx = _make_parent_ctx(sandbox=sandbox, agent_id="root")
+    parent_ctx.options["paper_context"] = paper_ctx
+    parent_ctx.options["migration_plan"] = plan
 
-    # 4. Spawn the chosen agent
     agent_def = COORDINATOR if agent_mode == "coordinator" else CONFIGURATION
     if max_turns:
         agent_def = agent_def.with_(max_turns=max_turns)
 
     task_prompt = _build_root_prompt(
-        repo=repo, sha=sha, mode=mode, base_image=rocm_base_image, agent_mode=agent_mode,
+        repo=repo, sha=sha, mode=mode, base_image=plan.base_image, agent_mode=agent_mode,
     )
-
-    # Live event printer — streams every turn / text / tool_use / tool_result
-    # to the console in real time. Disabled with --quiet.
-    printer = None
-    if not quiet:
-        from repo2rocm.ui.event_printer import EventPrinter
-        printer = EventPrinter(console=console, show_thinking=show_thinking)
 
     console.print(
         f"[cyan]· Spawning [bold]{agent_def.name}[/] agent[/]  "
@@ -237,7 +404,7 @@ async def _run_migration(
         console.print(f"\n[bold]Final text:\n{result.final_text}\n")
         console.print(f"[dim]Transcript: {transcript_store.transcript(result.task.id).path}")
 
-        # 5. Synthesize the reproducible Dockerfile (if sandbox actually ran)
+        # ── Phase 6: synthesize a Dockerfile ────────────────────────────────
         if sandbox is not None and sandbox.commands:
             patches_dir = output_dir / "patches"
             synth = synthesize_dockerfile(
@@ -255,7 +422,6 @@ async def _run_migration(
             if synth.patches:
                 console.print(f"  code patches captured: {len(synth.patches)}")
 
-            # Also dump inner_commands.json (matches original Repo2ROCm artifact)
             inner = [{
                 "command": c.command,
                 "returncode": c.exit_code,
@@ -265,7 +431,6 @@ async def _run_migration(
             (output_dir / "inner_commands.json").write_text(json.dumps(inner, indent=2))
             console.print(f"  inner_commands.json: {len(inner)} entries")
 
-        # 6. Update KB + trajectory
         attempt.outcome = "success" if result.terminal.reason == "completed" else "failure"
         attempt.duration_s = result.duration_s
         attempt.total_turns = result.terminal.turns
@@ -286,7 +451,6 @@ async def _run_migration(
         )
 
     finally:
-        # 7. Always tear down the sandbox
         if sandbox is not None:
             try:
                 await sandbox.stop()
@@ -297,38 +461,112 @@ async def _run_migration(
         traj.close()
 
 
+def _paper_hint(arxiv_id: str | None, url: str | None) -> str:
+    if arxiv_id:
+        return f"arxiv_id={arxiv_id}"
+    if url:
+        return f"url={url}"
+    return ""
+
+
+def _build_paper_research_prompt(*, recon, paper_arxiv_id, paper_url) -> str:
+    """Short, action-oriented user message.
+
+    The full methodology lives in the agent's system prompt + skills. We only
+    pass the entry-point hint (arxiv id / url / README excerpt) plus the repo
+    name. The agent's `paper_reproduction_recipes` skill takes it from there.
+    """
+    lines = [
+        f"Repository: {recon.repo}",
+        (
+            "Goal: produce a fully-bound PaperContext for the project's main "
+            "paper via EmitPaperContext, then end. Drive the flow yourself; "
+            "consult /paper_reproduction_recipes for the suggested order."
+        ),
+    ]
+    if paper_arxiv_id:
+        lines.append(
+            f"Paper hint: call PaperFetch with source='arxiv_id', value='{paper_arxiv_id}'."
+        )
+    elif paper_url:
+        lines.append(
+            f"Paper hint: call PaperFetch with source='url', value='{paper_url}'."
+        )
+    else:
+        readme = (recon.readme_excerpt or "")[:800]
+        lines.append(
+            "No paper hint. Call PaperFetch with source='readme_arxiv_id' and the "
+            "README excerpt below as `value`."
+        )
+        if readme:
+            lines.append("\nREADME excerpt:")
+            lines.append(readme)
+    return "\n".join(lines)
+
+
+def _load_latest_paper_context(output_dir: Path):
+    """Read the newest PaperContext from output_dir/papers/*.json."""
+    from repo2rocm.paper.types import PaperContext
+
+    papers_dir = output_dir / "papers"
+    if not papers_dir.is_dir():
+        return None
+    candidates = sorted(papers_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    for path in candidates:
+        try:
+            return PaperContext.model_validate_json(path.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            continue
+    return None
+
+
+def _load_migration_plan(output_dir: Path):
+    """Read the MigrationPlan that EmitPlan persisted under output_dir/plans/."""
+    from repo2rocm.planning import MigrationPlan
+
+    plan_path = output_dir / "plans" / "migration_plan.json"
+    if not plan_path.is_file():
+        return None, ""
+    try:
+        plan = MigrationPlan.model_validate_json(plan_path.read_text(encoding="utf-8"))
+        return plan, str(plan_path)
+    except Exception:  # noqa: BLE001
+        return None, str(plan_path)
+
+
+def _build_planner_prompt(*, repo: str, mode: str, base_image: str) -> str:
+    return (
+        f"Produce the MigrationPlan for `{repo}` in `{mode}` mode.\n"
+        f"Default base_image: {base_image}\n"
+        "The Recon Report is already in your system prompt. "
+        "Emit the plan via the `EmitPlan` tool and end your turn."
+    )
+
+
 def _build_root_prompt(
-    *, repo: str, sha: str | None, mode: str, base_image: str | None, agent_mode: str
+    *, repo: str, sha: str | None, mode: str, base_image: str, agent_mode: str
 ) -> str:
     parts = [
-        f"Migrate the GitHub repository `{repo}` to run on AMD ROCm.",
-        f"Run mode: {mode}.",
+        f"Execute the MigrationPlan for repository `{repo}` ({mode} mode).",
+        f"The Docker sandbox is running from base image: {base_image}",
+        "The repository is mounted inside the container at /repo (read-write).",
     ]
     if sha:
         parts.append(f"Pinned commit SHA: {sha}.")
-    if base_image:
-        parts.append(f"The Docker sandbox is already running from base image: {base_image}")
-        parts.append("The repository is available inside the container at /repo (read-write).")
     if agent_mode == "single":
-        parts.extend([
-            "",
-            "Workflow:",
-            "  1. Briefly inspect the repo (README, requirements, main entry).",
-            "  2. Install deps via DockerExec / Download (handle CUDA-only wheels per /cuda_to_rocm_mapping).",
-            "  3. Apply any necessary code patches via Edit / ApplyDiff.",
-            "  4. Run the README's actual verification command on the GPU (no fake test).",
-            "  5. When torch.cuda.is_available() returns True and the project runs end-to-end,",
-            "     `DockerExec('echo ROCM_ENV_VERIFIED')` to signal completion.",
-        ])
+        parts.append(
+            "You are the Configuration agent. Walk the plan steps in `depends_on` "
+            "order. Use the success_marker on each step to decide when to move on."
+        )
     else:
         parts.append(
-            "Follow the four-phase coordinator workflow (research → plan → migrate → verify)."
+            "You are the Coordinator. Dispatch one worker per plan step "
+            "(parallel where `parallel_group` is set)."
         )
-    if mode in ("reproduce", "full"):
-        parts.append(
-            "After env is verified, run the paper experiment per the README "
-            "and use PaperVerify for a typed metric verdict."
-        )
+    parts.append(
+        "When env is verified, the verifier step emits ROCM_ENV_VERIFIED. "
+        "In reproduce mode the paper-reproducer step then runs the chosen experiment."
+    )
     return "\n".join(parts)
 
 
@@ -368,7 +606,6 @@ async def _run_batch(entries: list[dict], parallel: int) -> None:
     async def one(e: dict) -> None:
         async with sem:
             console.print(f"[dim]start: {e['repo']}")
-            # In production this would call into _run_migration; left as a hook.
             await asyncio.sleep(0.1)
             console.print(f"[dim]end:   {e['repo']}")
 
@@ -435,19 +672,30 @@ def reproduce(
     repo: str = typer.Argument(...),
     sha: Optional[str] = typer.Option(None),
     root_path: Path = typer.Option(Path.cwd()),
-    rocm_base_image: str = typer.Option("rocm/pytorch:latest"),
+    rocm_base_image: str = typer.Option(""),
+    paper_url: Optional[str] = typer.Option(None),
+    paper_arxiv_id: Optional[str] = typer.Option(None),
+    max_turns: int = typer.Option(300, help="Hard cap on configuration agent turns."),
+    no_sandbox: bool = typer.Option(False, help="DEV: skip the Docker sandbox + configuration agent."),
+    quiet: bool = typer.Option(False, help="Suppress live agent event stream."),
+    show_thinking: bool = typer.Option(False, help="Also print extended-thinking blocks."),
+    output_dir: Optional[Path] = typer.Option(None, help="Where to write artifacts."),
 ) -> None:
-    """Alias for `migrate --mode full` — env setup + paper reproduction."""
+    """Alias for `migrate --mode reproduce` \u2014 env + paper reproduction."""
     migrate(
         repo=repo,
         sha=sha,
         root_path=root_path,
-        mode="full",
+        mode="reproduce",
         rocm_base_image=rocm_base_image,
         agent_mode="single",
-        output_dir=None,
-        max_turns=100,
-        no_sandbox=False,
+        paper_url=paper_url,
+        paper_arxiv_id=paper_arxiv_id,
+        output_dir=output_dir,
+        max_turns=max_turns,
+        no_sandbox=no_sandbox,
+        quiet=quiet,
+        show_thinking=show_thinking,
     )
 
 

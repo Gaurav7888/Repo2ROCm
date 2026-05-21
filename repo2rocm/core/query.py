@@ -174,12 +174,15 @@ class QueryRun:
 
                         # 3. Drain remaining tools
                         tool_result_blocks: list[ToolResultBlock] = []
+                        seen_tool_result_ids: set[str] = set()
                         async for t in executor.get_remaining_results():
                             yield LoopEvent("tool_result", t)
                             if t.result is not None:
                                 text = t.result.text
                                 if not isinstance(text, str):
                                     text = str(text)
+                                if not text.strip():
+                                    text = "[internal-empty-tool-result]"
                                 tool_result_blocks.append(
                                     ToolResultBlock(
                                         tool_use_id=t.tool_use.id,
@@ -187,6 +190,7 @@ class QueryRun:
                                         is_error=t.result.is_error,
                                     )
                                 )
+                                seen_tool_result_ids.add(t.tool_use.id)
 
                         # 4. Error handling for the API call itself
                         if assistant_msg is None:
@@ -286,6 +290,29 @@ class QueryRun:
                                 final_text=assistant_msg.text(),
                             )
                             break
+
+                        # Some provider / executor edge-cases can leave us with
+                        # tool_use blocks but no corresponding tool_result
+                        # blocks. Sending an empty follow-up user message causes
+                        # Vertex/OpenAI-compatible APIs to reject the request.
+                        # Synthesize explicit error tool_results so the next turn
+                        # is always well-formed and the model can recover.
+                        missing_tool_results = [
+                            tu for tu in tool_uses if tu.id not in seen_tool_result_ids
+                        ]
+                        for tu in missing_tool_results:
+                            tool_result_blocks.append(
+                                ToolResultBlock(
+                                    tool_use_id=tu.id,
+                                    content=(
+                                        "[internal-tool-error] The tool call produced no "
+                                        "result. Treat this as a failed tool invocation "
+                                        "and either retry with different input or choose "
+                                        "a different tool."
+                                    ),
+                                    is_error=True,
+                                )
+                            )
 
                         # 6. Reconstruct state for next turn
                         new_messages = [

@@ -93,10 +93,10 @@ def test_explore_is_read_only():
     e = get_builtin_agents()["explore"]
     assert "Edit" not in (e.allowed_tools or [])
     assert "Write" not in (e.allowed_tools or [])
-    # Read-only sub-agents stay in PLAN as belt-and-suspenders enforcement of
-    # their already-read-only allowlist. PLAN here is safe because they don't
-    # have any descendants to cascade onto.
-    assert e.permission_mode == PermissionMode.PLAN
+    # Safety = the read-only `allowed_tools` allowlist. permission_mode is BYPASS
+    # so the agent isn't blocked from invoking internal coordination tools that
+    # happen to be marked non-read-only (e.g. tiny workdir writes by tooling).
+    assert e.permission_mode == PermissionMode.BYPASS
     assert e.omit_user_context is True
 
 
@@ -104,8 +104,26 @@ def test_verifier_is_background():
     v = get_builtin_agents()["verifier"]
     assert v.background is True
     assert "EnvVerify" in (v.allowed_tools or [])
-    # Verifier is intentionally adversarial / read-only.
-    assert v.permission_mode == PermissionMode.PLAN
+    # Verifier is adversarial but its safety comes from its allow-list (no
+    # Edit/Write/ApplyDiff); BYPASS prevents PLAN from blocking EnvVerify's
+    # internal container probe.
+    assert v.permission_mode == PermissionMode.BYPASS
+
+
+def test_planner_and_paper_research_can_emit_artifacts():
+    """Regression for the bug where planner/paper-research were stuck in PLAN
+    and every EmitPlan / Paper* tool call returned `Permission denied: plan
+    mode denies mutations`. Both agents now run BYPASS at the mode layer and
+    the write tools they own have explicit allow() check_permissions, so they
+    can persist their typed artifacts."""
+    agents = get_builtin_agents()
+    p = agents["planner"]
+    pr = agents["paper-research"]
+    assert p.permission_mode == PermissionMode.BYPASS
+    assert pr.permission_mode == PermissionMode.BYPASS
+    assert "EmitPlan" in (p.allowed_tools or [])
+    for t in ("PaperFetch", "PaperOutline", "PaperRead", "EmitPaperContext"):
+        assert t in (pr.allowed_tools or [])
 
 
 def test_migrator_has_no_agent_tool():

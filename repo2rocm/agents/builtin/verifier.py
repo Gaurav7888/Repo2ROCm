@@ -35,9 +35,12 @@ no `rocm-smi` available), say so explicitly — don't skip silently."""
 
 VERIFIER = AgentDefinition(
     name="verifier",
-    description="Adversarial env tester. Always background. Read-only.",
+    description="Adversarial env tester. Always background. Read-only via allow-list.",
     allowed_tools=["Read", "Grep", "Glob", "DockerExec", "EnvVerify"],
-    permission_mode=PermissionMode.PLAN,
+    # Safety is enforced by the allowed_tools allow-list (no Edit/Write). BYPASS at
+    # the mode layer keeps the agent from being trapped when an internal/non-read-only
+    # tool needs to run (EnvVerify writes a tiny probe file inside the container).
+    permission_mode=PermissionMode.BYPASS,
     background=True,
     omit_user_context=True,
     max_turns=20,

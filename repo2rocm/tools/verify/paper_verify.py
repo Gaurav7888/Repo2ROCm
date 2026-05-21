@@ -10,6 +10,7 @@ from typing import ClassVar, Literal
 
 from pydantic import BaseModel, Field
 
+from repo2rocm.paper.types import PaperContext
 from repo2rocm.tools.base import BaseTool, ToolResult, ToolUseContext
 
 
@@ -34,6 +35,21 @@ class PaperVerifyOutput(BaseModel):
 _FLOAT_RE = re.compile(r"([-+]?\d*\.\d+|[-+]?\d+\.?\d*)")
 
 
+def _coerce_paper_context(obj) -> PaperContext | None:
+    if obj is None:
+        return None
+    if isinstance(obj, PaperContext):
+        return obj
+    try:
+        return PaperContext.model_validate(obj)
+    except Exception:
+        return None
+
+
+def _norm_metric(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", name.lower())
+
+
 class PaperVerify(BaseTool[PaperVerifyInput, PaperVerifyOutput]):
     name: ClassVar[str] = "PaperVerify"
     description: ClassVar[str] = (
@@ -48,6 +64,51 @@ class PaperVerify(BaseTool[PaperVerifyInput, PaperVerifyOutput]):
 
     def is_read_only(self, parsed: PaperVerifyInput) -> bool:
         return True
+
+    def validate_semantic(self, parsed: PaperVerifyInput, ctx: ToolUseContext) -> str | None:
+        if str(ctx.options.get("run_mode") or "").lower() != "reproduce":
+            return None
+        low_log_path = parsed.log_path.lower()
+        if "formatted" in low_log_path or "synthetic" in low_log_path:
+            return (
+                "Reproduce-mode guard: refusing to verify a synthetic/formatted log. "
+                "Verify the real experiment log instead."
+            )
+        paper_ctx = _coerce_paper_context(ctx.options.get("paper_context"))
+        chosen = paper_ctx.chosen() if paper_ctx is not None else None
+        if chosen is None or chosen.headline_metric is None or chosen.headline_metric.value is None:
+            return None
+        allowed_metrics = [chosen.headline_metric, *chosen.related_metrics]
+        headline_ok = False
+        for metric in parsed.metrics:
+            match = next(
+                (
+                    allowed
+                    for allowed in allowed_metrics
+                    if allowed.value is not None
+                    and _norm_metric(allowed.name) == _norm_metric(metric.name)
+                    and abs(float(allowed.value) - float(metric.expected_value)) <= 1e-6
+                ),
+                None,
+            )
+            if match is None:
+                return (
+                    "Reproduce-mode guard: PaperVerify metrics must come directly from the "
+                    "chosen PaperContext experiment."
+                )
+            if metric.tolerance > float(match.default_tolerance) + 1e-9:
+                return (
+                    "Reproduce-mode guard: PaperVerify tolerance exceeds the chosen "
+                    f"experiment's default tolerance for `{match.name}`."
+                )
+            if _norm_metric(metric.name) == _norm_metric(chosen.headline_metric.name):
+                headline_ok = True
+        if parsed.metrics and not headline_ok:
+            return (
+                "Reproduce-mode guard: PaperVerify must include the chosen experiment's "
+                "headline metric."
+            )
+        return None
 
     async def call(
         self, parsed: PaperVerifyInput, ctx: ToolUseContext

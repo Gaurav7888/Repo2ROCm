@@ -82,6 +82,69 @@ _ENV_VERIFY_FINGERPRINT = re.compile(
     r"torch\.cuda\.is_available\(\)|ENV_VERIFY_JSON:",
 )
 
+# Inline `export FOO=BAR && rest` at the start of a command.
+# The agent uses this idiom to set a per-invocation env var while probing the
+# runtime — but those vars die at the end of the RUN. We lift them to ENV.
+_SINGLE_INLINE_EXPORT_RE = re.compile(
+    r"\bexport\s+(?P<key>[A-Z_][A-Z0-9_]*)=(?P<value>\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*'|[^\s&;|]+)\s*&&"
+)
+
+# Standalone `export FOO=BAR` (no `&&`), and `.bashrc` persistence pattern.
+_STANDALONE_EXPORT_RE = re.compile(
+    r"^\s*export\s+(?P<key>[A-Z_][A-Z0-9_]*)=(?P<value>\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*'|[^\s;|]+)\s*$"
+)
+_BASHRC_EXPORT_RE = re.compile(
+    r"echo\s+['\"]export\s+(?P<key>[A-Z_][A-Z0-9_]*)=(?P<value>[^'\"]+)['\"]"
+    r"\s*>>\s*(?:/root/|~/)?\.bashrc"
+)
+
+
+def _strip_quotes(s: str) -> str:
+    s = s.strip()
+    if len(s) >= 2 and ((s[0] == s[-1] == '"') or (s[0] == s[-1] == "'")):
+        return s[1:-1]
+    return s
+
+
+def _extract_envs_from_command(cmd: str) -> tuple[str, dict[str, str]]:
+    """Detect `export FOO=BAR && rest` / `echo 'export FOO=BAR' >> .bashrc` /
+    standalone `export FOO=BAR` patterns.
+
+    Returns the cleaned command (with the export prefix stripped) and a dict
+    of (key, value) pairs that should be promoted to `ENV` directives in the
+    Dockerfile.
+    """
+    envs: dict[str, str] = {}
+
+    # `echo 'export FOO=BAR' >> .bashrc` — this is the persistence idiom; the
+    # bashrc write itself isn't useful in a Dockerfile, but the ENV is.
+    bashrc_match = _BASHRC_EXPORT_RE.search(cmd)
+    if bashrc_match:
+        envs[bashrc_match.group("key")] = _strip_quotes(bashrc_match.group("value"))
+        return "", envs  # drop the whole bashrc echo
+
+    # Standalone `export FOO=BAR` — just promote and drop.
+    sm = _STANDALONE_EXPORT_RE.match(cmd.strip())
+    if sm:
+        envs[sm.group("key")] = _strip_quotes(sm.group("value"))
+        return "", envs
+
+    # Inline `export FOO=BAR && rest` (possibly chained). We only strip the
+    # prefix while the next match is genuinely *leading* — we don't touch
+    # `export` invocations buried deep inside a script.
+    stripped = cmd
+    while True:
+        m = _SINGLE_INLINE_EXPORT_RE.search(stripped)
+        if not m:
+            break
+        if stripped[: m.start()].strip():
+            break
+        envs[m.group("key")] = _strip_quotes(m.group("value"))
+        stripped = stripped[m.end():].lstrip()
+        if not stripped:
+            break
+    return stripped, envs
+
 
 @dataclass
 class DockerfileSynthesis:
@@ -89,6 +152,7 @@ class DockerfileSynthesis:
     successful_commands: list[str]
     base_image: str
     patches: list[Path] = field(default_factory=list)  # Paths to .diff files written to disk
+    promoted_envs: dict[str, str] = field(default_factory=dict)
 
 
 def _is_skippable(c: ExecResult) -> bool:
@@ -267,9 +331,38 @@ def synthesize_dockerfile(
             lines.append(f"RUN cd /repo && git apply --reject /tmp/{p.name} --allow-empty || true")
         lines.append("")
 
-    # Replay every successful command
-    successful = [c for c in sandbox.commands if c.exit_code == 0 and not _is_skippable(c)]
-    run_lines = [_run_line(c) for c in successful]
+    # ENV promotion has to look at the FULL command list (including ones we'd
+    # otherwise skip) because the bashrc-persistence pattern starts with `echo`,
+    # which would be filtered as a read-only inspection. The value of those
+    # commands isn't the bash invocation — it's the env declaration we lift out
+    # of them.
+    from dataclasses import replace as _replace
+
+    promoted_envs: dict[str, str] = {}
+    cleaned: list[ExecResult] = []
+    for c in sandbox.commands:
+        if c.exit_code != 0:
+            continue
+        cleaned_cmd, envs = _extract_envs_from_command(c.command)
+        for k, v in envs.items():
+            promoted_envs[k] = v  # later writes win — the agent's last value is the real one
+        if not cleaned_cmd.strip():
+            # the export/bashrc command had no payload after extraction → drop
+            continue
+        candidate = c if cleaned_cmd == c.command else _replace(c, command=cleaned_cmd)
+        if _is_skippable(candidate):
+            continue
+        cleaned.append(candidate)
+    # `successful` retained for the patch-extraction summary
+    successful = cleaned
+
+    if promoted_envs:
+        lines.append("# Environment promoted from `export FOO=BAR` patterns observed in the sandbox.")
+        for k, v in promoted_envs.items():
+            lines.append(f"ENV {k}={_quote_env_value(v)}")
+        lines.append("")
+
+    run_lines = [_run_line(c) for c in cleaned]
     run_lines = _dedupe_runs(run_lines)
     if run_lines:
         lines.append("# Commands the agent ran inside the sandbox (deduplicated)")
@@ -282,10 +375,21 @@ def synthesize_dockerfile(
 
     return DockerfileSynthesis(
         dockerfile_text="\n".join(lines).rstrip() + "\n",
-        successful_commands=[c.command for c in successful],
+        successful_commands=[c.command for c in cleaned],
         base_image=base_image,
         patches=patches,
+        promoted_envs=promoted_envs,
     )
+
+
+def _quote_env_value(v: str) -> str:
+    """Quote an env value for an `ENV KEY=VALUE` line if it needs it."""
+    if not v:
+        return '""'
+    if any(ch.isspace() or ch in '"\'$\\' for ch in v):
+        # use double quotes, escape any embedded ones
+        return '"' + v.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    return v
 
 
 def write_dockerfile(synth: DockerfileSynthesis, target: Path) -> None:

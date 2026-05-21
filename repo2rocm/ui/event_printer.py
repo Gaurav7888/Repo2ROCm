@@ -79,8 +79,8 @@ class EventPrinter:
         agent_id = getattr(ev, "agent_id", "?")
         agent_type = getattr(ev, "agent_type", "?")
         mode = getattr(ev, "permission_mode", "?")
-        self.console.print()
-        self.console.rule(
+        self._print()
+        self._rule(
             f"[bold cyan]agent: {agent_type}[/] [dim]({agent_id})[/]  [dim]mode={mode}[/]",
             align="left",
         )
@@ -114,7 +114,7 @@ class EventPrinter:
         except Exception:
             args = str(getattr(tu, "input", ""))
         args_short = args if len(args) <= 140 else args[:137] + "..."
-        self.console.print(f"        [cyan]→ {name}[/]([dim]{_escape(args_short)}[/])")
+        self._print(f"        [cyan]→ {name}[/]([dim]{_escape(args_short)}[/])")
 
     def _on_tool_result(self, agent_id: str, tracked: Any) -> None:
         # tracked is a TrackedTool — has .tool.name, .result.text, .result.is_error
@@ -133,7 +133,7 @@ class EventPrinter:
         if len(preview) > 100:
             preview = preview[:97] + "..."
         outcome = "error" if is_err else "ok"
-        self.console.print(
+        self._print(
             f"        {marker}[/] [{color}]{name:<14}[/] "
             f"[dim]{outcome:>5s}  {nbytes:>6d}b[/]  [dim]{_escape(preview)}[/]"
         )
@@ -154,7 +154,7 @@ class EventPrinter:
         denom = in_tok + cache_read + cache_create
         if denom:
             ratio_pct = int(round(100 * cache_read / denom))
-        self.console.print(
+        self._print(
             f"        [dim]usage: in={in_tok:>5d} out={out_tok:>4d} "
             f"cache_read={cache_read:>5d} hit={ratio_pct:>2d}%[/]"
         )
@@ -165,7 +165,7 @@ class EventPrinter:
         self._flush_text(agent_id)
         err_class = getattr(chunk, "error_class", "?")
         msg = (getattr(chunk, "message", "") or "")[:300]
-        self.console.print(f"        [bold red]✗ ERROR[/] [red]{err_class}[/]: [dim]{_escape(msg)}[/]")
+        self._print(f"        [bold red]✗ ERROR[/] [red]{err_class}[/]: [dim]{_escape(msg)}[/]")
 
     # ── Internal helpers ──────────────────────────────────────────────────
 
@@ -180,14 +180,14 @@ class EventPrinter:
             line = " ".join(text.split())
             if len(line) > 240:
                 line = line[:237] + "..."
-            self.console.print(f"  [bold]T{turn:>2d}[/]  {_escape(line)}")
+            self._print(f"  [bold]T{turn:>2d}[/]  {_escape(line)}")
             self._first_text_of_turn[agent_id] = False
         else:
             # mid-turn continuation (rare; only after a tool result)
             line = " ".join(text.split())
             if len(line) > 240:
                 line = line[:237] + "..."
-            self.console.print(f"        [dim]…[/]  {_escape(line)}")
+            self._print(f"        [dim]…[/]  {_escape(line)}")
 
     def _flush_thinking(self, agent_id: str) -> None:
         text = self._thinking_buffer.pop(agent_id, "").strip()
@@ -196,7 +196,24 @@ class EventPrinter:
         line = " ".join(text.split())
         if len(line) > 240:
             line = line[:237] + "..."
-        self.console.print(f"        [italic dim]💭 {_escape(line)}[/]")
+        self._print(f"        [italic dim]💭 {_escape(line)}[/]")
+
+    def _print(self, *args: Any, **kwargs: Any) -> None:
+        self.console.print(*args, **kwargs)
+        self._flush_console()
+
+    def _rule(self, *args: Any, **kwargs: Any) -> None:
+        self.console.rule(*args, **kwargs)
+        self._flush_console()
+
+    def _flush_console(self) -> None:
+        file_obj = getattr(self.console, "file", None)
+        flush = getattr(file_obj, "flush", None)
+        if callable(flush):
+            try:
+                flush()
+            except Exception:
+                pass
 
 
 def _escape(s: str) -> str:

@@ -1,0 +1,31 @@
+mode: functional
+description: >
+  Migrate the repo so it builds and runs on AMD ROCm. Goal: the project's own
+  verification command runs and prints real output on the GPU.
+
+phases:
+  - id: P1
+    name: Setup base image
+    purpose: Decide and commit the ROCm base image, possibly switching from the default.
+    agent: migrator
+    skills: [rocm_image_selection]
+    success: base image committed
+
+  - id: P2
+    name: Install dependencies
+    purpose: Install all non-banned, non-preinstalled requirements via the waiting list, applying SPECIAL recipes (flash-attn, bitsandbytes, ...).
+    agent: migrator
+    skills: [nvidia_alternatives, banned_nvidia_packages, pin_hazards, amd_dependencies]
+    parallel_safe: false
+
+  - id: P3
+    name: Patch code
+    purpose: Apply hazard fixes (py312 stdlib, hardcoded cuda flags, deprecated APIs).
+    agent: migrator
+    skills: [pin_hazards]
+
+  - id: P4
+    name: Verify
+    purpose: Run the README's own commands on the GPU; call EnvVerify; echo ROCM_ENV_VERIFIED.
+    agent: verifier
+    success_marker: ROCM_ENV_VERIFIED

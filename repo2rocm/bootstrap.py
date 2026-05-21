@@ -95,6 +95,9 @@ def bootstrap(*, force: bool = False) -> Bootstrap:
         from repo2rocm.tools.external import register_external_tools
         from repo2rocm.tools.verify import register_verify_tools
         from repo2rocm.tools.agent_tool import register_agent_tools
+        from repo2rocm.tools.skills import register_skill_tools
+        from repo2rocm.tools.planning import register_planning_tools
+        from repo2rocm.tools.paper import register_paper_tools
 
         register_repo_tools()
         register_docker_tools()
@@ -102,6 +105,9 @@ def bootstrap(*, force: bool = False) -> Bootstrap:
         register_external_tools()
         register_verify_tools()
         register_agent_tools()
+        register_skill_tools()
+        register_planning_tools()
+        register_paper_tools()
         checkpoint("bootstrap.tools_registered")
 
         _bootstrap = Bootstrap(

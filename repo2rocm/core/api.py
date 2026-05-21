@@ -796,6 +796,8 @@ def _messages_to_openai(messages: list[Message]) -> list[dict[str, Any]]:
                 )
             elif btype == "tool_result":
                 content = b.content if isinstance(b.content, str) else json.dumps(b.content)
+                if not content:
+                    content = "[internal-empty-tool-result]"
                 tool_results.append(
                     {
                         "role": "tool",
@@ -826,8 +828,13 @@ def _messages_to_openai(messages: list[Message]) -> list[dict[str, Any]]:
             for tr in tool_results:
                 out.append(tr)
             if not text_parts and not tool_results and not tool_calls:
-                # empty: ensure something is sent so the API doesn't reject
-                out.append({"role": role, "content": ""})
+                # Provider-compatible clients reject empty user messages.
+                out.append(
+                    {
+                        "role": role,
+                        "content": "[internal-empty-user-message]",
+                    }
+                )
 
     return out
 
