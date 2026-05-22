@@ -6,9 +6,13 @@ Usage:
     # Enrich CSV (resolve arXiv URLs and repo SHAs); cache to harness/cache/.
     python -m harness.main enrich --csv ../AMD_Agnostic_Accuracy_Benchmark_60.csv
 
-    # Run both approaches across 8 GPUs.
+    # Run both approaches across 8 GPUs (default mode = full).
     AMD_LLM_API_KEY=... python -m harness.main run \
         --gpus 0,1,2,3,4,5,6,7 --approaches repo2rocm,claude_cli
+
+    # Mode 1 only (functional correctness — ROCM_ENV_VERIFIED).
+    AMD_LLM_API_KEY=... python -m harness.main run \
+        --gpus 0,1,2,3,4,5,6,7 --approaches repo2rocm --mode env
 
     # Report (after some tasks have completed).
     python -m harness.main report
@@ -84,7 +88,10 @@ def cmd_run(args: argparse.Namespace) -> int:
         gpus=gpus,
         timeout_s=args.timeout,
         max_disk_percent=args.max_disk_percent,
-        extra_kwargs={"tasks_json": os.path.abspath(args.tasks_json)},
+        extra_kwargs={
+            "tasks_json": os.path.abspath(args.tasks_json),
+            "mode": args.mode,
+        },
     )
     print("Status (after):", db_stats(args.db))
     return 0
@@ -137,6 +144,11 @@ def _add_common_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--timeout", type=int, default=90 * 60)
     p.add_argument("--max-disk-percent", type=float, default=90.0)
     p.add_argument("--retry-failed", action="store_true")
+    p.add_argument("--mode", default="full", choices=["env", "reproduce", "full"],
+                   help="Agent run-mode passed through to the runner. "
+                        "env=Mode 1 ROCM_ENV_VERIFIED only (functional correctness), "
+                        "reproduce=Mode 2 paper reproduction, "
+                        "full=Mode 3 env+paper (default; legacy behavior).")
     p.add_argument("--limit", type=int, default=None,
                    help="(enrich) cap rows to process")
     p.add_argument("--sleep", type=float, default=1.0,

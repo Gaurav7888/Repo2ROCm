@@ -74,19 +74,32 @@ def _terminate_process_group(proc: subprocess.Popen) -> None:
 # Main entry
 # --------------------------------------------------------------------------- #
 
+VALID_MODES = ("env", "reproduce", "full")
+
+
 def run_task(*, paper_id: str, task_dir: str, gpu_index: int,
              container_name_prefix: str, timeout_s: int,
              tasks_json: str,
              llm: str = "claude-sonnet-4",
              claude_code_model: str = "sonnet",
              paper_source_mode: str = "html",
+             mode: str = "full",
              extra_args: Optional[list] = None,
              **_unused) -> Dict[str, Any]:
     """Run a single Repo2ROCm task.
 
+    `mode` selects the agent run-mode and maps to build_agent/main.py flags:
+      * env       -> --mode env  (Mode 1: ROCM_ENV_VERIFIED only, scale-down OK)
+      * reproduce -> --mode reproduce  (Mode 2: paper reproduce; auto no-scale-down)
+      * full      -> --reproduce-results  (Mode 3: env then paper; explicit no-scale-down)
+
     Returns a dict like:
         {"exit_code": int, "timed_out": bool, "notes": str, "elapsed_s": float}
     """
+    if mode not in VALID_MODES:
+        return {"exit_code": 2, "timed_out": False,
+                "notes": f"invalid mode {mode!r}; expected one of {VALID_MODES}"}
+
     rec = _load_task_record(tasks_json, paper_id)
     if not rec:
         return {"exit_code": 2, "timed_out": False,
@@ -111,17 +124,27 @@ def run_task(*, paper_id: str, task_dir: str, gpu_index: int,
         "--root_path", root_path,
         "--llm", llm,
         "--rocm",
-        "--no-scale-down",
         "--use-claude-code",
         "--claude-code-model", claude_code_model,
-        "--reproduce-results",
-        "--paper-source-mode", paper_source_mode,
         "--gpu-index", str(gpu_index),
     ]
+    if mode == "full":
+        # Legacy "full" path: env then reproduce, with explicit no-scale-down.
+        cmd.extend(["--no-scale-down", "--reproduce-results"])
+    elif mode == "reproduce":
+        # build_agent/main.py auto-sets no_scale_down for --mode reproduce.
+        cmd.extend(["--mode", "reproduce"])
+    else:
+        cmd.extend(["--mode", "env"])
+
+    # Paper source / URL only matter when the agent actually reads the paper.
+    if mode in ("reproduce", "full"):
+        cmd.extend(["--paper-source-mode", paper_source_mode])
+        if rec.get("paper_url"):
+            cmd.extend(["--paper-url", rec["paper_url"]])
+
     if api_key:
         cmd.extend(["--api-key", api_key])
-    if rec.get("paper_url"):
-        cmd.extend(["--paper-url", rec["paper_url"]])
     if extra_args:
         cmd.extend(list(extra_args))
 
@@ -129,6 +152,7 @@ def run_task(*, paper_id: str, task_dir: str, gpu_index: int,
     metadata = {
         "paper_id": paper_id,
         "approach": "repo2rocm",
+        "mode": mode,
         "gpu_index": gpu_index,
         "container_name_prefix": container_name_prefix,
         "full_name": full_name,

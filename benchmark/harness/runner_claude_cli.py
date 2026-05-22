@@ -224,24 +224,42 @@ def _download_paper(url: str, dst: str, timeout: int = 120) -> bool:
 def _build_task_prompt(*, paper_id: str, full_name: str, repo_path: str,
                        paper_pdf_path: Optional[str], paper_url: Optional[str],
                        gpu_index: int, container_name: str,
-                       paper_title: str) -> str:
+                       paper_title: str, mode: str = "full") -> str:
     paper_clause = (
         f"- Paper PDF (mount as /repo/paper.pdf): {paper_pdf_path}"
         if paper_pdf_path else
         f"- Paper PDF: not pre-downloaded; if needed fetch from {paper_url or '(unknown)'}"
     )
+    if mode == "env":
+        goal_clause = (
+            "GOAL: ROCm environment verification ONLY (Mode 1 / functional correctness).\n"
+            "Stop after step 5 of the system-prompt workflow. Do NOT attempt the paper\n"
+            "experiment (steps 6-7). Echo ROCM_ENV_VERIFIED exactly once when the\n"
+            "smoke run succeeds. Do NOT echo any PAPER_RESULT_* marker."
+        )
+    elif mode == "reproduce":
+        goal_clause = (
+            "GOAL: Paper experiment reproduction (Mode 2). Env setup is a prerequisite;\n"
+            "echo ROCM_ENV_VERIFIED when the env works, then proceed to steps 6-7 and\n"
+            "echo a PAPER_RESULT_* marker."
+        )
+    else:
+        goal_clause = (
+            "GOAL: Full Mode 3 - env setup then paper reproduction. Echo both\n"
+            "ROCM_ENV_VERIFIED and a PAPER_RESULT_* marker."
+        )
     return (
         f"Reproduce one experiment from the paper for repository '{full_name}'.\n\n"
+        f"{goal_clause}\n\n"
         f"Inputs:\n"
         f"- Paper title: {paper_title}\n"
         f"- Local clone path: {repo_path}\n"
         f"{paper_clause}\n"
         f"- Assigned GPU index (set HIP_VISIBLE_DEVICES): {gpu_index}\n"
         f"- Container name to use: {container_name}\n\n"
-        f"Follow the workflow in the system prompt exactly. Echo the "
-        f"ROCM_ENV_VERIFIED and PAPER_RESULT_* markers as plain shell echo "
-        f"statements so a downstream scorer can grep them out of your final "
-        f"message and the container logs."
+        f"Follow the workflow in the system prompt exactly, subject to the GOAL above.\n"
+        f"Echo all markers as plain shell echo statements so a downstream scorer can\n"
+        f"grep them out of your final message and the container logs."
     )
 
 
@@ -254,6 +272,7 @@ def run_task(*, paper_id: str, task_dir: str, gpu_index: int,
              tasks_json: str,
              claude_model: str = "sonnet",
              max_turns: int = 100,
+             mode: str = "full",
              **_unused) -> Dict[str, Any]:
     if not _check_claude_cli():
         return {"exit_code": 127, "timed_out": False,
@@ -300,6 +319,7 @@ def run_task(*, paper_id: str, task_dir: str, gpu_index: int,
         gpu_index=gpu_index,
         container_name=container_name,
         paper_title=paper_title,
+        mode=mode,
     )
 
     cmd = [
@@ -316,6 +336,7 @@ def run_task(*, paper_id: str, task_dir: str, gpu_index: int,
     metadata = {
         "paper_id": paper_id,
         "approach": "claude_cli",
+        "mode": mode,
         "gpu_index": gpu_index,
         "container_name": container_name,
         "full_name": full_name,

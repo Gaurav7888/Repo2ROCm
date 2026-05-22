@@ -363,6 +363,10 @@ def main() -> int:
                    help="Print status counts and exit.")
     p.add_argument("--max-paper-limit", type=int, default=None,
                    help="Cap the number of paper_ids seeded (smoke testing).")
+    p.add_argument("--mode", default="full", choices=["env", "reproduce", "full"],
+                   help="Agent run-mode passed to runners. env=Mode 1 "
+                        "ROCM_ENV_VERIFIED only, reproduce=Mode 2 paper "
+                        "reproduction, full=Mode 3 both (default; legacy behavior).")
     args = p.parse_args()
 
     if args.show:
@@ -398,7 +402,10 @@ def main() -> int:
         gpus=gpus,
         timeout_s=args.timeout,
         max_disk_percent=args.max_disk_percent,
-        extra_kwargs={"tasks_json": os.path.abspath(args.tasks_json)},
+        extra_kwargs={
+            "tasks_json": os.path.abspath(args.tasks_json),
+            "mode": args.mode,
+        },
     )
     print("Final status:", json.dumps(db_stats(args.db)))
     return 0
