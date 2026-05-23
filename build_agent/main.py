@@ -153,6 +153,13 @@ def main():
                         ))
     parser.add_argument('--reproduce-results', action='store_true', default=False,
                         help='Alias for --mode full. Kept for backward compatibility.')
+    parser.add_argument('--no-kernel-converter', action='store_true', default=False,
+                        help='Disable the correctness-only KernelConverterAgent (Track 2). '
+                             'When enabled (the default) it triggers automatically in '
+                             '--mode env / --mode full whenever the build fingerprint marks '
+                             'has_custom_cuda_kernels, the repo contains .cu/.cuh files, or '
+                             'a turn observation looks like a CUDA compile error. Use this '
+                             'flag to A/B compare against the baseline.')
     parser.add_argument('--paper-url', type=str, default=None,
                         help='Direct URL to the research paper PDF (e.g. an arXiv pdf link). '
                              'Used by --reproduce-results. If omitted, auto-discovered from README.')
@@ -212,6 +219,7 @@ def main():
     rocm_base_image = args.rocm_base_image
     no_scale_down = args.no_scale_down
     optimize_kernels = args.optimize_kernels
+    enable_kernel_converter = not bool(args.no_kernel_converter)
     paper_url = args.paper_url
     paper_pdf_arg = args.paper_pdf
     paper_source_mode = args.paper_source_mode
@@ -249,6 +257,10 @@ def main():
         log_info(f"No-Scale-Down: ON (will follow README as-is, no mock data)")
     if optimize_kernels:
         log_info(f"Kernel Optimization: ON (Phase 2 performance tuning enabled)")
+    log_info(
+        "Kernel Converter (Track 2): "
+        + ("ON" if enable_kernel_converter else "OFF (--no-kernel-converter)")
+    )
     if reproduce_results:
         log_info(f"Paper reproduction: ON")
         if paper_pdf_arg:
@@ -704,6 +716,7 @@ def main():
             graphify_provider=graphify_provider,
             observer_client=observer_client,
             run_mode=run_mode,
+            enable_kernel_converter=enable_kernel_converter,
         )
         try:
             msg, outer_commands = configuration_agent.run('/tmp', trajectory, waiting_list, conflict_list)

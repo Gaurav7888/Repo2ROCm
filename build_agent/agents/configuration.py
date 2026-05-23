@@ -105,7 +105,8 @@ class Configuration(Agent):
                  paper_experiments=None, paper_title="",
                  run_memory=None, graphify_provider=None,
                  observer_client=None,
-                 run_mode: str = "env"):
+                 run_mode: str = "env",
+                 enable_kernel_converter: bool = True):
         self.model = llm
         self.root_dir = root_dir
         self.max_turn = max_turn
@@ -127,6 +128,13 @@ class Configuration(Agent):
         self.graphify_provider = graphify_provider  # per-repo code graph (Stage 4); may be None
         self.observer_client = observer_client
         self.run_mode = run_mode  # "env" | "reproduce" | "full"
+        # Track 2 (r2r++): correctness-only kernel converter specialist.
+        # Skipped in Mode 2 (reproduce-only) because reproduce assumes the env
+        # was already verified by an earlier run. Idempotent — only one
+        # invocation per build attempt regardless of trigger source.
+        self.enable_kernel_converter = bool(enable_kernel_converter)
+        self._kernel_converter_ran = False
+        self._kernel_migration_summary = None  # dict surfaced to next turns
         # Track Stage-1 compaction savings for diagnostics.
         self._compaction_orig_chars = 0
         self._compaction_short_chars = 0
@@ -1758,6 +1766,7 @@ STAGE 2 - PAPER RESULT REPRODUCTION (only after ROCM_ENV_VERIFIED):
                     "verify_paper_result": self._verify_paper_calls,
                 },
                 outer_commands=self.outer_commands,
+                kernel_migration=self._kernel_migration_summary,
             )
             record["success_report"] = sr
         except Exception as _sr_e:
@@ -1795,6 +1804,170 @@ STAGE 2 - PAPER RESULT REPRODUCTION (only after ROCM_ENV_VERIFIED):
     
     def get_max_turn(self):
         return self.max_turn
+
+    # ── Track 2 (r2r++): kernel converter trigger ───────────────────────────
+
+    def _kernel_converter_repo_root_host(self) -> str:
+        """Path to the host-side repo checkout (shared with the sandbox)."""
+        try:
+            return f"{self.root_dir}/utils/repo/{self.full_name}/repo"
+        except Exception:
+            return ""
+
+    def _should_trigger_kernel_converter(
+        self,
+        observation: str = "",
+        force: bool = False,
+    ) -> bool:
+        """Decide whether to invoke ``KernelConverterAgent`` this turn.
+
+        Triggers when ANY of these is true (research-plan §2.4):
+          * ``self.build_attempt.fingerprint.has_custom_cuda_kernels`` is True.
+          * The repo contains at least one ``.cu`` / ``.cuh`` file.
+          * The most recent observation matches a CUDA compile error pattern.
+        Mode 2 (``reproduce``) is skipped — reproduce mode assumes env-verified.
+        Idempotent: returns False after the first run.
+        """
+        if not self.enable_kernel_converter:
+            return False
+        if self._kernel_converter_ran:
+            return False
+        if self.run_mode == "reproduce":
+            return False
+        if self.run_mode not in ("env", "full"):
+            return False
+
+        try:
+            from agents.kernel_converter_agent import (
+                looks_like_cuda_compile_error,
+                repo_has_cuda_sources,
+            )
+        except Exception as exc:
+            log_info(f"[kernel-converter] import failed: {exc}")
+            return False
+
+        if force:
+            return True
+
+        if observation and looks_like_cuda_compile_error(observation):
+            return True
+
+        if (
+            self.build_attempt is not None
+            and getattr(self.build_attempt, "fingerprint", None) is not None
+            and getattr(self.build_attempt.fingerprint, "has_custom_cuda_kernels", False)
+        ):
+            return True
+
+        repo_root = self._kernel_converter_repo_root_host()
+        if repo_root and repo_has_cuda_sources(repo_root):
+            return True
+
+        return False
+
+    def _format_kernel_migration_summary(self, report) -> str:
+        """Compact summary injected into the system context for next turns."""
+        try:
+            data = report.to_dict() if hasattr(report, "to_dict") else dict(report)
+        except Exception:
+            data = {}
+        status = data.get("status", "unknown")
+        degradation = data.get("degradation", "D0")
+        applied = data.get("kernels_applied", 0)
+        total = data.get("n_kernels", 0)
+        passed = data.get("compile_passed", 0)
+        failed = data.get("compile_failed", 0)
+        manual = data.get("manual_fix_count", 0)
+        granular = data.get("granular_fixes_applied", []) or []
+        applied_issues = sorted({
+            f.get("issue") for f in granular if f.get("status") == "applied"
+        } - {None})
+        manual_issues = sorted({
+            f.get("issue") for f in granular if f.get("status") == "manual_required"
+        } - {None})
+
+        lines = [
+            "### Kernel Converter Report (correctness-only)",
+            f"- status: {status}  degradation: {degradation}",
+            f"- kernels: examined {data.get('kernels_examined', 0)}/{total}, "
+            f"applied {applied}, compile_passed {passed}, compile_failed {failed}",
+        ]
+        if applied_issues:
+            lines.append(f"- granular fixes applied: {', '.join(applied_issues)}")
+        if manual_issues:
+            lines.append(
+                f"- manual fixes outstanding ({manual}): "
+                + ", ".join(manual_issues)
+            )
+        lines.append(
+            "Scope: correctness only. Performance tuning, large rewrites, and "
+            "mock success are forbidden."
+        )
+        return "\n".join(lines)
+
+    def _maybe_run_kernel_converter(self, *, observation: str = "", force: bool = False) -> str:
+        """Idempotently run the converter and return a compact summary string.
+
+        Returns an empty string when the converter does not run. Errors are
+        swallowed and logged — the converter must never break the outer
+        ``ROCM_ENV_VERIFIED`` flow.
+        """
+        if not self._should_trigger_kernel_converter(observation=observation, force=force):
+            return ""
+
+        try:
+            from agents.kernel_converter_agent import KernelConverterAgent
+            from kernel_migration.executor_adapter import (
+                DryRunExecutor,
+                SandboxExecutor,
+            )
+        except Exception as exc:
+            log_info(f"[kernel-converter] module unavailable: {exc}")
+            self._kernel_converter_ran = True
+            return ""
+
+        repo_root = self._kernel_converter_repo_root_host()
+        if not repo_root or not os.path.exists(repo_root):
+            log_info("[kernel-converter] repo root missing on host; skipping")
+            self._kernel_converter_ran = True
+            return ""
+
+        try:
+            executor = SandboxExecutor(self.sandbox_session, timeout=600)
+        except Exception as exc:
+            log_info(f"[kernel-converter] cannot build sandbox executor: {exc}")
+            executor = DryRunExecutor()
+
+        try:
+            report_dir = os.path.join(self.root_dir, "output", self.full_name)
+            os.makedirs(report_dir, exist_ok=True)
+            agent = KernelConverterAgent(
+                executor=executor,
+                repo_root=repo_root,
+                container_repo_root="/repo",
+                llm=None,  # correctness-only specialist only consumes the planner LLM via subagent packets, never autonomously
+                dry_run=False,
+                report_dir=report_dir,
+                repo_id=self.full_name,
+                attempt_id=getattr(self.build_attempt, "id", "") or "",
+            )
+            log_phase("KERNEL CONVERTER (correctness-only)", repo_root)
+            report = agent.run()
+            self._kernel_migration_summary = report.to_dict()
+            summary = self._format_kernel_migration_summary(report)
+            log_info(
+                f"[kernel-converter] status={report.status} "
+                f"degradation={report.degradation} "
+                f"applied={report.kernels_applied}/{report.n_kernels} "
+                f"compile_passed={report.compile_passed} "
+                f"manual_fix={report.manual_fix_count}"
+            )
+            return summary
+        except Exception as exc:
+            log_info(f"[kernel-converter] run failed: {exc}")
+            return ""
+        finally:
+            self._kernel_converter_ran = True
 
     def _save_final_artifacts(self, waiting_list, conflict_list):
         """Collect and save pipdeptree, pip list, and diff artifacts."""
@@ -2105,6 +2278,14 @@ STAGE 2 - PAPER RESULT REPRODUCTION (only after ROCM_ENV_VERIFIED):
                         self.outer_commands[-1]["returncode"] = 0
                         self.outer_commands[-1]["time"] = time.time() - start_time
 
+                        # Track 2 (r2r++): once env verified, run the kernel
+                        # converter once if the repo carries custom CUDA
+                        # kernels. This produces kernel_migration_report.json
+                        # that downstream tooling (success_report) consumes.
+                        kc_summary = self._maybe_run_kernel_converter()
+                        if kc_summary:
+                            system_res += "\n" + kc_summary + "\n"
+
                         if self.reproduce_results:
                             # ── Transition to STAGE 2 instead of finishing ──
                             self._stage2_active = True
@@ -2179,6 +2360,19 @@ STAGE 2 - PAPER RESULT REPRODUCTION (only after ROCM_ENV_VERIFIED):
                     classified_error = None
                     kb_in_guidance = ""
                     rc_int = return_code if isinstance(return_code, int) else -1
+                    # Track 2: opportunistic kernel converter trigger on
+                    # CUDA-shaped compile failures inside a turn.
+                    if (
+                        rc_int != 0
+                        and self.rocm_mode
+                        and self.enable_kernel_converter
+                        and not self._kernel_converter_ran
+                    ):
+                        kc_summary = self._maybe_run_kernel_converter(
+                            observation=sandbox_res or ""
+                        )
+                        if kc_summary:
+                            kb_in_guidance += "\n" + kc_summary + "\n"
                     if rc_int != 0 and self.rocm_mode and self._looks_like_amd_specific_issue(commands[i], sandbox_res):
                         self._needs_live_amd_research = True
                         hint_parts = []
@@ -2322,6 +2516,10 @@ STAGE 2 - PAPER RESULT REPRODUCTION (only after ROCM_ENV_VERIFIED):
                         and not self._stage2_active
                     ):
                         log_rocm_success()
+                        # Track 2: trigger on observed marker as well.
+                        kc_summary = self._maybe_run_kernel_converter()
+                        if kc_summary:
+                            system_res += "\n" + kc_summary + "\n"
                         if self.reproduce_results:
                             # ── Transition to STAGE 2 instead of finishing ──
                             self._stage2_active = True

@@ -541,6 +541,94 @@ class ReproductionResult:
 
 
 @dataclass
+class KernelMigrationReport:
+    """Persistent CUDA-to-HIP migration report (Track 2 / r2r++).
+
+    Emitted by the correctness-only ``KernelConverterAgent``. The shape
+    is intentionally JSON-serialisable so it can be embedded into
+    ``paper_reproduction.json``'s ``success_report`` and consumed by
+    the rubric / report generator without any extra wiring.
+
+    ``status`` values:
+        - ``no_kernels``              No CUDA kernels detected.
+        - ``hipify_planned``          Examine commands generated; not applied.
+        - ``hipify_applied``          Hipify ran; compile not yet attempted.
+        - ``compile_passed``          ``hipcc -c`` succeeded for every source.
+        - ``manual_fixes_required``   ``requires_subagent`` items remain.
+        - ``unsupported``             Toolchain missing (no hipify-clang/hipcc).
+
+    ``degradation`` follows the r2r++ ledger:
+        D0 none / D1 equivalent ROCm / D2 slower same semantics /
+        D3 custom kernel replaced with framework op / D4 acceleration disabled /
+        D5 experiment semantics changed.
+    """
+
+    repo_id: str = ""
+    attempt_id: str = ""
+    started_at: float = field(default_factory=time.time)
+    completed_at: float = 0.0
+    n_kernels: int = 0
+    kernels_examined: int = 0
+    kernels_applied: int = 0
+    compile_passed: int = 0
+    compile_failed: int = 0
+    manual_fix_count: int = 0
+    degradation: str = "D0"
+    status: str = "no_kernels"
+    risk_flags: List[str] = field(default_factory=list)
+    errors: List[str] = field(default_factory=list)
+    granular_fixes_applied: List[Dict[str, Any]] = field(default_factory=list)
+    evidence: List[str] = field(default_factory=list)
+
+    _ALLOWED_STATUS = (
+        "no_kernels",
+        "hipify_planned",
+        "hipify_applied",
+        "compile_passed",
+        "manual_fixes_required",
+        "unsupported",
+    )
+    _ALLOWED_DEGRADATION = ("D0", "D1", "D2", "D3", "D4", "D5")
+
+    def __post_init__(self) -> None:
+        if self.status not in self._ALLOWED_STATUS:
+            self.status = "no_kernels"
+        if self.degradation not in self._ALLOWED_DEGRADATION:
+            self.degradation = "D0"
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "repo_id": self.repo_id,
+            "attempt_id": self.attempt_id,
+            "started_at": self.started_at,
+            "completed_at": self.completed_at,
+            "n_kernels": self.n_kernels,
+            "kernels_examined": self.kernels_examined,
+            "kernels_applied": self.kernels_applied,
+            "compile_passed": self.compile_passed,
+            "compile_failed": self.compile_failed,
+            "manual_fix_count": self.manual_fix_count,
+            "degradation": self.degradation,
+            "status": self.status,
+            "risk_flags": list(self.risk_flags),
+            "errors": list(self.errors),
+            "granular_fixes_applied": [dict(f) for f in self.granular_fixes_applied],
+            "evidence": list(self.evidence),
+        }
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "KernelMigrationReport":
+        if not isinstance(d, dict):
+            return cls()
+        kwargs = {k: v for k, v in d.items() if k in cls.__dataclass_fields__}
+        # Defensive copies of mutable list fields.
+        for list_field in ("risk_flags", "errors", "granular_fixes_applied", "evidence"):
+            if list_field in kwargs and kwargs[list_field] is not None:
+                kwargs[list_field] = list(kwargs[list_field])
+        return cls(**kwargs)
+
+
+@dataclass
 class ExperimentCandidate:
     """A repo-backed experiment matched to a paper claim."""
     name: str = ""

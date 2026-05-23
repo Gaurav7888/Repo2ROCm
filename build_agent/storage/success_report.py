@@ -184,6 +184,47 @@ def _process_score(
     }
 
 
+def _kernel_migration_section(
+    kernel_migration: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Compact kernel-migration summary embedded under ``kernel_migration``.
+
+    The dict accepted here matches ``KernelMigrationReport.to_dict()``. Only
+    the fields the rubric / report generator needs are surfaced at the top
+    level (``status``, ``degradation``); the full report stays nested under
+    ``raw`` for audit.
+    """
+    if not isinstance(kernel_migration, dict):
+        return {
+            "status": "no_kernels",
+            "degradation": "D0",
+            "n_kernels": 0,
+            "kernels_examined": 0,
+            "kernels_applied": 0,
+            "compile_passed": 0,
+            "compile_failed": 0,
+            "manual_fix_count": 0,
+            "risk_flags": [],
+            "granular_fixes_applied": [],
+            "raw": None,
+        }
+    return {
+        "status": kernel_migration.get("status", "no_kernels"),
+        "degradation": kernel_migration.get("degradation", "D0"),
+        "n_kernels": int(kernel_migration.get("n_kernels", 0) or 0),
+        "kernels_examined": int(kernel_migration.get("kernels_examined", 0) or 0),
+        "kernels_applied": int(kernel_migration.get("kernels_applied", 0) or 0),
+        "compile_passed": int(kernel_migration.get("compile_passed", 0) or 0),
+        "compile_failed": int(kernel_migration.get("compile_failed", 0) or 0),
+        "manual_fix_count": int(kernel_migration.get("manual_fix_count", 0) or 0),
+        "risk_flags": list(kernel_migration.get("risk_flags") or []),
+        "granular_fixes_applied": list(kernel_migration.get("granular_fixes_applied") or []),
+        "errors": list(kernel_migration.get("errors") or []),
+        "evidence": list(kernel_migration.get("evidence") or []),
+        "raw": kernel_migration,
+    }
+
+
 def build_success_report(
     *,
     final_verdict: str,
@@ -195,11 +236,17 @@ def build_success_report(
     tool_calls: Dict[str, int],
     outer_commands: List[Dict[str, Any]],
     weights: Optional[Dict[str, float]] = None,
+    kernel_migration: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Assemble the SuccessReport dict.
 
     The output is JSON-serialisable and self-describing.  Callers should
     persist it under `paper_reproduction.json["success_report"]`.
+
+    ``kernel_migration``, when supplied, mirrors a
+    ``KernelMigrationReport.to_dict()`` dict and is surfaced at the top level
+    so the rubric / report generator can read ``status`` and ``degradation``
+    without parsing the raw artifact.
     """
     w = {"goal": 0.6, "env": 0.2, "process": 0.2}
     if isinstance(weights, dict):
@@ -218,6 +265,7 @@ def build_success_report(
     )
 
     chosen_expected = (chosen_experiment or {}).get("expected_metric_name", "")
+    km = _kernel_migration_section(kernel_migration)
     return {
         "weights": w,
         "overall": _clamp01(overall),
@@ -226,4 +274,9 @@ def build_success_report(
         "env": env,
         "process": proc,
         "chosen_experiment_metric": chosen_expected,
+        "kernel_migration": km,
+        # Promote the two headline fields to the top level so report.py /
+        # rubric can read them without descending.
+        "kernel_migration_status": km["status"],
+        "kernel_migration_degradation": km["degradation"],
     }
