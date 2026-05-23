@@ -902,6 +902,76 @@ class Configuration(Agent):
         if positive:
             self._gpu_check_seen = True
 
+    def _provide_causal_memory_per_turn(
+        self,
+        command_text: str,
+        sandbox_res: str,
+        return_code: int,
+        classified_error,
+        turn: int,
+    ) -> str:
+        """Per-turn causal-memory retrieval.
+
+        Builds a `MemoryRequest` from the richer per-turn state (image,
+        gpu_arch, error class, return code, sandbox observation) and asks
+        the memory provider for the top causal transitions.  Returns the
+        formatted `[CAUSAL]` lines (or an empty string when no transition
+        applies).
+
+        This runs in every mode, including `--mode env`, so the
+        configuration agent always sees the relevant state→action→outcome
+        priors.
+        """
+        if self.memory_provider is None:
+            return ""
+
+        from storage.models import MemoryRequest, MemoryPhase
+
+        gpu_arch = ""
+        image = ""
+        if self.build_attempt is not None:
+            image = getattr(self.build_attempt, "docker_image", "") or ""
+            gpu_arch = getattr(self.build_attempt, "gpu_arch", "") or ""
+        if not image:
+            image = getattr(self, "image_name", "") or ""
+
+        error_class = ""
+        if classified_error is not None and not classified_error.is_novel:
+            error_class = classified_error.error_class or ""
+
+        ctx = {
+            "rocm_mode": self.rocm_mode,
+            "image": image,
+            "gpu_arch": gpu_arch,
+            "return_code": return_code,
+            "error_class": error_class,
+            "degradation_policy": "strict" if self.no_scale_down else "permissive",
+        }
+
+        request = MemoryRequest(
+            query=command_text or "",
+            context=ctx,
+            phase=MemoryPhase.IN.value,
+            fingerprint=getattr(self.build_attempt, "fingerprint", None)
+                if self.build_attempt is not None else None,
+            current_error=(sandbox_res or "")[:2000] if return_code != 0 else None,
+            turn_number=turn,
+        )
+
+        try:
+            causal_items = self.memory_provider.provide_causal_memory(
+                request, top_k=3,
+            )
+        except Exception:
+            return ""
+
+        if not causal_items:
+            return ""
+        # `MemoryItem.content` already carries the `[CAUSAL] state{...} →
+        # action{...} → outcome{...}` line plus any `[counterfactual: ...]`
+        # advisory lines.
+        return "\n" + "\n".join(item.content for item in causal_items) + "\n"
+
     def _maybe_record_external_lookup(self, command: str, return_code: int) -> None:
         """Track `dockerhub_tags` / `pypi_versions` calls so the guard relaxes."""
         if return_code != 0 or not command:
@@ -2219,6 +2289,24 @@ STAGE 2 - PAPER RESULT REPRODUCTION (only after ROCM_ENV_VERIFIED):
                         )
                         in_memory = self.memory_provider.provide_memory(in_request)
                         kb_in_guidance = self.memory_provider.format_in_for_observation(in_memory)
+
+                    # ── Causal migration memory (always-on per-turn) ───────
+                    # Records richer per-turn state (image, gpu_arch, current
+                    # error_class, return_code) and surfaces matching
+                    # `state→action→outcome` priors as `[CAUSAL]` lines.
+                    # Runs in every mode, including `--mode env`, and is a
+                    # no-op when the KB has no transitions yet.
+                    if self.memory_provider is not None:
+                        try:
+                            kb_in_guidance += self._provide_causal_memory_per_turn(
+                                command_text=commands[i],
+                                sandbox_res=sandbox_res or "",
+                                return_code=rc_int,
+                                classified_error=classified_error,
+                                turn=turn,
+                            )
+                        except Exception:
+                            pass
 
                     # ── Record rule outcomes ──
                     if self.rule_engine and matched_rule_ids:
