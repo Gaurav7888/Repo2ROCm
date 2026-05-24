@@ -92,6 +92,16 @@ def compare_versions(version1, version2):
     # 如果每个部分都相同，则版本号相等
     return 0
 
+
+def _gpu_env_for_container():
+    """Forward GPU isolation env vars from host to container."""
+    out = {}
+    for k in ("HIP_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES", "CUDA_VISIBLE_DEVICES"):
+        v = __import__("os").environ.get(k)
+        if v is not None and v != "":
+            out[k] = v
+    return out
+
 class Sandbox:
     def __init__(self, namespace, repo_full_name, root_path, rocm_mode=False):
         self.namespace = namespace
@@ -262,6 +272,9 @@ RUN mkdir -p /repo && git config --global --add safe.directory /repo
                 run_kwargs["group_add"] = ["video"]
                 run_kwargs["shm_size"] = "8g"
                 run_kwargs["network_mode"] = "host"
+                gpu_env = _gpu_env_for_container()
+                if gpu_env:
+                    run_kwargs.setdefault("environment", {}).update(gpu_env)
 
             self.container = self.client.containers.run(**run_kwargs)
 
@@ -309,6 +322,9 @@ RUN mkdir -p /repo && git config --global --add safe.directory /repo
                 run_kwargs["group_add"] = ["video"]
                 run_kwargs["shm_size"] = "8g"
                 run_kwargs["network_mode"] = "host"
+                gpu_env = _gpu_env_for_container()
+                if gpu_env:
+                    run_kwargs.setdefault("environment", {}).update(gpu_env)
 
             self.container = self.client.containers.run(**run_kwargs)
 
