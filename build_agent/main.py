@@ -138,6 +138,8 @@ def main():
                         help='Run Claude Code in full agentic mode where it drives the entire '
                              'configuration process autonomously with its built-in tools. '
                              'Only used when --use-claude-code is set.')
+    parser.add_argument('--gpu-index', type=int, default=None,
+                        help='GPU slot for sandbox isolation. Sets HIP_VISIBLE_DEVICES inside the container.')
     parser.add_argument('--mode', type=str, default='env',
                         choices=['env', 'reproduce', 'full'],
                         help=(
@@ -172,6 +174,19 @@ def main():
                              'whether Graphify indexes PDF text, arXiv HTML text, or both.')
 
     args = parser.parse_args()
+
+
+    if getattr(args, 'gpu_index', None) is not None:
+
+
+        os.environ['HIP_VISIBLE_DEVICES'] = str(args.gpu_index)
+
+
+        os.environ['ROCR_VISIBLE_DEVICES'] = str(args.gpu_index)
+
+
+        os.environ['CUDA_VISIBLE_DEVICES'] = str(args.gpu_index)
+
 
     if args.verbose:
         from utils.rich_logger import set_verbose
