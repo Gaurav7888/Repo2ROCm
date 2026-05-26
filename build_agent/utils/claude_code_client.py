@@ -21,6 +21,7 @@ import json
 import os
 import subprocess
 import shutil
+import tempfile
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -270,14 +271,27 @@ def _get_claude_cli_response(
     if resolved_model:
         cmd.extend(["--model", resolved_model])
 
+    # Linux execve(2) caps any single argv string at MAX_ARG_STRLEN
+    # (32 * PAGE_SIZE = 128 KiB on 4K-page systems). Big prompts /
+    # system prompts blow past that and surface as
+    # `OSError: [Errno 7] Argument list too long: 'claude'` before the
+    # child process even starts. Pass the system prompt via a temp file
+    # (--system-prompt-file) and the user prompt via stdin, both of
+    # which the `claude` CLI supports under -p/--print.
+    sys_prompt_file = None
     if extracted_system:
-        cmd.extend(["--system-prompt", extracted_system])
-
-    cmd.append(prompt)
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".txt", prefix="claude_sysp_",
+            delete=False, encoding="utf-8",
+        ) as _sf:
+            _sf.write(extracted_system)
+            sys_prompt_file = _sf.name
+        cmd.extend(["--system-prompt-file", sys_prompt_file])
 
     try:
         result = subprocess.run(
             cmd,
+            input=prompt,
             capture_output=True,
             text=True,
             timeout=600,
@@ -317,6 +331,12 @@ def _get_claude_cli_response(
         return [content], usage
     except subprocess.TimeoutExpired:
         raise RuntimeError("claude CLI timed out after 600s")
+    finally:
+        if sys_prompt_file is not None:
+            try:
+                os.unlink(sys_prompt_file)
+            except OSError:
+                pass
 
 
 # ── Mode 2: Full Agentic Mode ────────────────────────────────────────────────
