@@ -384,6 +384,169 @@ class MemoryResponse:
     confidence: float = 0.0
 
 
+# ── Causal Migration Memory ──────────────────────────────────────────────────
+#
+# Typed transitions of the form `state → action → outcome` describing how a
+# Repo2ROCm run moved from a *failed* migration state (e.g. CUDA-only wheel
+# import error) to a *verified* state (ROCM_ENV_VERIFIED) via a concrete
+# action.  Counterfactuals capture alternative actions that are predicted to
+# fail so future runs can avoid them.
+#
+# These records are intentionally tighter than `Rule`/`Fix`: every transition
+# binds the *precondition* (state), the *intervention* (action), and the
+# *result* (outcome) together so retrieval can answer "what state was I in,
+# what changed it, and what should I avoid".
+
+
+@dataclass
+class CausalState:
+    """Pre-action state describing where a migration is stuck."""
+    repo_fingerprint: str = ""
+    image: str = ""
+    gpu_arch: str = ""
+    error_class: str = ""
+    error_signature: str = ""
+    degradation_policy: str = ""
+
+    def signature(self) -> str:
+        """Deterministic hash for dedup + state-similarity lookup.
+
+        Mirrors `BuildFingerprint.signature` but covers the causal-state
+        fields. The signature is stable across runs as long as the same
+        (image, gpu_arch, error_class, error_signature, degradation_policy,
+        repo_fingerprint) tuple recurs.
+        """
+        canonical = json.dumps({
+            "repo_fingerprint": self.repo_fingerprint,
+            "image": self.image,
+            "gpu_arch": self.gpu_arch,
+            "error_class": self.error_class,
+            "error_signature": self.error_signature,
+            "degradation_policy": self.degradation_policy,
+        }, sort_keys=True)
+        return hashlib.sha256(canonical.encode()).hexdigest()[:16]
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> CausalState:
+        return cls(**{k: v for k, v in (d or {}).items()
+                      if k in cls.__dataclass_fields__})
+
+
+@dataclass
+class CausalAction:
+    """The intervention applied to leave the failed state."""
+    type: str = ""  # e.g. "package_strategy", "image_switch", "kernel_fix"
+    command: str = ""
+    evidence: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> CausalAction:
+        return cls(**{k: v for k, v in (d or {}).items()
+                      if k in cls.__dataclass_fields__})
+
+
+@dataclass
+class CausalOutcome:
+    """The result observed after the action."""
+    return_code: int = 0
+    verification: List[str] = field(default_factory=list)
+    degradation: str = "D0"   # D0 = none, D1..D3 = increasing functional loss
+    confidence: float = 0.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> CausalOutcome:
+        return cls(**{k: v for k, v in (d or {}).items()
+                      if k in cls.__dataclass_fields__})
+
+
+@dataclass
+class CausalTransition:
+    """state → action → outcome record with optional counterfactuals.
+
+    A transition is only emitted when a failed-then-successful sub-trajectory
+    exists in a run that ultimately verified the environment (or reproduced a
+    paper result).  Counterfactuals capture alternative actions that previous
+    runs (or expert seeds) showed to fail.
+    """
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    transition_class: str = ""   # e.g. "cuda_only_wheel_to_rocm_source_build"
+    state: CausalState = field(default_factory=CausalState)
+    action: CausalAction = field(default_factory=CausalAction)
+    outcome: CausalOutcome = field(default_factory=CausalOutcome)
+    counterfactuals: List[Dict[str, Any]] = field(default_factory=list)
+    source_attempt_id: str = ""
+    source: str = "learned"   # "learned" | "seed" | "expert"
+    evidence_count: int = 1
+    created_at: float = field(default_factory=time.time)
+    last_seen: float = field(default_factory=time.time)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "transition_class": self.transition_class,
+            "state": self.state.to_dict(),
+            "action": self.action.to_dict(),
+            "outcome": self.outcome.to_dict(),
+            "counterfactuals": list(self.counterfactuals or []),
+            "source_attempt_id": self.source_attempt_id,
+            "source": self.source,
+            "evidence_count": self.evidence_count,
+            "created_at": self.created_at,
+            "last_seen": self.last_seen,
+        }
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> CausalTransition:
+        d = dict(d or {})
+        state = CausalState.from_dict(d.pop("state", {}) or {})
+        action = CausalAction.from_dict(d.pop("action", {}) or {})
+        outcome = CausalOutcome.from_dict(d.pop("outcome", {}) or {})
+        cfs = d.pop("counterfactuals", []) or []
+        kept = {k: v for k, v in d.items() if k in cls.__dataclass_fields__}
+        return cls(state=state, action=action, outcome=outcome,
+                   counterfactuals=list(cfs), **kept)
+
+    def similarity(self, query: CausalState) -> float:
+        """How well `self.state` matches a query state (0..1).
+
+        Weighted mix of exact-match indicators on the most discriminating
+        fields (error_class, error_signature, image, gpu_arch, fingerprint,
+        degradation policy).  Used by the KB store as a tie-breaker after
+        SQL-level filtering.
+        """
+        if query is None:
+            return 0.0
+        s = self.state
+        weights = {
+            "error_class":         0.35,
+            "error_signature":     0.20,
+            "image":               0.15,
+            "gpu_arch":            0.10,
+            "repo_fingerprint":    0.15,
+            "degradation_policy":  0.05,
+        }
+        score = 0.0
+        for field_name, w in weights.items():
+            a = (getattr(s, field_name, "") or "").strip()
+            b = (getattr(query, field_name, "") or "").strip()
+            if not a and not b:
+                continue
+            if a == b and a:
+                score += w
+            elif a and b and (a in b or b in a):
+                score += w * 0.6
+        return min(1.0, score)
+
+
 # ── DAG Models ───────────────────────────────────────────────────────────────
 
 @dataclass

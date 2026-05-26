@@ -26,6 +26,7 @@ from typing import Any, Dict, List, Optional
 from storage.models import (
     BuildFingerprint, MemoryRequest, MemoryResponse, MemoryItem, MemoryPhase,
     Rule, Fix,
+    CausalState, CausalTransition,
 )
 from storage.kb_store import KBStore
 from storage.trajectory_store import TrajectoryStore
@@ -162,6 +163,16 @@ class BuildMemoryProvider:
 
         guidance_text = "\n".join(guidance_parts)
 
+        # 5. Causal migration memory (state→action→outcome priors).
+        #    These run in every phase, including --mode env, so the agent
+        #    sees the relevant transitions at the start of the loop even
+        #    before a failure has occurred.
+        try:
+            causal_items = self._provide_causal(request)
+            items.extend(causal_items)
+        except Exception:
+            pass
+
         overall_confidence = (
             sum(i.confidence for i in items) / len(items) if items else 0.0
         )
@@ -250,6 +261,16 @@ class BuildMemoryProvider:
                         source_rule_id=rule.id,
                     ))
 
+        # 3. Causal migration memory: per-turn retrieval for the current
+        #    error class / fingerprint / image. Always run, including in
+        #    --mode env, so the agent gets `[CAUSAL]` guidance before
+        #    deciding on the next command.
+        try:
+            causal_items = self._provide_causal(request)
+            items.extend(causal_items)
+        except Exception:
+            pass
+
         guidance_text = ""
         if deterministic_fixes:
             guidance_text = (
@@ -267,6 +288,105 @@ class BuildMemoryProvider:
             guidance_text=guidance_text,
             confidence=overall_confidence,
         )
+
+    # ── Causal Migration Memory ─────────────────────────────────────────────
+
+    def provide_causal_memory(self, request: MemoryRequest,
+                              top_k: int = 3) -> List[MemoryItem]:
+        """Public entry point: causal transitions for a given request.
+
+        Returns a list of `MemoryItem`s with `item_type="causal"` whose
+        content is the structured `[CAUSAL] ...` line described in the
+        research plan.  Empty list when the KB has no matching transitions
+        — including when the table is empty, so this is safe to call from
+        any phase / any run mode.
+        """
+        return self._provide_causal(request, top_k=top_k)
+
+    def _provide_causal(self, request: MemoryRequest,
+                        top_k: int = 3) -> List[MemoryItem]:
+        ctx = request.context or {}
+        fp_sig = ""
+        fp = request.fingerprint
+        if fp is not None:
+            try:
+                fp_sig = fp.signature()
+            except Exception:
+                fp_sig = ""
+
+        error_class = (ctx.get("error_class") or "").strip()
+        if not error_class and request.current_error:
+            try:
+                classified = self.error_classifier.classify(request.current_error)
+                if classified and not classified.is_novel:
+                    error_class = classified.error_class
+            except Exception:
+                error_class = error_class or ""
+
+        error_signature = ""
+        if request.current_error:
+            for line in (request.current_error or "").splitlines():
+                s = line.strip()
+                if not s:
+                    continue
+                if any(tok in s for tok in (
+                    "Error", "error", "fatal", "ModuleNotFoundError",
+                    "ImportError", "RuntimeError", "AssertionError",
+                    "FileNotFoundError",
+                )):
+                    error_signature = s[:160]
+                    break
+
+        state = CausalState(
+            repo_fingerprint=fp_sig,
+            image=str(ctx.get("image", "") or ""),
+            gpu_arch=str(ctx.get("gpu_arch", "") or ""),
+            error_class=error_class,
+            error_signature=error_signature,
+            degradation_policy=str(
+                ctx.get("degradation_policy", "") or ""
+            ),
+        )
+
+        try:
+            transitions = self.kb.query_transitions(state, top_k=top_k)
+        except Exception:
+            transitions = []
+
+        items: List[MemoryItem] = []
+        for t in transitions:
+            content = format_causal_transition(t)
+            cf_lines = format_causal_counterfactuals(t)
+            full_content = content
+            if cf_lines:
+                full_content = content + "\n" + "\n".join(cf_lines)
+            items.append(MemoryItem(
+                id=f"causal_{t.id}",
+                content=full_content,
+                item_type="causal",
+                confidence=float(t.outcome.confidence or 0.6),
+                executable=bool(t.action.command),
+                commands=[t.action.command] if t.action.command else [],
+            ))
+        return items
+
+    def format_causal_for_prompt(self, response: MemoryResponse) -> str:
+        """Prepend `[CAUSAL]` lines for system-prompt / per-turn injection.
+
+        Returns empty string when the response carries no causal items, so
+        callers can safely concatenate this into existing prompts.
+        """
+        causal = [i for i in response.items if i.item_type == "causal"]
+        if not causal:
+            return ""
+        sections = []
+        sections.append("=" * 60)
+        sections.append("CAUSAL MIGRATION MEMORY (typed state→action→outcome priors)")
+        sections.append("=" * 60)
+        for item in causal:
+            sections.append(item.content)
+        sections.append("=" * 60)
+        return "\n".join(sections)
 
     def record_rule_applied(self, rule_id: str, success: bool):
         """Track that a rule was applied this session."""
@@ -307,6 +427,12 @@ class BuildMemoryProvider:
             sections.append("\nPRIOR BUILD INSIGHTS:")
             for item in guidance:
                 sections.append(f"  {item.content}")
+
+        causal = [i for i in response.items if i.item_type == "causal"]
+        if causal:
+            sections.append("\nCAUSAL MIGRATION TRANSITIONS (state→action→outcome):")
+            for item in causal:
+                sections.append(item.content)
 
         if response.guidance_text:
             sections.append(f"\n{response.guidance_text}")
@@ -385,5 +511,76 @@ class BuildMemoryProvider:
                     parts.append(f"   Try: {' && '.join(item.commands)}")
             elif item.item_type == "guidance":
                 parts.append(f"\n[KB] {item.content}")
+            elif item.item_type == "causal":
+                # Structured `[CAUSAL]` line; already self-formatted.
+                parts.append(f"\n{item.content}")
 
         return "\n".join(parts)
+
+
+# ── Causal formatting helpers ────────────────────────────────────────────────
+
+def format_causal_transition(t: CausalTransition) -> str:
+    """Render a single transition as a structured `[CAUSAL]` guidance line.
+
+    Example output:
+
+        [CAUSAL] state{img=rocm/pytorch, arch=gfx942, err=cuda_only_wheel}
+                 → action{FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE python setup.py install}
+                 → outcome{ok, D1}
+    """
+    s = t.state
+    a = t.action
+    o = t.outcome
+
+    state_bits = []
+    if s.image:
+        state_bits.append(f"img={s.image}")
+    if s.gpu_arch:
+        state_bits.append(f"arch={s.gpu_arch}")
+    if s.error_class:
+        state_bits.append(f"err={s.error_class}")
+    if s.degradation_policy:
+        state_bits.append(f"policy={s.degradation_policy}")
+    if s.repo_fingerprint:
+        state_bits.append(f"fp={s.repo_fingerprint[:10]}")
+    state_str = ", ".join(state_bits) if state_bits else "(unspecified)"
+
+    action_str = (a.command or a.type or "(no-op)").strip()
+    if len(action_str) > 240:
+        action_str = action_str[:237] + "..."
+
+    rc = o.return_code
+    rc_str = "ok" if rc == 0 else f"rc={rc}"
+    outcome_bits = [rc_str]
+    if o.degradation:
+        outcome_bits.append(o.degradation)
+    if o.confidence:
+        outcome_bits.append(f"conf={o.confidence:.2f}")
+    outcome_str = ", ".join(outcome_bits)
+
+    return (
+        f"[CAUSAL] state{{{state_str}}} "
+        f"→ action{{{action_str}}} "
+        f"→ outcome{{{outcome_str}}}"
+    )
+
+
+def format_causal_counterfactuals(t: CausalTransition) -> List[str]:
+    """Render counterfactuals as `[counterfactual: ...]` advisory lines."""
+    out: List[str] = []
+    for cf in (t.counterfactuals or []):
+        if not isinstance(cf, dict):
+            continue
+        action = str(cf.get("action", "")).strip()
+        expected = str(cf.get("expected_outcome", "")).strip()
+        reason = str(cf.get("reason", "")).strip()
+        if not action and not reason:
+            continue
+        bits = [action]
+        if expected:
+            bits.append(f"→ expected {expected}")
+        if reason:
+            bits.append(f"({reason})")
+        out.append("[counterfactual: " + " ".join(bits) + "]")
+    return out
