@@ -86,12 +86,26 @@ def _sum_outer_commands_usage(outer: Any) -> Dict[str, int]:
 
 
 def _track_text(track: Any) -> str:
-    """Flatten track.json content into one searchable string."""
+    """Flatten track.json content into one searchable string.
+
+    Only `role=assistant` turns are included. User-role messages contain
+    injected prompt context (env reminders, memory-provider advisories,
+    seeded [CAUSAL] transitions, etc.) that would false-positive-match
+    the rubric's marker regexes (ROCM_ENV_VERIFIED, PAPER_RESULT_*,
+    FLASH_ATTENTION_TRITON_AMD_ENABLE, ...) if grepped over the whole
+    conversation.
+    """
     if track is None:
         return ""
     if isinstance(track, str):
         return track
     try:
+        if isinstance(track, list):
+            parts = []
+            for msg in track:
+                if isinstance(msg, dict) and msg.get("role") == "assistant":
+                    parts.append(str(msg.get("content", "")))
+            return "\n".join(parts)
         return json.dumps(track, ensure_ascii=False)
     except Exception:
         return str(track)
