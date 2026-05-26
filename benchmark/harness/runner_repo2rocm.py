@@ -113,7 +113,9 @@ def run_task(*, paper_id: str, task_dir: str, gpu_index: int,
 
     # Per-task root directory keeps each Repo2ROCm run's `output/`, `kb/`,
     # and `utils/repo/` isolated so parallel runs do not collide.
-    root_path = os.path.join(task_dir, "root")
+    # Use an absolute path so the build_agent subprocess (cwd=REPO_ROOT)
+    # and the post-run copy step (harness cwd) resolve to the same place.
+    root_path = os.path.abspath(os.path.join(task_dir, "root"))
     os.makedirs(root_path, exist_ok=True)
 
     api_key = os.environ.get("AMD_LLM_API_KEY", "")
