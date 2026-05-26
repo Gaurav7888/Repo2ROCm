@@ -720,11 +720,221 @@ def main():
             observer_client=observer_client,
             run_mode=run_mode,
         )
-        try:
-            msg, outer_commands = configuration_agent.run('/tmp', trajectory, waiting_list, conflict_list)
-        finally:
-            if observer_client is not None:
+        # ─────────────────────────────────────────────────────────────────
+        # Patch 1: image-retry on early-EOF.
+        #
+        # Symptom this guards against:
+        #   When the picked base image's container bash gets SIGKILL'd at
+        #   startup (e.g. arch-mismatched rocm/vllm:* on a fresh gfx950
+        #   host, or a broken ld.so cache from a half-baked image),
+        #   `pexpect.exceptions.EOF` is raised from the FIRST `expect()`
+        #   the configuration agent issues (build_agent/utils/sandbox.py
+        #   :454, the `$pwd$` probe). Without this block the EOF
+        #   propagates straight up to the harness and the task dies with
+        #   exit=1, even though other arch-compatible images on the same
+        #   host would have worked fine.
+        #
+        # Hard constraints (kept disjoint from `change_base_image`):
+        #   - Triggered ONLY by container startup EOF, NOT by an
+        #     LLM-emitted `change_base_image` (those are still handled
+        #     in agents/configuration.py exactly as before).
+        #   - Only retries when `_turns_used_so_far < EARLY_TURN_THRESHOLD`
+        #     (a late-turn EOF is treated as agent-induced and bubbles up).
+        #   - Capped at `MAX_IMAGE_ATTEMPTS = 3` total attempts per task.
+        # ─────────────────────────────────────────────────────────────────
+        import pexpect as _pexpect_for_retry
+        _EARLY_TURN_THRESHOLD = 3
+        _MAX_IMAGE_ATTEMPTS = 3
+        _failed_images_this_task: set = set()
+        _image_attempt = 1  # the first try, already constructed above
+        msg = None
+        outer_commands = []
+        while True:
+            try:
+                msg, outer_commands = configuration_agent.run(
+                    '/tmp', trajectory, waiting_list, conflict_list,
+                )
+                break  # success
+            except _pexpect_for_retry.exceptions.EOF:
+                _turns_used = getattr(
+                    configuration_agent, '_turns_used_so_far', 0,
+                ) or 0
+                log_error(
+                    "Container EOF detected: image '"
+                    + str(base_image)
+                    + f"' died at startup after {_turns_used} turn(s) "
+                    + f"(attempt {_image_attempt}/{_MAX_IMAGE_ATTEMPTS}). "
+                    "This is image-startup-crash territory, NOT the "
+                    "agent's change_base_image path."
+                )
+                # Sandbox shell is dead; cleanup observer + container.
+                try:
+                    if observer_client is not None:
+                        observer_client.shutdown()
+                except Exception:
+                    pass
+                try:
+                    configuration_sandbox.stop_container()
+                except Exception as _stop_e:
+                    log_info(f"Container stop after EOF failed: {_stop_e}")
+
+                # Decide retry vs propagate.
+                if (_turns_used >= _EARLY_TURN_THRESHOLD
+                        or _image_attempt >= _MAX_IMAGE_ATTEMPTS):
+                    log_error(
+                        "EOF retry not eligible "
+                        f"(turns_used={_turns_used}, "
+                        f"attempt={_image_attempt}/"
+                        f"{_MAX_IMAGE_ATTEMPTS}); failing task."
+                    )
+                    raise
+
+                # Mark image bad in-task and in the KB (Patch 2).
+                _failed_images_this_task.add(base_image)
+                try:
+                    from images.rocm_ranker import _detect_host_gpu_arch
+                    _host_arch = _detect_host_gpu_arch() or "unknown"
+                except Exception:
+                    _host_arch = "unknown"
+                try:
+                    kb_store.record_image_failure(
+                        _host_arch, base_image, kind="startup_crash",
+                    )
+                    log_info(
+                        f"KB: recorded host={_host_arch} "
+                        f"image={base_image} as startup_crash"
+                    )
+                except Exception as _kb_e:
+                    log_info(f"KB write failed: {_kb_e}")
+
+                # Re-rank with the per-task exclude set + kb_store. We
+                # recompute imports/configs locally rather than thread
+                # them through generate_plan(); the cost is small and it
+                # keeps the patch surface contained.
+                try:
+                    from agents.planner import (
+                        _CONFIG_FILES, _read_file,
+                        _find_python_files, _extract_imports,
+                    )
+                    _cc = {}
+                    for _fname in _CONFIG_FILES:
+                        _ct = _read_file(os.path.join(repo_path, _fname))
+                        if _ct is not None:
+                            _cc[_fname] = _ct
+                    _ic = _extract_imports(_find_python_files(repo_path))
+                except Exception as _scan_e:
+                    log_info(f"Repo signal recompute failed: {_scan_e}")
+                    _ic, _cc = {}, {}
+                from images.rocm_ranker import rank_rocm_images
+                _ranked = rank_rocm_images(
+                    import_counts=_ic, config_contents=_cc,
+                    gpu_arch=_host_arch,
+                    kb_store=kb_store,
+                    exclude=_failed_images_this_task,
+                )
+                _next_image = next(
+                    (c.ref for c in _ranked
+                     if c.ref not in _failed_images_this_task),
+                    None,
+                )
+                if not _next_image:
+                    log_error(
+                        "No alternative ROCm image candidates remain "
+                        "after exclude+kb filter; failing task."
+                    )
+                    raise
+
+                log_phase(
+                    "IMAGE RETRY",
+                    f"{base_image} -> {_next_image} "
+                    f"(attempt {_image_attempt + 1}/"
+                    f"{_MAX_IMAGE_ATTEMPTS})",
+                )
+                base_image = _next_image
+                try:
+                    run_memory.write_decision(
+                        "base_image", base_image,
+                        reason=(
+                            "image_retry_attempt_"
+                            f"{_image_attempt + 1}"
+                        ),
+                    )
+                except Exception:
+                    pass
+
+                # Rebuild sandbox + observer + agent with fresh trajectory.
+                _image_attempt += 1
+                trajectory = []
+                configuration_sandbox = Sandbox(
+                    base_image, full_name, root_path,
+                    rocm_mode=rocm_mode,
+                )
+                configuration_sandbox.start_container()
+                log_success(
+                    f"Container restarted with image: {base_image}"
+                )
+                observer_client = None
+                try:
+                    from observers.observer_agent import ObserverClient
+                    observer_client = ObserverClient(
+                        output_dir=output_dir,
+                        llm=llm,
+                        api_key=args.api_key
+                            or os.environ.get("AMD_LLM_API_KEY", ""),
+                        enabled=bool(llm),
+                        use_claude_code=bool(use_claude_code),
+                        claude_code_model=getattr(
+                            args, "claude_code_model", None,
+                        ),
+                    )
+                    observer_client.start()
+                    log_info("Observer sidecar: ON (after retry)")
+                except Exception as _obs_e:
+                    observer_client = None
+                    log_info(
+                        f"Observer sidecar disabled (after retry): {_obs_e}"
+                    )
+                # IMPORTANT: rebuild the Configuration agent. Each
+                # worktree's main.py has slightly different kwargs here
+                # (kernel-agent passes enable_kernel_converter); this
+                # reconstruction must mirror the original constructor
+                # call above. We keep it as `Configuration(**...)` against
+                # a kwargs dict so downstream branches can extend it.
+                _cfg_kwargs = dict(
+                    rocm_mode=rocm_mode, plan=plan,
+                    no_scale_down=no_scale_down,
+                    error_classifier=error_classifier,
+                    rule_engine=rule_engine,
+                    memory_provider=memory_provider,
+                    trajectory_store=trajectory_store,
+                    build_attempt=build_attempt,
+                    kb_context=kb_context,
+                    optimize_kernels=optimize_kernels,
+                    use_claude_code=use_claude_code,
+                    reproduce_results=reproduce_results,
+                    paper_pdf_path=paper_pdf_path,
+                    paper_experiments=paper_experiments,
+                    paper_title=paper_title,
+                    run_memory=run_memory,
+                    graphify_provider=graphify_provider,
+                    observer_client=observer_client,
+                    run_mode=run_mode,
+                )
+                # kernel-agent worktree only:
+                if 'enable_kernel_converter' in dir():
+                    _cfg_kwargs['enable_kernel_converter'] = enable_kernel_converter  # noqa: F821
+                configuration_agent = Configuration(
+                    configuration_sandbox, base_image,
+                    full_name, root_path, llm, 100,
+                    **_cfg_kwargs,
+                )
+                continue
+        # Success path: shut down observer cleanly.
+        if observer_client is not None:
+            try:
                 observer_client.shutdown()
+            except Exception:
+                pass
         # Stage 1 / 3 compaction summary
         try:
             o = getattr(configuration_agent, "_compaction_orig_chars", 0)

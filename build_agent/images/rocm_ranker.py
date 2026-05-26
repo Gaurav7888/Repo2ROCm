@@ -16,12 +16,17 @@ ranker should eliminate obviously wrong images without paying that cost.
 from __future__ import annotations
 
 import functools
+import logging
 import re
 import subprocess
 from dataclasses import dataclass, field, asdict
 from typing import Any, Dict, FrozenSet, Iterable, List, Optional, Set, Tuple
 
 from knowledge.rocm_knowledge import ROCM_IMAGE_CATALOG, ROCM_PREINSTALLED_PACKAGES
+
+# Module-level logger used by Patch-2 hard-rejects so the planner trace
+# records *why* a candidate disappeared.
+_ranker_log = logging.getLogger(__name__)
 
 
 # ── Architecture compatibility metadata ─────────────────────────────────────
@@ -366,7 +371,20 @@ class RocmImageRanker:
         self.config = config or ImageRankerConfig()
 
     def rank(self, import_counts: Dict[str, int],
-             config_contents: Dict[str, str]) -> List[ImageCandidate]:
+             config_contents: Dict[str, str],
+             *,
+             kb_store: Optional[Any] = None,
+             exclude: Optional[Iterable[str]] = None) -> List[ImageCandidate]:
+        # ── Patch 2 wiring ───────────────────────────────────────────────
+        # `exclude`     — refs (image:tag) the caller has already tried and
+        #                 lost in this task; hard-rejected before scoring.
+        # `kb_store`    — Optional KBStore providing `is_image_known_bad(
+        #                 host_arch, image)`. When given, two-strike known-
+        #                 bad images are hard-rejected at INFO log level so
+        #                 the planner trace makes the rejection visible.
+        # When `kb_store` is None the check is skipped entirely so existing
+        # call sites without a KB remain backwards-compatible.
+        exclude_set: Set[str] = {str(x) for x in (exclude or set())}
         desired = infer_required_tokens(import_counts, config_contents)
         preferred_workload = (
             self.config.preferred_workload
@@ -432,6 +450,38 @@ class RocmImageRanker:
             # If host arch is empty/unknown this is a no-op (rule 1).
             if not arch_compatible(tag, effective_arch, push_date):
                 continue
+
+            # ── HARD EXCLUDE / KB-KNOWN-BAD FILTER (Patch 2) ─────────────────
+            # `exclude` holds refs the caller has already tried and lost in
+            # this task; `kb_store.is_image_known_bad` reports cross-task
+            # two-strike failures. Both are hard rejects with an INFO log so
+            # the planner trace records *why* a candidate disappeared.
+            ref_for_filter = f"{image}:{tag}"
+            if ref_for_filter in exclude_set:
+                _ranker_log.info(
+                    "rocm_ranker: dropping %s (caller-supplied exclude)",
+                    ref_for_filter,
+                )
+                continue
+            if kb_store is not None:
+                try:
+                    is_bad = kb_store.is_image_known_bad(
+                        effective_arch or "unknown", ref_for_filter,
+                    )
+                except Exception as _kb_exc:
+                    is_bad = False
+                    _ranker_log.info(
+                        "rocm_ranker: kb_store.is_image_known_bad raised "
+                        "%s for %s; treating as not-bad",
+                        type(_kb_exc).__name__, ref_for_filter,
+                    )
+                if is_bad:
+                    _ranker_log.info(
+                        "rocm_ranker: dropping %s (KB host=%s "
+                        "known-bad: failure_count>=2)",
+                        ref_for_filter, effective_arch or "unknown",
+                    )
+                    continue
 
             inventory = self._inventory_tokens(workload, entry, tag, selected_record)
             jaccard = _jaccard(desired, inventory)
@@ -634,7 +684,11 @@ def rank_rocm_images(import_counts: Dict[str, int],
                      gpu_arch: str = "unknown",
                      preferred_python: str = "",
                      preferred_workload: str = "",
-                     strict_mode: bool = False) -> List[ImageCandidate]:
+                     strict_mode: bool = False,
+                     *,
+                     kb_store: Optional[Any] = None,
+                     exclude: Optional[Iterable[str]] = None
+                     ) -> List[ImageCandidate]:
     # Change 1: if the caller did not supply a host arch (or said
     # 'unknown'), auto-detect once per process. Operators can still force a
     # specific arch via env vars / explicit argument. Detection is memoized
@@ -649,4 +703,7 @@ def rank_rocm_images(import_counts: Dict[str, int],
         preferred_workload=preferred_workload,
         strict_mode=strict_mode,
     )
-    return RocmImageRanker(config).rank(import_counts, config_contents)
+    return RocmImageRanker(config).rank(
+        import_counts, config_contents,
+        kb_store=kb_store, exclude=exclude,
+    )

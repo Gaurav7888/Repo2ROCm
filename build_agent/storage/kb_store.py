@@ -139,6 +139,24 @@ class KBStore:
                 preinstalled_packages TEXT,  -- JSON list
                 data_json TEXT NOT NULL
             );
+
+            -- Per-host image-failure memory (Patch 2): lets the ranker
+            -- hard-reject images that have killed the container at
+            -- startup on this host in past tasks. `failure_count >= 2`
+            -- is the strike threshold enforced by `is_image_known_bad`
+            -- so a single transient crash does not permanently
+            -- blacklist an image.
+            CREATE TABLE IF NOT EXISTS host_image_failures (
+              host_arch       TEXT NOT NULL,
+              image           TEXT NOT NULL,
+              failure_count   INTEGER DEFAULT 1,
+              failure_kind    TEXT NOT NULL,
+              last_seen       REAL,
+              first_seen      REAL,
+              PRIMARY KEY (host_arch, image)
+            );
+            CREATE INDEX IF NOT EXISTS idx_host_image_failures
+                ON host_image_failures(host_arch, image);
         """)
         self._conn.commit()
 
@@ -486,6 +504,40 @@ class KBStore:
                     )
                     return False
         return True
+
+    # ── host image failures (Patch 2) ───────────────────────────────────────
+
+    def record_image_failure(self, host_arch: str, image: str,
+                             kind: str = "startup_crash") -> None:
+        """UPSERT a per-(host, image) failure.
+
+        Increments `failure_count` and refreshes `last_seen` on every call;
+        `first_seen` is preserved across upserts so callers can age out
+        stale entries later if they want.
+        """
+        now = time.time()
+        self._conn.execute(
+            """INSERT INTO host_image_failures
+                 (host_arch, image, failure_count, failure_kind,
+                  last_seen, first_seen)
+               VALUES (?, ?, 1, ?, ?, ?)
+               ON CONFLICT(host_arch, image) DO UPDATE SET
+                 failure_count = failure_count + 1,
+                 failure_kind = excluded.failure_kind,
+                 last_seen = excluded.last_seen""",
+            (host_arch, image, kind, now, now),
+        )
+        self._conn.commit()
+
+    def is_image_known_bad(self, host_arch: str, image: str) -> bool:
+        """True iff (host_arch, image) has failed at startup on at least
+        two independent prior tasks."""
+        row = self._conn.execute(
+            """SELECT failure_count FROM host_image_failures
+               WHERE host_arch = ? AND image = ?""",
+            (host_arch, image),
+        ).fetchone()
+        return bool(row and row[0] >= 2)
 
     # ── stats ────────────────────────────────────────────────────────────────
 
