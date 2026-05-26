@@ -261,7 +261,8 @@ RUN mkdir -p /repo && git config --global --add safe.directory /repo
                 stdin_open=True,
                 volumes={host_path: {'bind': container_path, 'mode': 'rw'}},
                 privileged=True,
-                mem_limit='30g',
+                mem_limit='120g',
+                memswap_limit='120g',
                 network_mode='bridge',
             )
             if self.rocm_mode:
@@ -270,7 +271,7 @@ RUN mkdir -p /repo && git config --global --add safe.directory /repo
                     "/dev/dri:/dev/dri",
                 ]
                 run_kwargs["group_add"] = ["video"]
-                run_kwargs["shm_size"] = "8g"
+                run_kwargs["shm_size"] = "32g"
                 run_kwargs["network_mode"] = "host"
                 gpu_env = _gpu_env_for_container()
                 if gpu_env:
@@ -312,6 +313,8 @@ RUN mkdir -p /repo && git config --global --add safe.directory /repo
                 tty=True,
                 stdin_open=True,
                 privileged=True,
+                mem_limit='120g',
+                memswap_limit='120g',
                 volumes={host_path: {'bind': container_path, 'mode': 'rw'}},
             )
             if self.rocm_mode:
@@ -320,7 +323,7 @@ RUN mkdir -p /repo && git config --global --add safe.directory /repo
                     "/dev/dri:/dev/dri",
                 ]
                 run_kwargs["group_add"] = ["video"]
-                run_kwargs["shm_size"] = "8g"
+                run_kwargs["shm_size"] = "32g"
                 run_kwargs["network_mode"] = "host"
                 gpu_env = _gpu_env_for_container()
                 if gpu_env:
