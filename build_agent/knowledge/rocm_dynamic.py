@@ -101,15 +101,26 @@ def detect_gpu_arch_hint() -> str:
     """
     Best-effort host/env GPU architecture hint.
 
-    Planning happens before container execution, so we usually do not know the
-    exact GPU. Operators or benchmark harnesses can set REPO2ROCM_GPU_ARCH
-    / PYTORCH_ROCM_ARCH / AMDGPU_TARGETS to make guidance architecture-aware.
+    Sources, in order:
+      1. Operator overrides via REPO2ROCM_GPU_ARCH / PYTORCH_ROCM_ARCH /
+         AMDGPU_TARGETS / HSA_OVERRIDE_GFX_VERSION. These let benchmark
+         harnesses force a specific arch (or one we cross-compile for).
+      2. Live host probe via `images.rocm_ranker._detect_host_gpu_arch`,
+         which shells out to `rocm-smi` / `nvidia-smi` once per process
+         (memoized) and is the new default so the planner self-discovers
+         the host arch without an explicit CLI flag.
+      3. 'unknown' when nothing identifies a GPU.
     """
     for key in ("REPO2ROCM_GPU_ARCH", "PYTORCH_ROCM_ARCH", "AMDGPU_TARGETS", "HSA_OVERRIDE_GFX_VERSION"):
         val = os.environ.get(key, "").strip()
         if val:
             return val
-    return "unknown"
+    try:
+        from images.rocm_ranker import _detect_host_gpu_arch
+        detected = (_detect_host_gpu_arch() or "").strip()
+    except Exception:
+        detected = ""
+    return detected or "unknown"
 
 
 def _image_inventory_tokens(workload: str, entry: Dict[str, Any],
