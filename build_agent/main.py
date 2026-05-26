@@ -42,6 +42,7 @@ from errors.seed_patterns import seed_if_empty
 from rules.engine import RuleEngine
 from learning.memory_provider import BuildMemoryProvider
 from learning.distiller import TrajectoryDistiller
+from learning.causal_seed import seed_causal_transitions
 try:
     from learning.mempalace_provider import RunMemory  # Stage 2 memory layer
     _MEMPALACE_AVAILABLE = True
@@ -281,6 +282,13 @@ def main():
 
     kb_store = KBStore(kb_path)
     seed_if_empty(kb_store)
+    try:
+        _seeded_causal = seed_causal_transitions(kb_store)
+        if _seeded_causal:
+            log_info(f"Causal memory: seeded {_seeded_causal} transitions "
+                     f"(table was empty)")
+    except Exception as _seed_e:
+        log_info(f"Causal memory seeding skipped: {_seed_e}")
     trajectory_store = TrajectoryStore(traj_db_path)
     error_classifier = ErrorClassifier(kb_store)
     rule_engine = RuleEngine(kb_store)
@@ -994,15 +1002,31 @@ def main():
         for rec in traj_records:
             rec.led_to_success = True
 
+    # Best-effort: pass the SuccessReport (if produced for this run) to the
+    # distiller so causal extraction can read degradation flags.
+    _success_report = None
     try:
-        applied_count = distiller.distill_and_apply(build_attempt, traj_records)
+        _repro_path = f'{root_path}/output/{full_name}/paper_reproduction.json'
+        if os.path.exists(_repro_path):
+            with open(_repro_path) as _rf:
+                _repro = json.load(_rf)
+            if isinstance(_repro, dict):
+                _success_report = _repro.get("success_report") or _repro
+    except Exception:
+        _success_report = None
+
+    try:
+        applied_count = distiller.distill_and_apply(
+            build_attempt, traj_records, success_report=_success_report,
+        )
         log_info(f"Learning pipeline: {applied_count} KB updates applied from this build")
     except Exception as e:
         log_info(f"Learning pipeline encountered an error: {e}")
 
     updated_stats = kb_store.get_stats()
     log_info(f"KB after learning: {updated_stats.get('active_rules', 0)} rules, "
-             f"{updated_stats.get('error_patterns_count', 0)} patterns")
+             f"{updated_stats.get('error_patterns_count', 0)} patterns, "
+             f"{updated_stats.get('causal_transitions_count', 0)} causal transitions")
 
     kb_store.close()
     trajectory_store.close()

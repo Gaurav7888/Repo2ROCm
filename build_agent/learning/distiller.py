@@ -12,12 +12,13 @@ from __future__ import annotations
 import json
 import re
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from storage.models import (
     TrajectoryRecord, BuildAttempt, BuildOutcome,
     ErrorPattern, Fix, Rule, RuleSource,
     KBUpdateProposal, KBUpdateType,
+    CausalState, CausalAction, CausalOutcome, CausalTransition,
 )
 from storage.trajectory_store import TrajectoryStore
 from storage.kb_store import KBStore
@@ -57,14 +58,159 @@ class TrajectoryDistiller:
         return proposals
 
     def distill_and_apply(self, attempt: BuildAttempt,
-                          trajectory: List[TrajectoryRecord]) -> int:
-        """Distill and apply all non-conflicting proposals. Returns count applied."""
+                          trajectory: List[TrajectoryRecord],
+                          success_report: Optional[Dict[str, Any]] = None
+                          ) -> int:
+        """Distill and apply all non-conflicting proposals. Returns count applied.
+
+        Also extracts and persists causal transitions when the run produced
+        `ROCM_ENV_VERIFIED` (and contains at least one failure→success pair).
+        Causal transitions live in their own table and are *not* funnelled
+        through `KBUpdateProposal` because they have a different lifecycle
+        (no consistency-check vs existing facts; we keep all evidence).
+        """
         proposals = self.distill(attempt, trajectory)
         applied = 0
         for proposal in proposals:
             if self.kb.apply_update(proposal):
                 applied += 1
+
+        try:
+            transitions = self.extract_causal_transitions(
+                trajectory, attempt, success_report=success_report,
+            )
+            for t in transitions:
+                self.kb.insert_transition(t, source_attempt=attempt.id)
+                applied += 1
+        except Exception:
+            # Causal extraction must never break the existing learning
+            # pipeline; failures are intentionally swallowed here.
+            pass
+
         return applied
+
+    # ── Causal Migration Memory ─────────────────────────────────────────────
+
+    def extract_causal_transitions(
+        self,
+        trajectory_records: List[TrajectoryRecord],
+        attempt: BuildAttempt,
+        success_report: Optional[Dict[str, Any]] = None,
+    ) -> List[CausalTransition]:
+        """Conservative extractor for `state → action → outcome` transitions.
+
+        Emits a transition only when ALL of the following hold:
+
+        1. The run produced `ROCM_ENV_VERIFIED` (we look at the trajectory
+           text for the marker, the attempt outcome, or the success_report
+           if one was passed in).  Without that anchor we cannot claim the
+           action *causally* unblocked the migration.
+        2. There is a failed turn (non-zero return code OR a classified
+           error) followed within ≤ 3 turns by a successful turn (return
+           code 0) which "resolved" the same error class — meaning the
+           error class disappears in the success window, or the success
+           turn references the same package/file root.
+        3. The successful turn has a concrete bash command we can bind to
+           the action.
+
+        Evidence is taken from `kb_rules_applied` plus parsed observations
+        on the success turn.  Degradation is read from `success_report`
+        flags when provided (`flash_attn_triton_amd_install`, `sdpa_fallback`,
+        `base_image_changed`, `scale_down_engaged`, `loose_tolerance_pass`),
+        otherwise defaults to `D0`.
+        """
+        if not trajectory_records:
+            return []
+
+        env_verified = _run_was_env_verified(
+            trajectory_records, attempt, success_report,
+        )
+        if not env_verified:
+            return []
+
+        degradation = _degradation_from_success_report(success_report)
+        repo_fingerprint = ""
+        if attempt.fingerprint is not None:
+            try:
+                repo_fingerprint = attempt.fingerprint.signature()
+            except Exception:
+                repo_fingerprint = ""
+        image = attempt.docker_image or ""
+        gpu_arch = (attempt.gpu_arch or "").strip()
+        degradation_policy = "strict"  # default for env-mode benchmark
+
+        seen_classes: Set[str] = set()
+        transitions: List[CausalTransition] = []
+
+        for i, rec in enumerate(trajectory_records):
+            if not _is_failure_turn(rec):
+                continue
+            err_class = (rec.error_class or "").strip()
+            if not err_class or err_class == "unknown":
+                continue
+            if err_class in seen_classes:
+                continue
+
+            # Look up to 3 turns ahead for a success that resolved this
+            # error class.
+            success_idx = -1
+            for j in range(i + 1, min(i + 4, len(trajectory_records))):
+                cand = trajectory_records[j]
+                if cand.return_code == 0 and cand.action_type == "bash" \
+                        and (cand.action_content or "").strip() \
+                        and _resolves_error(rec, cand):
+                    success_idx = j
+                    break
+            if success_idx == -1:
+                continue
+
+            success = trajectory_records[success_idx]
+            seen_classes.add(err_class)
+
+            error_signature = _short_error_signature(rec)
+            evidence: List[str] = []
+            evidence.extend(
+                f"kb_rule:{rid}" for rid in (success.kb_rules_applied or [])
+            )
+            obs_parsed = success.observation_parsed or {}
+            if isinstance(obs_parsed, dict) and obs_parsed:
+                for k in ("verification", "summary", "evidence"):
+                    if k in obs_parsed and obs_parsed[k]:
+                        evidence.append(f"{k}:{str(obs_parsed[k])[:160]}")
+
+            transition_class = _infer_transition_class(rec, success)
+
+            state = CausalState(
+                repo_fingerprint=repo_fingerprint,
+                image=image,
+                gpu_arch=gpu_arch,
+                error_class=err_class,
+                error_signature=error_signature,
+                degradation_policy=degradation_policy,
+            )
+            action = CausalAction(
+                type=_infer_action_type(success),
+                command=(success.action_content or "").strip()[:1024],
+                evidence=evidence[:8],
+            )
+            outcome = CausalOutcome(
+                return_code=int(success.return_code or 0),
+                verification=_verification_from_success(success),
+                degradation=degradation,
+                confidence=0.6,
+            )
+            transitions.append(CausalTransition(
+                transition_class=transition_class,
+                state=state,
+                action=action,
+                outcome=outcome,
+                counterfactuals=[],
+                source_attempt_id=attempt.id,
+                source="learned",
+                evidence_count=1,
+            ))
+
+        return transitions
 
     def _extract_novel_errors(self, attempt: BuildAttempt,
                               trajectory: List[TrajectoryRecord]
@@ -378,3 +524,177 @@ def _has_template_placeholders(commands: List[str]) -> bool:
     ]
     combined = " ".join(str(c) for c in commands)
     return any(re.search(p, combined) for p in placeholder_patterns)
+
+
+# ── Causal-extraction helpers ────────────────────────────────────────────────
+
+# Map degradation flags surfaced by the success report into the typed
+# `D0..D3` scale used in the causal record. The flags themselves come from
+# `benchmark/harness/scoring/rubric.py:detect_flags`.
+_DEGRADATION_FLAG_MAP = {
+    "flash_attn_triton_amd_install": "D1",  # functionally equivalent backend
+    "sdpa_fallback":                  "D2",  # different attention path
+    "base_image_changed":             "D1",  # platform shift, same goal
+    "scale_down_engaged":             "D2",  # smaller workload
+    "loose_tolerance_pass":           "D3",  # accepted larger metric delta
+}
+
+
+def _degradation_from_success_report(success_report: Optional[Dict[str, Any]]) -> str:
+    if not success_report or not isinstance(success_report, dict):
+        return "D0"
+    flags = success_report.get("degradation_flags") or success_report.get("flags") or []
+    if not flags:
+        return "D0"
+    # Pick the worst (highest D-class) reported flag.
+    worst = "D0"
+    for f in flags:
+        d = _DEGRADATION_FLAG_MAP.get(str(f), "D0")
+        if d > worst:   # lexical compare works for D0..D3
+            worst = d
+    return worst
+
+
+def _run_was_env_verified(
+    trajectory_records: List[TrajectoryRecord],
+    attempt: BuildAttempt,
+    success_report: Optional[Dict[str, Any]],
+) -> bool:
+    """Best-effort check for `ROCM_ENV_VERIFIED` in the run."""
+    if success_report and isinstance(success_report, dict):
+        env = success_report.get("env") or {}
+        if isinstance(env, dict) and env.get("stage1_marker_emitted"):
+            return True
+    if (attempt.outcome or "") == BuildOutcome.SUCCESS.value:
+        # The post-run learning pipeline only marks attempts SUCCESS once
+        # the dockerfile integration step succeeded — which on env-mode
+        # implies ROCM_ENV_VERIFIED was emitted earlier in the loop.
+        return True
+    needle = "ROCM_ENV_VERIFIED"
+    for rec in trajectory_records:
+        if rec.action_content and needle in rec.action_content:
+            return True
+        if rec.observation_raw and needle in rec.observation_raw:
+            return True
+    return False
+
+
+def _is_failure_turn(rec: TrajectoryRecord) -> bool:
+    if rec.return_code is not None and rec.return_code != 0:
+        return True
+    if rec.error_class and rec.error_class != "unknown":
+        return True
+    return False
+
+
+def _short_error_signature(rec: TrajectoryRecord) -> str:
+    """Pick a short, deterministic signature line from the failure turn."""
+    raw = (rec.observation_raw or "").strip()
+    if not raw:
+        return (rec.error_class or "")[:160]
+    indicators = (
+        "ModuleNotFoundError", "ImportError", "RuntimeError",
+        "fatal error", "error:", "Error:", "FileNotFoundError",
+        "AssertionError", "hipError", "undefined symbol",
+        "No matching distribution",
+    )
+    for line in raw.splitlines():
+        s = line.strip()
+        if not s:
+            continue
+        if any(ind in s for ind in indicators):
+            return s[:160]
+    # Fall back to last non-empty line — usually the most informative.
+    for line in reversed(raw.splitlines()):
+        s = line.strip()
+        if s:
+            return s[:160]
+    return (rec.error_class or "")[:160]
+
+
+def _resolves_error(failed: TrajectoryRecord, success: TrajectoryRecord) -> bool:
+    """Heuristic: does `success` plausibly resolve `failed`'s error class?
+
+    We accept the pair if either:
+      * the success turn has no error class of its own (clean success), OR
+      * the success turn's command/observation references the same package
+        or file root that appears in the failed turn's error signature.
+    """
+    if success.return_code != 0:
+        return False
+    if not success.error_class or success.error_class == "unknown":
+        return True
+
+    sig = _short_error_signature(failed).lower()
+    cmd = (success.action_content or "").lower()
+    obs = (success.observation_raw or "").lower()
+
+    # Pull out the most specific token from the failure (module name,
+    # filename, or package).
+    tokens = []
+    for tok in re.findall(r"[A-Za-z_][A-Za-z0-9_\-\.]{2,}", sig):
+        if tok in ("error", "Error", "ERROR", "module", "named", "fatal"):
+            continue
+        tokens.append(tok.lower())
+    if not tokens:
+        return True
+
+    return any(t in cmd or t in obs for t in tokens[:6])
+
+
+def _verification_from_success(success: TrajectoryRecord) -> List[str]:
+    out: List[str] = []
+    cmd = (success.action_content or "").strip()
+    if cmd:
+        out.append(f"command: {cmd[:160]}")
+    if success.return_code == 0:
+        out.append("return_code: 0")
+    obs = (success.observation_raw or "").strip().splitlines()
+    if obs:
+        out.append(f"observation_tail: {obs[-1][:160]}")
+    return out
+
+
+def _infer_action_type(success: TrajectoryRecord) -> str:
+    """Best-effort categorisation of the action behind the successful turn."""
+    cmd = (success.action_content or "").lower()
+    if "change_base_image" in cmd:
+        return "image_switch"
+    if any(tok in cmd for tok in ("hipify-clang", "hipify-perl", "hipify")):
+        return "kernel_fix"
+    if "setup.py" in cmd or "build_ext" in cmd:
+        return "package_strategy"
+    if cmd.startswith(("pip ", "pip3 ")) or " pip install" in cmd:
+        return "package_strategy"
+    if "git clone" in cmd:
+        return "package_strategy"
+    if "rocm_env_verified" in cmd or "echo " in cmd:
+        return "verdict_emit"
+    return "command"
+
+
+def _infer_transition_class(failed: TrajectoryRecord,
+                            success: TrajectoryRecord) -> str:
+    """Map an extracted (failure → success) pair to the named classes used
+    by the seed transitions.  Falls back to a slug derived from the error
+    class when no specific mapping applies."""
+    err = (failed.error_class or "").upper()
+    cmd = (success.action_content or "").lower()
+
+    if err == "FLASH_ATTN_CUDA_WHEEL" or (
+        "flash" in (failed.observation_raw or "").lower()
+        and "triton" in cmd
+    ):
+        return "cuda_only_wheel_to_rocm_source_build"
+    if err in ("TORCH_CUDA_NOT_AVAILABLE", "HIPBLAS_NOT_INITIALIZED") and \
+            "change_base_image" in cmd:
+        return "wrong_image_to_ranked_image_switch"
+    if err == "HIPBLAS_NOT_INITIALIZED" and "rocm" in cmd:
+        return "missing_gpu_runtime_to_rocm_base_image"
+    if err == "SETUPTOOLS_BUILD_FAIL" and "hipify" in cmd:
+        return "custom_cuda_compile_error_to_hipify_fix"
+    if err == "PAPER_METRIC_MISMATCH":
+        return "paper_metric_mismatch_to_not_reproduced"
+
+    slug = re.sub(r"[^A-Za-z0-9]+", "_", err.lower()).strip("_")
+    return f"{slug}_to_resolved" if slug else "generic_failure_to_resolved"

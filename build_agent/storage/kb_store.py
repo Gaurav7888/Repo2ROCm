@@ -21,6 +21,7 @@ from typing import Any, Dict, List, Optional
 
 from storage.models import (
     ErrorPattern, Fix, Rule, KBUpdateProposal, KBUpdateType, RuleSource,
+    CausalTransition, CausalState,
 )
 
 
@@ -157,6 +158,46 @@ class KBStore:
             );
             CREATE INDEX IF NOT EXISTS idx_host_image_failures
                 ON host_image_failures(host_arch, image);
+            -- Causal migration memory: typed state→action→outcome
+            -- transitions distilled from prior runs (or seeded from expert
+            -- knowledge).  Every column except `data_json` is denormalised
+            -- so retrieval can filter by (error_class, image, gpu_arch,
+            -- fingerprint, degradation_policy) without parsing JSON.
+            CREATE TABLE IF NOT EXISTS causal_transitions (
+                id TEXT PRIMARY KEY,
+                transition_class TEXT NOT NULL,
+                repo_fingerprint TEXT,
+                image TEXT,
+                gpu_arch TEXT,
+                error_class TEXT,
+                error_signature TEXT,
+                degradation_policy TEXT,
+                degradation TEXT,
+                action_type TEXT,
+                action_command TEXT,
+                source TEXT DEFAULT 'learned',
+                source_attempt TEXT,
+                evidence_count INTEGER DEFAULT 1,
+                confidence REAL DEFAULT 0.5,
+                created_at REAL,
+                last_seen REAL,
+                state_signature TEXT,
+                data_json TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_causal_error_class
+                ON causal_transitions(error_class);
+            CREATE INDEX IF NOT EXISTS idx_causal_image
+                ON causal_transitions(image);
+            CREATE INDEX IF NOT EXISTS idx_causal_gpu_arch
+                ON causal_transitions(gpu_arch);
+            CREATE INDEX IF NOT EXISTS idx_causal_fingerprint
+                ON causal_transitions(repo_fingerprint);
+            CREATE INDEX IF NOT EXISTS idx_causal_degradation
+                ON causal_transitions(degradation_policy);
+            CREATE INDEX IF NOT EXISTS idx_causal_state_sig
+                ON causal_transitions(state_signature);
+            CREATE INDEX IF NOT EXISTS idx_causal_class
+                ON causal_transitions(transition_class);
         """)
         self._conn.commit()
 
@@ -538,6 +579,140 @@ class KBStore:
             (host_arch, image),
         ).fetchone()
         return bool(row and row[0] >= 2)
+    # ── causal transitions ───────────────────────────────────────────────────
+
+    def insert_transition(self, t: CausalTransition,
+                          source_attempt: str = "") -> str:
+        """Insert (or replace) a causal transition record.
+
+        Replacement is keyed on `t.id` so the caller controls dedup; for
+        learned transitions we generate a fresh UUID per run, while seed
+        records use stable IDs (see `seed_causal_transitions`).  The
+        denormalised columns are kept in sync with `data_json`.
+        """
+        s = t.state
+        a = t.action
+        o = t.outcome
+        if not t.id:
+            import uuid as _uuid
+            t.id = str(_uuid.uuid4())
+        if source_attempt and not t.source_attempt_id:
+            t.source_attempt_id = source_attempt
+        self._conn.execute(
+            """INSERT OR REPLACE INTO causal_transitions
+               (id, transition_class, repo_fingerprint, image, gpu_arch,
+                error_class, error_signature, degradation_policy,
+                degradation, action_type, action_command, source,
+                source_attempt, evidence_count, confidence,
+                created_at, last_seen, state_signature, data_json)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                t.id,
+                t.transition_class,
+                s.repo_fingerprint,
+                s.image,
+                s.gpu_arch,
+                s.error_class,
+                s.error_signature,
+                s.degradation_policy,
+                o.degradation,
+                a.type,
+                a.command,
+                t.source,
+                t.source_attempt_id or source_attempt,
+                t.evidence_count,
+                o.confidence,
+                t.created_at,
+                t.last_seen,
+                s.signature(),
+                json.dumps(t.to_dict()),
+            ),
+        )
+        self._record_change("add_causal_transition", "causal_transitions",
+                            t.id, None, t.to_dict(), source_attempt)
+        self._conn.commit()
+        return t.id
+
+    def query_transitions(self, state: CausalState,
+                          top_k: int = 5) -> List[CausalTransition]:
+        """Return the best-matching transitions for a query state.
+
+        Strategy: SQL-pre-filter on the most discriminating denormalised
+        fields (error_class first, then image, then fingerprint), union the
+        candidate rows, then re-rank with `CausalTransition.similarity`.
+        Falls back to the most-recent transitions if nothing matches.
+        """
+        if state is None:
+            state = CausalState()
+
+        seen: Dict[str, CausalTransition] = {}
+
+        def _absorb(rows):
+            for r in rows:
+                try:
+                    t = CausalTransition.from_dict(json.loads(r[0]))
+                except Exception:
+                    continue
+                if t.id not in seen:
+                    seen[t.id] = t
+
+        if state.error_class:
+            _absorb(self._conn.execute(
+                "SELECT data_json FROM causal_transitions WHERE error_class=?",
+                (state.error_class,),
+            ).fetchall())
+        if state.error_signature:
+            _absorb(self._conn.execute(
+                "SELECT data_json FROM causal_transitions "
+                "WHERE error_signature=?",
+                (state.error_signature,),
+            ).fetchall())
+        if state.image:
+            _absorb(self._conn.execute(
+                "SELECT data_json FROM causal_transitions WHERE image=?",
+                (state.image,),
+            ).fetchall())
+        if state.repo_fingerprint:
+            _absorb(self._conn.execute(
+                "SELECT data_json FROM causal_transitions "
+                "WHERE repo_fingerprint=?",
+                (state.repo_fingerprint,),
+            ).fetchall())
+
+        if not seen:
+            _absorb(self._conn.execute(
+                "SELECT data_json FROM causal_transitions "
+                "ORDER BY last_seen DESC LIMIT ?",
+                (max(top_k, 1) * 4,),
+            ).fetchall())
+
+        ranked = sorted(
+            seen.values(),
+            key=lambda t: (
+                -t.similarity(state),
+                -float(t.outcome.confidence or 0.0),
+                -float(t.evidence_count or 0),
+                -float(t.last_seen or 0),
+            ),
+        )
+        return ranked[:max(top_k, 0)]
+
+    def get_transition(self, tid: str) -> Optional[CausalTransition]:
+        row = self._conn.execute(
+            "SELECT data_json FROM causal_transitions WHERE id=?", (tid,)
+        ).fetchone()
+        if not row:
+            return None
+        try:
+            return CausalTransition.from_dict(json.loads(row[0]))
+        except Exception:
+            return None
+
+    def count_transitions(self) -> int:
+        row = self._conn.execute(
+            "SELECT COUNT(*) FROM causal_transitions"
+        ).fetchone()
+        return int(row[0]) if row else 0
 
     # ── stats ────────────────────────────────────────────────────────────────
 
@@ -554,4 +729,8 @@ class KBStore:
             f"SELECT COUNT(*) FROM rules WHERE confidence >= {self.CONFIDENCE_THRESHOLD_DETERMINISTIC}"
         ).fetchone()
         stats["deterministic_rules"] = row[0]
+        try:
+            stats["causal_transitions_count"] = self.count_transitions()
+        except Exception:
+            stats["causal_transitions_count"] = 0
         return stats
