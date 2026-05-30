@@ -289,11 +289,13 @@ class EndToEndDryRunTests(unittest.TestCase):
             self.assertEqual(data["status"], "hipify_planned")
             self.assertEqual(data["n_kernels"], 1)
 
-            # The dry-run executor should have planned hipify-clang AND hipcc
-            # commands, but never executed real ones.
+            # The dry-run executor should have planned hipify AND hipcc
+            # commands, but never executed real ones. The verification compile is
+            # now a correctness-only syntax check (`hipcc -fsyntax-only`) carrying
+            # torch/ATen includes + HIP defines, not a bare `hipcc -c`.
             joined = "\n".join(executor.commands)
             self.assertIn("hipify-clang --examine", joined)
-            self.assertIn("hipcc -c", joined)
+            self.assertIn("hipcc -fsyntax-only", joined)
 
     def test_no_kernels_short_circuits(self):
         with tempfile.TemporaryDirectory() as tmp:

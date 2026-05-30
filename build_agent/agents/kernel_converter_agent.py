@@ -37,6 +37,8 @@ from kernel_migration.scaffold import (
     _hip_output_path,
     _read_text,
     discover_cuda_sources,
+    discover_include_dirs,
+    looks_like_pytorch_extension,
 )
 from storage.models import KernelMigrationReport
 
@@ -168,7 +170,16 @@ class KernelConverterAgent:
         # through ``executor`` reach files inside the container.
         self.hipify = HipifyCommandBuilder(self.container_repo_root)
         self.fixer = GranularIssueFixer()
-        self.compiler = CompileCommandBuilder(self.container_repo_root)
+        # Discover repo include dirs (host-side walk) so the correctness compile
+        # can resolve the kernel's own #include graph; pass them to the builder
+        # which also adds torch/ATen includes + HIP defines + -std=c++17.
+        self._include_dirs = discover_include_dirs(self.repo_root)
+        self.compiler = CompileCommandBuilder(
+            self.container_repo_root, include_dirs=self._include_dirs
+        )
+        # PyTorch-extension repos need torch's own hipify (ATen/c10 -> ATen/hip
+        # masquerade), not generic hipify-perl.
+        self.is_torch_extension = looks_like_pytorch_extension(self.repo_root)
 
     # ── Toolchain detection ─────────────────────────────────────────────────
 
@@ -294,6 +305,148 @@ class KernelConverterAgent:
         # Even when clear we keep non-in-place so the original file stays
         # available for diff comparison. Returning False is the safe default.
         return False
+
+    def _phase_torch_hipify(self, report: KernelMigrationReport) -> List[str]:
+        """PyTorch-extension path: run torch's own hipify over the whole repo.
+
+        Returns the list of produced ``*.hip`` translation units (former
+        ``.cu`` files). torch.utils.hipify does the ATen/c10 -> ATen/hip
+        masquerade and include rewiring that generic hipify-perl cannot.
+        """
+        cmd = self.hipify.torch_hipify()
+        if self.dry_run:
+            self.executor(cmd)
+            report.evidence.append("torch_hipify: planned (dry-run)")
+            return []
+        try:
+            result = self.executor(cmd)
+        except Exception as exc:
+            report.errors.append(f"torch_hipify error: {exc}")
+            return []
+        out = (result.stdout or "") + ("\n" + (result.stderr or ""))
+        if not (result.ok and "TORCH_HIPIFY_DONE" in out):
+            report.errors.append(
+                f"torch_hipify failed rc={result.return_code}: {out[-300:]}"
+            )
+            return []
+        units = sorted(str(p) for p in Path(self.repo_root).rglob("*.hip") if p.is_file())
+        report.kernels_applied = len(units)
+        report.kernels_examined = report.n_kernels
+        report.evidence.append(
+            f"torch_hipify: produced {len(units)} .hip translation unit(s) "
+            f"with ATen/hip masquerade rewrites"
+        )
+        return units
+
+    # Residual CUDA headers torch-hipify can leave unguarded (e.g. a repo that
+    # wrote `#include <cuda_runtime.h>` unconditionally + a separate USE_ROCM
+    # block). Guard them so ROCm builds get the HIP header while CUDA builds are
+    # preserved. Sound: a platform-conditional include changes neither path's
+    # semantics.
+    _RESIDUAL_HEADER_MAP = {
+        "cuda_runtime.h": "hip/hip_runtime.h",
+        "cuda_fp16.h": "hip/hip_fp16.h",
+        "cuda_bf16.h": "hip/hip_bf16.h",
+    }
+
+    # Documented 1:1 CUDA->HIP runtime-API renames torch-hipify can miss inside
+    # dual-platform headers. Applied (word-boundary) only in the hipified tree,
+    # which is the ROCm port; the CUDA original is preserved separately.
+    _RESIDUAL_API_MAP = {
+        "cudaError_t": "hipError_t",
+        "cudaSuccess": "hipSuccess",
+        "cudaGetDevice": "hipGetDevice",
+        "cudaSetDevice": "hipSetDevice",
+        "cudaGetDeviceCount": "hipGetDeviceCount",
+        "cudaDeviceGetAttribute": "hipDeviceGetAttribute",
+        "cudaDevAttrComputeCapabilityMajor": "hipDeviceAttributeComputeCapabilityMajor",
+        "cudaDevAttrComputeCapabilityMinor": "hipDeviceAttributeComputeCapabilityMinor",
+        "cudaGetErrorString": "hipGetErrorString",
+        "cudaDeviceSynchronize": "hipDeviceSynchronize",
+    }
+
+    def _phase_torch_residual_fix(self, report: KernelMigrationReport) -> int:
+        """Guard residual unconditional CUDA includes in the hipified tree.
+
+        Returns the number of files patched. Runs only on the torch-extension
+        path, after torch-hipify, before the compile check.
+        """
+        patched = 0
+        exts = (".h", ".hpp", ".cuh", ".hip", ".hip.h", ".hip.cpp", ".cpp", ".cc")
+        for path in Path(self.repo_root).rglob("*"):
+            if not path.is_file() or not str(path).endswith(exts):
+                continue
+            try:
+                text = path.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            new_text = text
+            for cuda_h, hip_h in self._RESIDUAL_HEADER_MAP.items():
+                # only bare, unguarded includes (avoid double-wrapping)
+                pattern = re.compile(
+                    r'^[ \t]*#[ \t]*include[ \t]*<' + re.escape(cuda_h) + r'>[ \t]*$',
+                    re.MULTILINE,
+                )
+                guarded = (
+                    "#if defined(USE_ROCM) || defined(__HIP_PLATFORM_AMD__)\n"
+                    f"#include <{hip_h}>\n"
+                    "#else\n"
+                    f"#include <{cuda_h}>\n"
+                    "#endif"
+                )
+                def _repl(m, _g=guarded):
+                    return _g
+                new_text2 = pattern.sub(_repl, new_text)
+                if new_text2 != new_text:
+                    new_text = new_text2
+            # residual CUDA runtime-API token renames (word-boundary)
+            for cuda_sym, hip_sym in self._RESIDUAL_API_MAP.items():
+                new_text = re.sub(r'\b' + re.escape(cuda_sym) + r'\b', hip_sym, new_text)
+            if new_text != text:
+                try:
+                    path.write_text(new_text, encoding="utf-8")
+                    patched += 1
+                    report.granular_fixes_applied.append({
+                        "issue": "residual_cuda_header_guard",
+                        "file": str(path.relative_to(self.repo_root)),
+                        "status": "applied",
+                        "rationale": "guard unconditional CUDA runtime/fp16 includes for ROCm",
+                    })
+                except OSError as exc:
+                    report.errors.append(f"residual_fix write failed {path}: {exc}")
+        if patched:
+            report.evidence.append(
+                f"residual_header_fix: guarded CUDA includes in {patched} file(s)"
+            )
+        return patched
+
+    def _phase_verify_units(
+        self, report: KernelMigrationReport, units: List[str]
+    ) -> None:
+        """Correctness compile-check (hipcc -fsyntax-only) of torch-hipify units."""
+        if self.dry_run:
+            for u in units:
+                self.executor(self.compiler.compile_file(u))
+            return
+        for u in units:
+            # map host path -> container path for the command, if needed
+            cmd_path = u.replace(self.repo_root, self.container_repo_root, 1)
+            try:
+                result = self.executor(self.compiler.compile_file(cmd_path))
+            except Exception as exc:
+                report.errors.append(f"hipcc error for {u}: {exc}")
+                report.compile_failed += 1
+                continue
+            if result.ok:
+                report.compile_passed += 1
+                report.evidence.append(f"hipcc -fsyntax-only OK: {Path(u).name}")
+            else:
+                report.compile_failed += 1
+                tail = (result.stdout or "").strip().splitlines()[-4:]
+                report.errors.append(
+                    f"hipcc -fsyntax-only failed for {Path(u).name}: "
+                    + " | ".join(tail)
+                )
 
     def _phase_granular_fix(
         self,
@@ -572,6 +725,24 @@ class KernelConverterAgent:
             report.evidence.append(
                 "toolchain: " + ", ".join(f"{k}={v}" for k, v in toolchain.items())
             )
+            report.evidence.append(
+                f"torch_extension_repo={self.is_torch_extension}; "
+                f"include_dirs={len(self._include_dirs)}"
+            )
+
+            if self.is_torch_extension and not self.dry_run:
+                # PyTorch-extension path: torch's own hipify (ATen/c10 -> ATen/hip
+                # masquerade) + correctness compile of the produced .hip units.
+                units = self._phase_torch_hipify(report)
+                # repair residual unguarded CUDA headers torch-hipify can leave
+                self._phase_torch_residual_fix(report)
+                # granular fix still runs to repair residual cuda_runtime.h etc.
+                self._phase_granular_fix(report, candidates, {}, {})
+                self._phase_verify_units(report, units)
+                self._finalize_status(report, toolchain, candidates)
+                report.completed_at = time.time()
+                self._write_report(report)
+                return report
 
             if not (toolchain["hipify_clang"] or toolchain["hipify_perl"]) \
                     and not toolchain["hipcc"] and not self.dry_run:

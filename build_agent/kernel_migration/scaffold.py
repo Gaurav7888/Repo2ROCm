@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import re
 import os
+import glob as _glob
+import shutil
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 from pathlib import Path
@@ -27,10 +29,92 @@ from typing import Callable, Dict, Iterable, List, Optional, Tuple
 Executor = Callable[[str], "CommandResult"]
 
 _CUDA_EXTS = {".cu", ".cuh", ".h", ".hpp", ".cc", ".cpp"}
+_HEADER_EXTS = {".h", ".hpp", ".cuh", ".hip.h"}
 _SKIP_DIRS = {
     ".git", "__pycache__", "node_modules", ".venv", "venv", "build", "dist",
     "site-packages", "graphify-out", "checkpoints", "wandb", "outputs",
 }
+
+
+def find_rocm_tool(name: str) -> Optional[str]:
+    """Resolve a ROCm tool (hipify-perl, hipify-clang, hipcc) to an absolute path.
+
+    ROCm ships these under /opt/rocm/bin (and /opt/rocm-<ver>/bin), which is
+    frequently NOT on PATH on container/host images. Checking PATH first, then
+    the well-known ROCm bin dirs, fixes the dominant 'rc=127 command not found'
+    failure where the builder's hipify-perl fallback silently no-ops.
+    """
+    found = shutil.which(name)
+    if found:
+        return found
+    candidates: List[str] = []
+    rocm_path = os.environ.get("ROCM_PATH")
+    if rocm_path:
+        candidates.append(os.path.join(rocm_path, "bin", name))
+    candidates.append(f"/opt/rocm/bin/{name}")
+    candidates.extend(sorted(_glob.glob(f"/opt/rocm-*/bin/{name}"), reverse=True))
+    for c in candidates:
+        if os.path.exists(c):
+            return c
+    return None
+
+
+def torch_include_flags() -> List[str]:
+    """`-I` flags for the active torch's C++/ATen headers (best effort)."""
+    try:
+        from torch.utils import cpp_extension  # type: ignore
+        return [f"-I{p}" for p in cpp_extension.include_paths()]
+    except Exception:
+        return []
+
+
+def discover_include_dirs(repo_root: str) -> List[str]:
+    """Repo-local include directories: the repo root, any dir containing a
+    header, and conventional include/csrc/src roots. Used so hipcc can resolve
+    the kernel's own `#include "..."` graph during the correctness compile."""
+    root = Path(repo_root).resolve()
+    dirs = {str(root)}
+    for conv in ("include", "csrc", "src", "kernels", "lib"):
+        p = root / conv
+        if p.is_dir():
+            dirs.add(str(p))
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS and not d.startswith(".")]
+        if any(Path(f).suffix in _HEADER_EXTS or f.endswith((".hip.h", ".cuh")) for f in filenames):
+            dirs.add(dirpath)
+    return sorted(dirs)
+
+
+def looks_like_pytorch_extension(repo_root: str) -> bool:
+    """True when a setup.py/pyproject hints a torch C++/CUDA extension build.
+
+    For these repos the correct hipifier is torch's own `hipify_python`, which
+    performs the ATen/c10 -> ATen/hip 'MasqueradingAsCUDA' header/namespace
+    rewrites that generic hipify-perl misses (and which otherwise pull in
+    CUDA-only headers like cublas_v2.h and break the ROCm compile)."""
+    root = Path(repo_root)
+    for fname in ("setup.py", "pyproject.toml"):
+        f = root / fname
+        if f.exists():
+            try:
+                txt = f.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            if any(n in txt for n in ("CUDAExtension", "cpp_extension", "BuildExtension",
+                                       "torch.utils.cpp_extension")):
+                return True
+    # also treat a repo that includes ATen/torch headers in its kernels as one
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS and not d.startswith(".")]
+        for name in filenames:
+            if name.endswith((".cu", ".cuh")):
+                try:
+                    head = (Path(dirpath) / name).read_text(errors="ignore")[:4000]
+                except OSError:
+                    continue
+                if "ATen/" in head or "torch/" in head or "c10/" in head:
+                    return True
+    return False
 
 
 class MigrationStage(str, Enum):
@@ -211,33 +295,68 @@ def discover_cuda_sources(repo_path: str) -> List[KernelCandidate]:
 
 
 class HipifyCommandBuilder:
-    """Build conservative hipify commands for a candidate file."""
+    """Build conservative hipify commands for a candidate file.
+
+    Tool paths are resolved via ``find_rocm_tool`` so the commands work even
+    when /opt/rocm/bin is off PATH (the dominant baseline failure). Prefers
+    hipify-perl (regex-based; needs no include/parse context) and falls back to
+    hipify-clang. For PyTorch-extension repos, use ``torch_hipify`` instead.
+    """
 
     def __init__(self, repo_path: str):
         self.repo_path = Path(repo_path).resolve()
+        self._perl = find_rocm_tool("hipify-perl")
+        self._clang = find_rocm_tool("hipify-clang")
 
     def absolute_path(self, candidate: KernelCandidate) -> str:
         return str(self.repo_path / candidate.path)
 
+    def torch_hipify(self) -> str:
+        """One shot: run PyTorch's own hipify over the whole repo.
+
+        torch.utils.hipify performs the ATen/c10 -> ATen/hip masquerade
+        rewrites (HIPGuardImplMasqueradingAsCUDA, etc.) and rewires project
+        includes (.cuh -> _hip.cuh), which generic hipify-perl does not. This
+        is what turns 'fails immediately on cublas_v2.h' into a real compile.
+        """
+        root = str(self.repo_path)
+        return (
+            "python3 - <<'PY'\n"
+            "import os\n"
+            "from torch.utils.hipify import hipify_python\n"
+            f"root = {root!r}\n"
+            "hipify_python.hipify(project_directory=root, output_directory=root,\n"
+            "                     includes=['*'], is_pytorch_extension=True,\n"
+            "                     show_progress=False)\n"
+            "print('TORCH_HIPIFY_DONE')\n"
+            "PY"
+        )
+
     def examine(self, candidate: KernelCandidate) -> str:
         path = self.absolute_path(candidate)
+        perl = self._perl or "hipify-perl"
+        clang = self._clang or "hipify-clang"
+        # hipify-perl first (robust, no parse/includes); hipify-clang --examine
+        # as fallback (needs include context, so it may warn).
         return (
-            f"hipify-clang --examine {path} 2>&1 "
-            f"|| hipify-perl --examine {path} 2>&1"
+            f"{perl} --examine {path} 2>&1 "
+            f"|| {clang} --examine {path} 2>&1"
         )
 
     def apply(self, candidate: KernelCandidate, inplace: bool = False) -> str:
         path = self.absolute_path(candidate)
+        perl = self._perl or "hipify-perl"
+        clang = self._clang or "hipify-clang"
         if inplace:
             return (
                 f"cp {path} {path}.prehip && "
-                f"(hipify-clang --inplace {path} 2>&1 "
-                f"|| hipify-perl --inplace {path} 2>&1)"
+                f"({perl} --inplace {path} 2>&1 "
+                f"|| {clang} --inplace {path} 2>&1)"
             )
         out_path = _hip_output_path(path)
         return (
-            f"hipify-clang {path} -o {out_path} 2>&1 "
-            f"|| hipify-perl {path} > {out_path} 2>&1"
+            f"{perl} {path} > {out_path} 2>&1 "
+            f"|| {clang} {path} -o {out_path} 2>&1"
         )
 
 
@@ -357,16 +476,42 @@ class GranularIssueFixer:
 
 
 class CompileCommandBuilder:
-    """Prepare correctness-only compile/import checks."""
+    """Prepare correctness-only compile/import checks.
 
-    def __init__(self, repo_path: str):
+    The verification compile must resolve the kernel's full include graph:
+    torch/ATen headers, the repo's own include dirs, the C++ standard, and the
+    HIP/ROCm platform defines. Without these a bare ``hipcc -c -I/opt/rocm/include``
+    fails on the first framework header. We use ``-fsyntax-only`` (type/parse
+    correctness without codegen/link) as the correctness gate.
+    """
+
+    def __init__(self, repo_path: str, include_dirs: Optional[List[str]] = None):
         self.repo_path = Path(repo_path).resolve()
+        self.include_dirs = list(include_dirs) if include_dirs else []
+
+    def _flags(self) -> str:
+        parts = ["-fsyntax-only", "-std=c++17",
+                 "-D__HIP_PLATFORM_AMD__", "-DUSE_ROCM"]
+        parts += torch_include_flags()
+        for d in self.include_dirs:
+            parts.append(f"-I{d}")
+        parts.append("-I/opt/rocm/include")
+        return " ".join(parts)
 
     def compile_object(self, candidate: KernelCandidate) -> str:
         source = self.repo_path / candidate.path
         hip_source = _hip_output_path(str(source))
-        obj = str(Path(hip_source).with_suffix(".o"))
-        return f"hipcc -c {hip_source} -o {obj} -I/opt/rocm/include 2>&1"
+        # torch's hipify rewrites in place for some extensions; fall back to the
+        # original path if no side-by-side .hip output exists.
+        return (
+            f"hipcc {self._flags()} {hip_source} 2>&1 "
+            f"|| hipcc {self._flags()} {source} 2>&1"
+        )
+
+    def compile_file(self, path: str) -> str:
+        """Correctness compile-check (syntax-only) of an explicit file path.
+        Used for the torch-hipify path, whose translation units are ``*.hip``."""
+        return f"hipcc {self._flags()} {path} 2>&1"
 
     def python_extension_probe(self) -> str:
         return (
