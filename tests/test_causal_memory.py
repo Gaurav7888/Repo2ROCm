@@ -381,6 +381,95 @@ class CausalRelevanceGateTests(unittest.TestCase):
             traj.close()
 
 
+class CausalPerRunDedupTests(unittest.TestCase):
+    """Per-run dedup of causal `[CAUSAL]` advisories: the same transition
+    must not re-inject every turn. Complements the `min_similarity` relevance
+    gate. Together they bound cumulative per-turn `[CAUSAL]` growth to
+    O(unique matching transitions), not O(turns)."""
+
+    def _make_configuration_stub(self, items_to_return):
+        """Build a Configuration-shaped object with only the attributes
+        `_provide_causal_memory_per_turn` reads, plus a memory_provider
+        whose `provide_causal_memory` returns `items_to_return` on every
+        call. Avoids the heavy real `Configuration.__init__` which would
+        require a live Sandbox."""
+        from unittest.mock import MagicMock
+        from agents.configuration import Configuration  # noqa: E402
+
+        cfg = object.__new__(Configuration)
+        cfg._causal_transitions_surfaced_this_run = set()
+        cfg.build_attempt = None
+        cfg.image_name = "rocm/pytorch:tag"
+        cfg.rocm_mode = True
+        cfg.no_scale_down = True
+
+        mp = MagicMock()
+        mp.provide_causal_memory = MagicMock(return_value=items_to_return)
+        cfg.memory_provider = mp
+        return cfg
+
+    def _make_item(self, item_id, content):
+        from storage.models import MemoryItem  # noqa: E402
+        return MemoryItem(
+            id=item_id, content=content, item_type="causal", confidence=0.8,
+        )
+
+    def test_same_transition_only_surfaced_once_per_run(self):
+        item = self._make_item(
+            "causal_abc",
+            "[CAUSAL] state{img=rocm/pytorch} → action{x} → outcome{ok}",
+        )
+        cfg = self._make_configuration_stub([item])
+
+        out1 = cfg._provide_causal_memory_per_turn(
+            command_text="some cmd", sandbox_res="", return_code=1,
+            classified_error=None, turn=1,
+        )
+        self.assertIn("[CAUSAL]", out1)
+        self.assertIn("causal_abc", cfg._causal_transitions_surfaced_this_run)
+
+        # Provider returns the SAME item on the next turn → must be dedup'd.
+        out2 = cfg._provide_causal_memory_per_turn(
+            command_text="next cmd", sandbox_res="", return_code=1,
+            classified_error=None, turn=2,
+        )
+        self.assertEqual(out2, "")
+
+    def test_new_transition_after_dedup_still_surfaces(self):
+        item_a = self._make_item("causal_a", "[CAUSAL] A line")
+        item_b = self._make_item("causal_b", "[CAUSAL] B line")
+        cfg = self._make_configuration_stub([item_a])
+
+        out1 = cfg._provide_causal_memory_per_turn(
+            command_text="cmd1", sandbox_res="", return_code=1,
+            classified_error=None, turn=1,
+        )
+        self.assertIn("[CAUSAL] A line", out1)
+
+        # Provider now returns BOTH items. A is dedup'd, B is new.
+        cfg.memory_provider.provide_causal_memory.return_value = [item_a, item_b]
+        out2 = cfg._provide_causal_memory_per_turn(
+            command_text="cmd2", sandbox_res="", return_code=1,
+            classified_error=None, turn=2,
+        )
+        self.assertNotIn("[CAUSAL] A line", out2)
+        self.assertIn("[CAUSAL] B line", out2)
+        self.assertEqual(
+            cfg._causal_transitions_surfaced_this_run,
+            {"causal_a", "causal_b"},
+        )
+
+    def test_empty_retrieval_does_not_pollute_dedup_set(self):
+        cfg = self._make_configuration_stub([])
+
+        out = cfg._provide_causal_memory_per_turn(
+            command_text="x", sandbox_res="", return_code=0,
+            classified_error=None, turn=1,
+        )
+        self.assertEqual(out, "")
+        self.assertEqual(cfg._causal_transitions_surfaced_this_run, set())
+
+
 class CausalDistillerTests(unittest.TestCase):
     def test_extracts_transition_from_failure_then_success_with_marker(self):
         tmp, kb_path, traj_path = _make_kb_paths()

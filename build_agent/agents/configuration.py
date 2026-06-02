@@ -170,6 +170,15 @@ class Configuration(Agent):
         # `torch.cuda.is_available()` / `rocm-smi` check. Required before
         # echoing `ROCM_ENV_VERIFIED`.
         self._gpu_check_seen: bool = False
+        # Per-run dedup set for causal-memory per-turn injection. Stores the
+        # `MemoryItem.id` of every causal transition already surfaced this
+        # run, so we never re-inject the same advisory on a later turn.
+        # Combined with the `min_similarity=0.3` relevance gate in
+        # `_provide_causal_memory_per_turn`, this bounds cumulative
+        # `[CAUSAL]` growth to O(unique matching transitions) rather than
+        # O(turns × matching transitions) — fixes the long-conversation
+        # context-length blow-up on repos that do match a seed.
+        self._causal_transitions_surfaced_this_run: set = set()
 
         # ── STAGE 2 (paper reproduction) state ───────────────────────────────
         self.reproduce_results = bool(reproduce_results)
@@ -971,10 +980,22 @@ class Configuration(Agent):
 
         if not causal_items:
             return ""
+        # Per-run dedup: drop any transition we've already surfaced this run.
+        # The relevance gate above limits *what* qualifies; this filter
+        # limits *how often* a qualifying transition is re-shown. Together
+        # they bound cumulative `[CAUSAL]` growth in the conversation
+        # history to O(unique matching transitions), not O(turns).
+        new_items = [
+            it for it in causal_items
+            if it.id not in self._causal_transitions_surfaced_this_run
+        ]
+        if not new_items:
+            return ""
+        self._causal_transitions_surfaced_this_run.update(it.id for it in new_items)
         # `MemoryItem.content` already carries the `[CAUSAL] state{...} →
         # action{...} → outcome{...}` line plus any `[counterfactual: ...]`
         # advisory lines.
-        return "\n" + "\n".join(item.content for item in causal_items) + "\n"
+        return "\n" + "\n".join(item.content for item in new_items) + "\n"
 
     def _maybe_record_external_lookup(self, command: str, return_code: int) -> None:
         """Track `dockerhub_tags` / `pypi_versions` calls so the guard relaxes."""
