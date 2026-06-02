@@ -166,7 +166,10 @@ class BuildMemoryProvider:
         # 5. Causal migration memory (state→action→outcome priors).
         #    These run in every phase, including --mode env, so the agent
         #    sees the relevant transitions at the start of the loop even
-        #    before a failure has occurred.
+        #    before a failure has occurred. BEGIN runs once per session and
+        #    has no error context yet, so it stays ungated and instead relies
+        #    on the small fixed `top_k` cap to surface a handful of priors;
+        #    the per-turn IN path applies the relevance gate.
         try:
             causal_items = self._provide_causal(request)
             items.extend(causal_items)
@@ -264,9 +267,13 @@ class BuildMemoryProvider:
         # 3. Causal migration memory: per-turn retrieval for the current
         #    error class / fingerprint / image. Always run, including in
         #    --mode env, so the agent gets `[CAUSAL]` guidance before
-        #    deciding on the next command.
+        #    deciding on the next command. This is a per-turn injection, so
+        #    gate by relevance to avoid the context-length blow-up from
+        #    injecting unrelated seeds every turn on repos that match nothing.
         try:
-            causal_items = self._provide_causal(request)
+            causal_items = self._provide_causal(
+                request, min_similarity=self.CAUSAL_MIN_SIMILARITY,
+            )
             items.extend(causal_items)
         except Exception:
             pass
@@ -291,8 +298,16 @@ class BuildMemoryProvider:
 
     # ── Causal Migration Memory ─────────────────────────────────────────────
 
+    # Default relevance gate for per-turn causal injection. Transitions whose
+    # weighted state similarity is below this are dropped so repos that match
+    # no stored/seeded transition stop getting irrelevant `[CAUSAL]` advisories
+    # injected on every turn (the context-length blow-up fixed here).
+    CAUSAL_MIN_SIMILARITY = 0.3
+
     def provide_causal_memory(self, request: MemoryRequest,
-                              top_k: int = 3) -> List[MemoryItem]:
+                              top_k: int = 3,
+                              min_similarity: float = CAUSAL_MIN_SIMILARITY,
+                              ) -> List[MemoryItem]:
         """Public entry point: causal transitions for a given request.
 
         Returns a list of `MemoryItem`s with `item_type="causal"` whose
@@ -300,11 +315,18 @@ class BuildMemoryProvider:
         research plan.  Empty list when the KB has no matching transitions
         — including when the table is empty, so this is safe to call from
         any phase / any run mode.
+
+        `min_similarity` gates by relevance (default 0.3): a transition is
+        only surfaced when its `CausalState.similarity(current_state)` meets
+        the threshold. This is the per-turn injection path, so the gate keeps
+        the agent's per-turn context from filling with unrelated seeds.
         """
-        return self._provide_causal(request, top_k=top_k)
+        return self._provide_causal(request, top_k=top_k,
+                                    min_similarity=min_similarity)
 
     def _provide_causal(self, request: MemoryRequest,
-                        top_k: int = 3) -> List[MemoryItem]:
+                        top_k: int = 3,
+                        min_similarity: float = 0.0) -> List[MemoryItem]:
         ctx = request.context or {}
         fp_sig = ""
         fp = request.fingerprint
@@ -349,7 +371,9 @@ class BuildMemoryProvider:
         )
 
         try:
-            transitions = self.kb.query_transitions(state, top_k=top_k)
+            transitions = self.kb.query_transitions(
+                state, top_k=top_k, min_similarity=min_similarity,
+            )
         except Exception:
             transitions = []
 

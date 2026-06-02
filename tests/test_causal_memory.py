@@ -215,6 +215,172 @@ class CausalKBStoreTests(unittest.TestCase):
             kb.close()
 
 
+class CausalRelevanceGateTests(unittest.TestCase):
+    """PR #2 follow-up item 3: a `min_similarity` relevance gate so the
+    per-turn `[CAUSAL]` injection only fires on transitions that actually
+    match the current state (fixes the context-length blow-up on easy repos).
+    """
+
+    def _relevant_transition(self) -> CausalTransition:
+        return CausalTransition(
+            id="t-relevant",
+            transition_class="cuda_only_wheel_to_rocm_source_build",
+            state=CausalState(
+                repo_fingerprint="fp1", image="rocm/pytorch",
+                gpu_arch="gfx942",
+                error_class="FLASH_ATTN_CUDA_WHEEL",
+                error_signature="No module named flash_attn_2_cuda",
+                degradation_policy="strict",
+            ),
+            action=CausalAction(
+                type="package_strategy",
+                command="FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE python setup.py install",
+            ),
+            outcome=CausalOutcome(return_code=0, degradation="D1",
+                                  confidence=0.82),
+        )
+
+    def _unrelated_transition(self) -> CausalTransition:
+        # Shares only `image` with the query so it is *absorbed* by the SQL
+        # pre-filter (proving the gate, not the pre-filter, is what drops it),
+        # but its weighted similarity to the query is just 0.15 (< 0.3).
+        return CausalTransition(
+            id="t-unrelated",
+            transition_class="wrong_image_to_ranked_image_switch",
+            state=CausalState(
+                repo_fingerprint="fpX", image="rocm/pytorch",
+                gpu_arch="",
+                error_class="UNRELATED_LINKER_ERROR",
+                error_signature="undefined reference to foo",
+                degradation_policy="",
+            ),
+            action=CausalAction(
+                type="image_switch",
+                command="change_base_image other:latest",
+            ),
+            outcome=CausalOutcome(return_code=0, degradation="D0",
+                                  confidence=0.9),
+        )
+
+    def _matching_query(self) -> CausalState:
+        return CausalState(
+            repo_fingerprint="fp1", image="rocm/pytorch", gpu_arch="gfx942",
+            error_class="FLASH_ATTN_CUDA_WHEEL",
+            error_signature="No module named flash_attn_2_cuda",
+            degradation_policy="strict",
+        )
+
+    def test_query_transitions_gate_keeps_only_relevant(self):
+        tmp, kb_path, _ = _make_kb_paths()
+        kb = KBStore(kb_path)
+        try:
+            rel = self._relevant_transition()
+            unrel = self._unrelated_transition()
+            kb.insert_transition(rel)
+            kb.insert_transition(unrel)
+
+            query = self._matching_query()
+
+            # Sanity: both share image="rocm/pytorch", so both are candidates.
+            self.assertGreaterEqual(rel.similarity(query), 0.3)
+            self.assertLess(unrel.similarity(query), 0.3)
+
+            # Without a gate the un-gated path still surfaces the unrelated
+            # candidate (this is the pre-fix behaviour we are guarding against).
+            ungated = kb.query_transitions(query, top_k=5)
+            self.assertEqual({t.id for t in ungated}, {"t-relevant", "t-unrelated"})
+
+            # With the 0.3 gate only the relevant transition survives.
+            gated = kb.query_transitions(query, top_k=5, min_similarity=0.3)
+            self.assertEqual([t.id for t in gated], ["t-relevant"])
+        finally:
+            kb.close()
+
+    def test_query_transitions_all_unrelated_returns_empty(self):
+        tmp, kb_path, _ = _make_kb_paths()
+        kb = KBStore(kb_path)
+        try:
+            kb.insert_transition(self._relevant_transition())
+            kb.insert_transition(self._unrelated_transition())
+
+            # A query unrelated to every stored transition: nothing matches
+            # the SQL pre-filter, the fallback surfaces recent rows, and the
+            # gate then drops them all → no injection.
+            unrelated_query = CausalState(
+                repo_fingerprint="zzz", image="alpine:3.18", gpu_arch="gfx906",
+                error_class="GCC_INTERNAL_ERROR",
+                error_signature="internal compiler error",
+                degradation_policy="permissive",
+            )
+            gated = kb.query_transitions(unrelated_query, top_k=5,
+                                         min_similarity=0.3)
+            self.assertEqual(gated, [])
+
+            # Without the gate the fallback still returns the recent rows.
+            self.assertGreaterEqual(
+                len(kb.query_transitions(unrelated_query, top_k=5)), 1,
+            )
+        finally:
+            kb.close()
+
+    def test_provider_per_turn_path_gates_by_relevance(self):
+        tmp, kb_path, traj_path = _make_kb_paths()
+        kb = KBStore(kb_path)
+        traj = TrajectoryStore(traj_path)
+        try:
+            kb.insert_transition(self._relevant_transition())
+            kb.insert_transition(self._unrelated_transition())
+            provider = BuildMemoryProvider(
+                kb, traj, ErrorClassifier(kb), RuleEngine(kb),
+            )
+
+            # Matching per-turn request → only the relevant transition is
+            # surfaced even though the unrelated one shares the image filter.
+            matching = MemoryRequest(
+                query="pip install flash-attn",
+                context={
+                    "rocm_mode": True,
+                    "image": "rocm/pytorch",
+                    "gpu_arch": "gfx942",
+                    "error_class": "FLASH_ATTN_CUDA_WHEEL",
+                    "degradation_policy": "strict",
+                },
+                phase=MemoryPhase.IN.value,
+                current_error="ImportError: No module named flash_attn_2_cuda",
+                turn_number=1,
+            )
+            items = provider.provide_causal_memory(matching)  # default 0.3 gate
+            self.assertEqual(len(items), 1)
+            self.assertEqual(items[0].item_type, "causal")
+            self.assertIn("err=FLASH_ATTN_CUDA_WHEEL", items[0].content)
+
+            # A request that matches nothing relevant → empty list, so the
+            # per-turn `[CAUSAL]` injection is suppressed entirely.
+            irrelevant = MemoryRequest(
+                query="ls -la",
+                context={
+                    "rocm_mode": True,
+                    "image": "alpine:3.18",
+                    "gpu_arch": "gfx906",
+                    "error_class": "GCC_INTERNAL_ERROR",
+                    "degradation_policy": "permissive",
+                },
+                phase=MemoryPhase.IN.value,
+                current_error="internal compiler error",
+                turn_number=2,
+            )
+            self.assertEqual(provider.provide_causal_memory(irrelevant), [])
+
+            # The IN-phase response path applies the same gate.
+            in_response = provider.provide_memory(irrelevant)
+            self.assertEqual(
+                [i for i in in_response.items if i.item_type == "causal"], [],
+            )
+        finally:
+            kb.close()
+            traj.close()
+
+
 class CausalDistillerTests(unittest.TestCase):
     def test_extracts_transition_from_failure_then_success_with_marker(self):
         tmp, kb_path, traj_path = _make_kb_paths()

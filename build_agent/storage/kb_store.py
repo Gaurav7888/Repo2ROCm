@@ -634,13 +634,24 @@ class KBStore:
         return t.id
 
     def query_transitions(self, state: CausalState,
-                          top_k: int = 5) -> List[CausalTransition]:
+                          top_k: int = 5,
+                          min_similarity: float = 0.0) -> List[CausalTransition]:
         """Return the best-matching transitions for a query state.
 
         Strategy: SQL-pre-filter on the most discriminating denormalised
         fields (error_class first, then image, then fingerprint), union the
         candidate rows, then re-rank with `CausalTransition.similarity`.
         Falls back to the most-recent transitions if nothing matches.
+
+        `min_similarity` is a relevance gate (0..1). When > 0, a candidate is
+        only returned if its re-rank similarity against `state` is at least
+        `min_similarity`. This is computed where the score itself is computed
+        (see below), so it is a real gate rather than a heuristic guess. The
+        default of 0.0 preserves the prior "return the best of whatever we
+        found" behaviour; callers that inject into per-turn context should
+        pass a positive threshold (e.g. 0.3) to avoid surfacing irrelevant
+        seeds on repos that match nothing. A candidate whose similarity cannot
+        be computed is treated as below any positive threshold and dropped.
         """
         if state is None:
             state = CausalState()
@@ -686,16 +697,32 @@ class KBStore:
                 (max(top_k, 1) * 4,),
             ).fetchall())
 
-        ranked = sorted(
-            seen.values(),
-            key=lambda t: (
-                -t.similarity(state),
-                -float(t.outcome.confidence or 0.0),
-                -float(t.evidence_count or 0),
-                -float(t.last_seen or 0),
+        # Score every candidate once with the weighted state similarity used
+        # for re-ranking, so the relevance gate fires on the exact same number
+        # the ranking depends on.
+        scored: List[tuple] = []
+        for t in seen.values():
+            try:
+                sim = float(t.similarity(state))
+            except Exception:
+                # Conservative: an un-scoreable candidate is treated as below
+                # any positive threshold so we never inject unranked noise.
+                sim = -1.0
+            scored.append((t, sim))
+
+        if min_similarity > 0.0:
+            scored = [(t, sim) for (t, sim) in scored
+                      if sim >= min_similarity]
+
+        scored.sort(
+            key=lambda ts: (
+                -ts[1],
+                -float(ts[0].outcome.confidence or 0.0),
+                -float(ts[0].evidence_count or 0),
+                -float(ts[0].last_seen or 0),
             ),
         )
-        return ranked[:max(top_k, 0)]
+        return [t for (t, _sim) in scored[:max(top_k, 0)]]
 
     def get_transition(self, tid: str) -> Optional[CausalTransition]:
         row = self._conn.execute(

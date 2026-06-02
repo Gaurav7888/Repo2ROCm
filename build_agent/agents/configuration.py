@@ -959,8 +959,12 @@ class Configuration(Agent):
         )
 
         try:
+            # Gate by relevance (min_similarity=0.3): on repos that match no
+            # stored/seeded transition this returns nothing instead of
+            # injecting irrelevant seed advisories on every turn (the
+            # context-length blow-up this fix targets).
             causal_items = self.memory_provider.provide_causal_memory(
-                request, top_k=3,
+                request, top_k=3, min_similarity=0.3,
             )
         except Exception:
             return ""
