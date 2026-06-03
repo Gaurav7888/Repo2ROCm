@@ -357,6 +357,12 @@ def main() -> int:
     p.add_argument("--max-disk-percent", type=float, default=90.0)
     p.add_argument("--retry-failed", action="store_true",
                    help="Re-queue failed/timeout/running rows before scheduling.")
+    p.add_argument("--kb-path", default=None,
+                   help="Path to a shared SQLite KB file forwarded to every "
+                        "build_agent task via --kb-path. When set, causal "
+                        "transitions and host-image-failure records persist "
+                        "across tasks. Default: <runs-dir>/_shared/kb/repo2rocm.db. "
+                        "Pass an empty string ('') to disable sharing.")
     p.add_argument("--seed-only", action="store_true",
                    help="Insert pending rows but don't start workers.")
     p.add_argument("--show", action="store_true",
@@ -396,16 +402,34 @@ def main() -> int:
         return 0
 
     gpus = [int(x) for x in args.gpus.split(",") if x.strip()]
+
+    # Resolve the shared KB path (mirrors harness.main behavior).
+    if args.kb_path is None:
+        kb_path = os.path.abspath(
+            os.path.join(args.runs_dir, "_shared", "kb", "repo2rocm.db")
+        )
+    elif args.kb_path == "":
+        kb_path = ""
+    else:
+        kb_path = os.path.abspath(args.kb_path)
+    if kb_path:
+        os.makedirs(os.path.dirname(kb_path), exist_ok=True)
+        print(f"Shared KB: {kb_path}")
+
+    extra_kwargs = {
+        "tasks_json": os.path.abspath(args.tasks_json),
+        "mode": args.mode,
+    }
+    if kb_path:
+        extra_kwargs["kb_path"] = kb_path
+
     run_pool(
         db_path=args.db,
         runs_dir=args.runs_dir,
         gpus=gpus,
         timeout_s=args.timeout,
         max_disk_percent=args.max_disk_percent,
-        extra_kwargs={
-            "tasks_json": os.path.abspath(args.tasks_json),
-            "mode": args.mode,
-        },
+        extra_kwargs=extra_kwargs,
     )
     print("Final status:", json.dumps(db_stats(args.db)))
     return 0

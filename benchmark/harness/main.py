@@ -82,16 +82,36 @@ def cmd_run(args: argparse.Namespace) -> int:
     print("Status (before):", db_stats(args.db))
 
     gpus = [int(x) for x in args.gpus.split(",") if x.strip()]
+    # Resolve the shared KB path (cross-task causal memory + host-image-failure
+    # persistence). `--kb-path ''` opts out; unset defaults to a shared file
+    # under <runs-dir>/_shared/.
+    if args.kb_path is None:
+        kb_path = os.path.abspath(
+            os.path.join(args.runs_dir, "_shared", "kb", "repo2rocm.db")
+        )
+    elif args.kb_path == "":
+        kb_path = ""  # explicit opt-out: each task gets a fresh per-task KB
+    else:
+        kb_path = os.path.abspath(args.kb_path)
+    if kb_path:
+        os.makedirs(os.path.dirname(kb_path), exist_ok=True)
+        print(f"Shared KB: {kb_path} "
+              f"(cross-task causal transitions + host image failures persist here)")
+
+    extra_kwargs = {
+        "tasks_json": os.path.abspath(args.tasks_json),
+        "mode": args.mode,
+    }
+    if kb_path:
+        extra_kwargs["kb_path"] = kb_path
+
     run_pool(
         db_path=args.db,
         runs_dir=args.runs_dir,
         gpus=gpus,
         timeout_s=args.timeout,
         max_disk_percent=args.max_disk_percent,
-        extra_kwargs={
-            "tasks_json": os.path.abspath(args.tasks_json),
-            "mode": args.mode,
-        },
+        extra_kwargs=extra_kwargs,
     )
     print("Status (after):", db_stats(args.db))
     return 0
@@ -144,6 +164,14 @@ def _add_common_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--timeout", type=int, default=90 * 60)
     p.add_argument("--max-disk-percent", type=float, default=90.0)
     p.add_argument("--retry-failed", action="store_true")
+    p.add_argument("--kb-path", default=None,
+                   help="Path to a shared SQLite KB file forwarded to every "
+                        "build_agent task via --kb-path. When set, causal "
+                        "transitions and host-image-failure records persist "
+                        "across tasks in this run. Default: "
+                        "<runs-dir>/_shared/kb/repo2rocm.db. Pass an empty "
+                        "string ('') to disable sharing and fall back to the "
+                        "per-task <root_path>/kb/repo2rocm.db.")
     p.add_argument("--mode", default="full", choices=["env", "reproduce", "full"],
                    help="Agent run-mode passed through to the runner. "
                         "env=Mode 1 ROCM_ENV_VERIFIED only (functional correctness), "

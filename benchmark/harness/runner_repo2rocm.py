@@ -84,6 +84,7 @@ def run_task(*, paper_id: str, task_dir: str, gpu_index: int,
              claude_code_model: str = "sonnet",
              paper_source_mode: str = "html",
              mode: str = "full",
+             kb_path: Optional[str] = None,
              extra_args: Optional[list] = None,
              **_unused) -> Dict[str, Any]:
     """Run a single Repo2ROCm task.
@@ -147,6 +148,11 @@ def run_task(*, paper_id: str, task_dir: str, gpu_index: int,
 
     if api_key:
         cmd.extend(["--api-key", api_key])
+    # Cross-task KB sharing: when a `kb_path` is provided by the harness, every
+    # task's build_agent reads/writes the same SQLite file, so distilled causal
+    # transitions and host-image-failure records persist across the run.
+    if kb_path:
+        cmd.extend(["--kb-path", os.path.abspath(kb_path)])
     if extra_args:
         cmd.extend(list(extra_args))
 
