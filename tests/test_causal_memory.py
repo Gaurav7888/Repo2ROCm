@@ -470,6 +470,111 @@ class CausalPerRunDedupTests(unittest.TestCase):
         self.assertEqual(cfg._causal_transitions_surfaced_this_run, set())
 
 
+class CausalTrackedKBHydrationTests(unittest.TestCase):
+    """`seed_causal_transitions` also hydrates from a git-tracked
+    `causal_kb.db` so distilled transitions survive `git pull` / `git clone`."""
+
+    def _learned_transition(self, tid="learned-1", error_class="ZAP_LATENT") -> CausalTransition:
+        return CausalTransition(
+            id=tid,
+            transition_class="custom",
+            state=CausalState(
+                repo_fingerprint="x", image="rocm/sgl-dev",
+                gpu_arch="gfx950", error_class=error_class,
+                error_signature="zap", degradation_policy="strict",
+            ),
+            action=CausalAction(type="kernel_fix", command="hipify-clang ..."),
+            outcome=CausalOutcome(return_code=0, degradation="D1", confidence=0.72),
+            source="learned",
+        )
+
+    def test_hydrates_learned_transitions_from_tracked_file(self):
+        from learning.causal_seed import _hydrate_from_tracked_kb  # noqa: E402
+
+        # Build a "tracked" KB and write a learned transition into it.
+        tmp_src, src_path, _ = _make_kb_paths()
+        src = KBStore(src_path)
+        try:
+            src.insert_transition(self._learned_transition())
+        finally:
+            src.close()
+
+        # Hydrate into a fresh KB; the learned row must round-trip.
+        tmp_dst, dst_path, _ = _make_kb_paths()
+        dst = KBStore(dst_path)
+        try:
+            copied = _hydrate_from_tracked_kb(dst, tracked_path=src_path)
+            self.assertEqual(copied, 1)
+            got = dst.get_transition("learned-1")
+            self.assertIsNotNone(got)
+            self.assertEqual(got.source, "learned")
+            self.assertEqual(got.action.command, "hipify-clang ...")
+        finally:
+            dst.close()
+
+    def test_hydration_is_idempotent(self):
+        from learning.causal_seed import _hydrate_from_tracked_kb  # noqa: E402
+
+        tmp_src, src_path, _ = _make_kb_paths()
+        src = KBStore(src_path)
+        try:
+            src.insert_transition(self._learned_transition("learned-A"))
+            src.insert_transition(self._learned_transition("learned-B"))
+        finally:
+            src.close()
+
+        tmp_dst, dst_path, _ = _make_kb_paths()
+        dst = KBStore(dst_path)
+        try:
+            _hydrate_from_tracked_kb(dst, tracked_path=src_path)
+            _hydrate_from_tracked_kb(dst, tracked_path=src_path)  # re-hydrate
+            self.assertEqual(dst.count_transitions(), 2)  # no dupes
+        finally:
+            dst.close()
+
+    def test_missing_tracked_file_is_silent_noop(self):
+        from learning.causal_seed import _hydrate_from_tracked_kb  # noqa: E402
+
+        tmp_dst, dst_path, _ = _make_kb_paths()
+        dst = KBStore(dst_path)
+        try:
+            n = _hydrate_from_tracked_kb(dst, tracked_path="/nonexistent/path/foo.db")
+            self.assertEqual(n, 0)
+            self.assertEqual(dst.count_transitions(), 0)
+        finally:
+            dst.close()
+
+    def test_seed_function_also_hydrates_from_tracked_file(self):
+        """End-to-end: a fresh KB + a tracked file => seeds + tracked rows."""
+        from learning import causal_seed  # noqa: E402
+
+        # Build a tracked file with one custom learned transition.
+        tmp_src, src_path, _ = _make_kb_paths()
+        src = KBStore(src_path)
+        try:
+            src.insert_transition(self._learned_transition("learned-X"))
+        finally:
+            src.close()
+
+        # Point the tracked-path constant at our temp file for this test.
+        orig = causal_seed.TRACKED_CAUSAL_KB_PATH
+        causal_seed.TRACKED_CAUSAL_KB_PATH = src_path
+        try:
+            tmp_dst, dst_path, _ = _make_kb_paths()
+            dst = KBStore(dst_path)
+            try:
+                # Fresh KB → seed_causal_transitions inserts 5 seeds AND
+                # hydrates the 1 learned transition from the tracked file.
+                n = causal_seed.seed_causal_transitions(dst)
+                self.assertGreaterEqual(n, 6)
+                self.assertGreaterEqual(dst.count_transitions(), 6)
+                self.assertIsNotNone(dst.get_transition("learned-X"))
+            finally:
+                dst.close()
+        finally:
+            causal_seed.TRACKED_CAUSAL_KB_PATH = orig
+
+
 class CausalDistillerTests(unittest.TestCase):
     def test_extracts_transition_from_failure_then_success_with_marker(self):
         tmp, kb_path, traj_path = _make_kb_paths()

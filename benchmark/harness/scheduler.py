@@ -403,18 +403,21 @@ def main() -> int:
 
     gpus = [int(x) for x in args.gpus.split(",") if x.strip()]
 
-    # Resolve the shared KB path (mirrors harness.main behavior).
+    # Resolve the shared KB path. Default: the git-tracked file inside the
+    # source tree (mirrors harness.main behavior). Passing --kb-path ''
+    # opts out and falls back to the per-task default.
+    _TRACKED_KB = os.path.normpath(os.path.join(
+        HERE, "..", "..", "build_agent", "learning", "causal_kb.db",
+    ))
     if args.kb_path is None:
-        kb_path = os.path.abspath(
-            os.path.join(args.runs_dir, "_shared", "kb", "repo2rocm.db")
-        )
+        kb_path = _TRACKED_KB
     elif args.kb_path == "":
         kb_path = ""
     else:
         kb_path = os.path.abspath(args.kb_path)
     if kb_path:
         os.makedirs(os.path.dirname(kb_path), exist_ok=True)
-        print(f"Shared KB: {kb_path}")
+        print(f"Shared KB (tracked in git): {kb_path}")
 
     extra_kwargs = {
         "tasks_json": os.path.abspath(args.tasks_json),

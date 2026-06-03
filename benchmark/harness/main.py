@@ -82,21 +82,25 @@ def cmd_run(args: argparse.Namespace) -> int:
     print("Status (before):", db_stats(args.db))
 
     gpus = [int(x) for x in args.gpus.split(",") if x.strip()]
-    # Resolve the shared KB path (cross-task causal memory + host-image-failure
-    # persistence). `--kb-path ''` opts out; unset defaults to a shared file
-    # under <runs-dir>/_shared/.
+    # Resolve the shared KB path. Default: the git-tracked file inside the
+    # source tree (`build_agent/learning/causal_kb.db`), so learned causal
+    # transitions and host_image_failures records survive `git pull` / fresh
+    # clones. `--kb-path ''` opts out (each task gets a per-task KB);
+    # passing a path overrides the default.
+    _TRACKED_KB = os.path.normpath(os.path.join(
+        HERE, "..", "..", "build_agent", "learning", "causal_kb.db",
+    ))
     if args.kb_path is None:
-        kb_path = os.path.abspath(
-            os.path.join(args.runs_dir, "_shared", "kb", "repo2rocm.db")
-        )
+        kb_path = _TRACKED_KB
     elif args.kb_path == "":
-        kb_path = ""  # explicit opt-out: each task gets a fresh per-task KB
+        kb_path = ""  # explicit opt-out
     else:
         kb_path = os.path.abspath(args.kb_path)
     if kb_path:
         os.makedirs(os.path.dirname(kb_path), exist_ok=True)
-        print(f"Shared KB: {kb_path} "
-              f"(cross-task causal transitions + host image failures persist here)")
+        print(f"Shared KB (tracked in git): {kb_path}")
+        print("  Causal transitions + host_image_failures persist here; "
+              "commit this file to push learning across machines.")
 
     extra_kwargs = {
         "tasks_json": os.path.abspath(args.tasks_json),
@@ -113,6 +117,24 @@ def cmd_run(args: argparse.Namespace) -> int:
         max_disk_percent=args.max_disk_percent,
         extra_kwargs=extra_kwargs,
     )
+
+    # Post-run: consolidate WAL into the main DB file so the tracked
+    # `causal_kb.db` is self-contained when committed. Without this, the
+    # most-recent writes live in `causal_kb.db-wal` and would be lost if
+    # someone committed only the main file.
+    if kb_path and os.path.exists(kb_path):
+        try:
+            import sqlite3
+            conn = sqlite3.connect(kb_path)
+            conn.execute("PRAGMA wal_checkpoint(FULL)")
+            conn.close()
+            print(f"Checkpointed WAL into {kb_path}")
+            if kb_path == _TRACKED_KB:
+                print("  -> ready to commit: "
+                      f"git add {kb_path} && git commit && git push")
+        except Exception as e:
+            print(f"WAL checkpoint failed (non-fatal): {e}")
+
     print("Status (after):", db_stats(args.db))
     return 0
 

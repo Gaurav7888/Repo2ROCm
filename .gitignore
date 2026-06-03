@@ -31,3 +31,11 @@ temp/
 
 # Cloned repos (runtime artifacts)
 utils/repo/
+
+# SQLite WAL / shared-memory files (transient; only the main *.db is tracked).
+# The causal KB at build_agent/learning/causal_kb.db lives in git; its
+# -wal and -shm sidecars must NOT be committed. wal_checkpoint(FULL) at
+# the end of each harness run consolidates everything into the main file.
+*.db-wal
+*.db-shm
+*.db-journal

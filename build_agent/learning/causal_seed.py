@@ -10,14 +10,33 @@ custom CUDA compile errors, paper-metric mismatches).
 
 Mirrors the `seed_if_empty` shape used by `errors/seed_patterns.py`: the
 function is a no-op once any causal transitions exist in the KB.
+
+Cross-clone persistence: when this module is loaded, `seed_causal_transitions`
+also hydrates the KB from a committed-in-git SQLite file at
+`build_agent/learning/causal_kb.db` (if it exists), so distilled
+transitions written by past benchmark runs survive a `git pull` / `git clone`.
+The harness writes that file after each run via `cmd_run` (checkpoints the
+shared WAL and copies the consolidated `.db` into the tracked path).
 """
 
 from __future__ import annotations
+
+import json
+import os
+import sqlite3
 
 from storage.models import (
     CausalAction, CausalOutcome, CausalState, CausalTransition,
 )
 from storage.kb_store import KBStore
+
+
+# Canonical tracked-in-git path for committed causal-memory persistence.
+# Lives next to this file so it travels with the build_agent code.
+TRACKED_CAUSAL_KB_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "causal_kb.db",
+)
 
 
 # Stable IDs make seed transitions idempotent across runs (they are only
@@ -226,32 +245,81 @@ _SEEDS = [
 ]
 
 
-def seed_causal_transitions(kb: KBStore) -> int:
-    """Insert the seed transitions if `causal_transitions` is empty.
+def _hydrate_from_tracked_kb(kb: KBStore,
+                             tracked_path: str = TRACKED_CAUSAL_KB_PATH) -> int:
+    """Copy every transition from the committed-in-git KB into `kb`.
 
-    Returns the number of rows inserted (0 if the table already had data).
+    `INSERT OR REPLACE` is keyed on `transition.id`, so re-hydrating into a
+    KB that already has the same row is a no-op (seeds keep their stable
+    ids; learned transitions keep their UUIDs). Returns the count of rows
+    we attempted to copy (so callers can log it). Best-effort: any
+    failure on the tracked file (missing, old schema, corrupt) is
+    silently skipped.
+    """
+    if not tracked_path or not os.path.exists(tracked_path):
+        return 0
+    try:
+        src = sqlite3.connect(f"file:{tracked_path}?mode=ro", uri=True)
+    except Exception:
+        return 0
+    try:
+        try:
+            rows = src.execute(
+                "SELECT data_json FROM causal_transitions"
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return 0  # table missing or schema incompatible
+        copied = 0
+        for (data_json,) in rows:
+            try:
+                payload = json.loads(data_json)
+                t = CausalTransition.from_dict(payload)
+                kb.insert_transition(t, source_attempt=t.source_attempt_id or "tracked")
+                copied += 1
+            except Exception:
+                continue
+        return copied
+    finally:
+        src.close()
+
+
+def seed_causal_transitions(kb: KBStore) -> int:
+    """Insert the seed transitions if `causal_transitions` is empty, then
+    hydrate the KB from the git-tracked causal_kb.db (if present).
+
+    Returns the total number of rows inserted (seeds + tracked).
     Mirrors `errors/seed_patterns.seed_if_empty` so it can be safely called
-    on every startup.
+    on every startup. Hydration is unconditional (not gated on the table
+    being empty), so re-runs across `git pull` keep newly-distilled
+    transitions visible — `INSERT OR REPLACE` makes this idempotent.
     """
     try:
-        if kb.count_transitions() > 0:
-            return 0
+        was_empty = kb.count_transitions() == 0
     except Exception:
         return 0
 
     inserted = 0
-    for spec in _SEEDS:
-        t = CausalTransition(
-            id=spec["id"],
-            transition_class=spec["transition_class"],
-            state=CausalState(**spec["state"]),
-            action=CausalAction(**spec["action"]),
-            outcome=CausalOutcome(**spec["outcome"]),
-            counterfactuals=list(spec.get("counterfactuals", [])),
-            source="seed",
-            source_attempt_id="seed",
-            evidence_count=5 if spec["outcome"].get("confidence", 0.5) >= 0.8 else 3,
-        )
-        kb.insert_transition(t, source_attempt="seed")
-        inserted += 1
+    if was_empty:
+        for spec in _SEEDS:
+            t = CausalTransition(
+                id=spec["id"],
+                transition_class=spec["transition_class"],
+                state=CausalState(**spec["state"]),
+                action=CausalAction(**spec["action"]),
+                outcome=CausalOutcome(**spec["outcome"]),
+                counterfactuals=list(spec.get("counterfactuals", [])),
+                source="seed",
+                source_attempt_id="seed",
+                evidence_count=5 if spec["outcome"].get("confidence", 0.5) >= 0.8 else 3,
+            )
+            kb.insert_transition(t, source_attempt="seed")
+            inserted += 1
+
+    # Always try to hydrate from the tracked file, even when the KB already
+    # had data: harmless re-INSERT (idempotent by id) and lets a `git pull`
+    # propagate new transitions into an already-seeded KB.
+    try:
+        inserted += _hydrate_from_tracked_kb(kb)
+    except Exception:
+        pass
     return inserted
