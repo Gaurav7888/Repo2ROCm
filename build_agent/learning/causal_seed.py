@@ -246,8 +246,12 @@ _SEEDS = [
 
 
 def _hydrate_from_tracked_kb(kb: KBStore,
-                             tracked_path: str = TRACKED_CAUSAL_KB_PATH) -> int:
+                             tracked_path: str = None) -> int:
     """Copy every transition from the committed-in-git KB into `kb`.
+
+    `tracked_path` defaults lazily to the module-level
+    `TRACKED_CAUSAL_KB_PATH` (read at call time, not function-def time, so
+    monkeypatching the constant in tests works as expected).
 
     `INSERT OR REPLACE` is keyed on `transition.id`, so re-hydrating into a
     KB that already has the same row is a no-op (seeds keep their stable
@@ -256,6 +260,8 @@ def _hydrate_from_tracked_kb(kb: KBStore,
     failure on the tracked file (missing, old schema, corrupt) is
     silently skipped.
     """
+    if tracked_path is None:
+        tracked_path = TRACKED_CAUSAL_KB_PATH
     if not tracked_path or not os.path.exists(tracked_path):
         return 0
     try:
