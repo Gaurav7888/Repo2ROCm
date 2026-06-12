@@ -1,0 +1,67 @@
+[REQUIRES_REPO2ROCM] microsoft/SeqSNN :: hardcoded .cuda() calls without device guards, Python 3.12 d
+[OUT_OF_BOX] llmsresearch/paperbanana :: none
+[REQUIRES_REPO2ROCM] parameterlab/c-seo-bench :: undeclared dependencies (numpy, requests)
+[REQUIRES_REPO2ROCM] dayeonki/askqe :: missing requirements files, undeclared dependencies (bert_sc
+[REQUIRES_REPO2ROCM] backprop07/Self-Certainty :: missing eval_utils module, undeclared dependencies (transfor
+[OUT_OF_BOX] qiuzh20/gated_attention :: none
+[REQUIRES_REPO2ROCM] sapienzanlp/bookcoref :: undeclared dependency (numpy imported but not in requirement
+[REQUIRES_REPO2ROCM] tanghme0w/ACL25-CoPE :: undeclared dependency orjson, deprecated torch.cuda.amp usag
+[OUT_OF_BOX] murtylab/topoloss :: none
+[REQUIRES_REPO2ROCM] SCUNLP/ELABORATION :: undeclared dependency python-dateutil
+[OUT_OF_BOX] XiaoAI1989/ORMind :: none
+[REQUIRES_REPO2ROCM] OpenBMB/IoA :: undeclared dependencies (transformers, bs4, selenium, webdri
+[REQUIRES_REPO2ROCM] shengliu66/VTI :: bitsandbytes CUDA-only dependency, missing imports (requests
+[REQUIRES_REPO2ROCM] xihongyang1999/AIRMVC :: missing source code implementation
+[REQUIRES_REPO2ROCM] kaistAI/Knowledge-Entropy :: flash_attn dependency, hardcoded nccl backend, undeclared de
+[OUT_OF_BOX] pouyahmdn/LCPO :: . But the `~=` operator allows patch version updates, so the
+[OUT_OF_BOX] xinyuluo8561/Stacey :: none
+[REQUIRES_REPO2ROCM] apple/ml-tarflow :: hardcoded nccl backend, undeclared numpy dependency
+[OUT_OF_BOX] BruceGeLi/TOP_ERL_ICLR25 :: none
+[REQUIRES_REPO2ROCM] Kambm/convolutional_diffusion :: syntax error in scales_calibration.py, missing requirements 
+[REQUIRES_REPO2ROCM] yjucho1/CoMRes :: missing requirements file, undeclared dependencies, deprecat
+[REQUIRES_REPO2ROCM] mmoharami/Risk-Sensitive-CMDP :: missing requirements file - numpy and matplotlib are importe
+[REQUIRES_REPO2ROCM] mint-vu/MCNC :: : The code is otherwise device-agnostic PyTorch.
+{"tool": "Grep", "event": "tool call failed", "level": "error", "timestamp": "2026-06-12T02:25:50.069365Z", "trace_id": "c7bd3979692079bc4c6cae97464c1b7d", "exception": "Traceback (most recent call last):\n  File \"/home/gsarkar/Repo2ROCm/repo2rocm/tools/base.py\", line 210, in invoke\n    result = await self.call(parsed, ctx)  # type: ignore[arg-type]\n  File \"/home/gsarkar/Repo2ROCm/repo2rocm/tools/repo/grep.py\", line 76, in call\n    return self._py_re(parsed, root, ctx)\n  File \"/home/gsarkar/Repo2ROCm/repo2rocm/tools/repo/grep.py\", line 138, in _py_re\n    for fp in self._walk(root, parsed.glob):\n  File \"/home/gsarkar/Repo2ROCm/repo2rocm/tools/repo/grep.py\", line 165, in _walk\n    if p.is_dir():\n  File \"/usr/lib/python3.10/pathlib.py\", line 1305, in is_dir\n    return S_ISDIR(self.stat().st_mode)\n  File \"/usr/lib/python3.10/pathlib.py\", line 1097, in stat\n    return self._accessor.stat(self, follow_symlinks=follow_symlinks)\nPermissionError: [Errno 13] Permission denied: '/home/gsarkar/Repo2ROCm/repos/Cohere-Labs-Community_m-rewardbench/venv/bin/python3'"}
+{"tool": "Grep", "event": "tool call failed", "level": "error", "timestamp": "2026-06-12T02:25:54.481089Z", "trace_id": "c7bd3979692079bc4c6cae97464c1b7d", "exception": "Traceback (most recent call last):\n  File \"/home/gsarkar/Repo2ROCm/repo2rocm/tools/base.py\", line 210, in invoke\n    result = await self.call(parsed, ctx)  # type: ignore[arg-type]\n  File \"/home/gsarkar/Repo2ROCm/repo2rocm/tools/repo/grep.py\", line 76, in call\n    return self._py_re(parsed, root, ctx)\n  File \"/home/gsarkar/Repo2ROCm/repo2rocm/tools/repo/grep.py\", line 138, in _py_re\n    for fp in self._walk(root, parsed.glob):\n  File \"/home/gsarkar/Repo2ROCm/repo2rocm/tools/repo/grep.py\", line 165, in _walk\n    if p.is_dir():\n  File \"/usr/lib/python3.10/pathlib.py\", line 1305, in is_dir\n    return S_ISDIR(self.stat().st_mode)\n  File \"/usr/lib/python3.10/pathlib.py\", line 1097, in stat\n    return self._accessor.stat(self, follow_symlinks=follow_symlinks)\nPermissionError: [Errno 13] Permission denied: '/home/gsarkar/Repo2ROCm/repos/Cohere-Labs-Community_m-rewardbench/venv/bin/python3'"}
+[OUT_OF_BOX] liukidar/pcx :: none
+[REQUIRES_REPO2ROCM] xlang-ai/BRIGHT :: undeclared dependencies
+[REQUIRES_REPO2ROCM] Cohere-Labs-Community/m-rewardbench :: undeclared dependencies (accelerate, matplotlib, seaborn, ad
+[REQUIRES_REPO2ROCM] allenai/understanding_mcqa :: undeclared dependencies (transformers, numpy, pandas, tqdm)
+[REQUIRES_REPO2ROCM] THUKElab/CLEME :: undeclared dependencies, missing requirements file
+[REQUIRES_REPO2ROCM] ryienh/jl-metric :: undeclared dependency 'click' in experiments
+[REQUIRES_REPO2ROCM] sarahmart/HARDMath :: dependency version drift - openai library version mismatch b
+[REQUIRES_REPO2ROCM] shimo-lab/modelmap :: undeclared dependencies (torch, bibtexparser, rich)
+
+================ ANALYSIS SUMMARY ================
+REQUIRES_REPO2ROCM=23  OUT_OF_BOX=8  OTHER=0
+  OUT_OF_BOX           qiuzh20/gated_attention                       none
+  REQUIRES_REPO2ROCM   microsoft/SeqSNN                              hardcoded .cuda() calls without device guards, Python 3
+  REQUIRES_REPO2ROCM   backprop07/Self-Certainty                     missing eval_utils module, undeclared dependencies (tra
+  OUT_OF_BOX           llmsresearch/paperbanana                      none
+  REQUIRES_REPO2ROCM   parameterlab/c-seo-bench                      undeclared dependencies (numpy, requests)
+  REQUIRES_REPO2ROCM   dayeonki/askqe                                missing requirements files, undeclared dependencies (be
+  REQUIRES_REPO2ROCM   sapienzanlp/bookcoref                         undeclared dependency (numpy imported but not in requir
+  REQUIRES_REPO2ROCM   tanghme0w/ACL25-CoPE                          undeclared dependency orjson, deprecated torch.cuda.amp
+  OUT_OF_BOX           XiaoAI1989/ORMind                             none
+  REQUIRES_REPO2ROCM   SCUNLP/ELABORATION                            undeclared dependency python-dateutil
+  REQUIRES_REPO2ROCM   OpenBMB/IoA                                   undeclared dependencies (transformers, bs4, selenium, w
+  OUT_OF_BOX           murtylab/topoloss                             none
+  REQUIRES_REPO2ROCM   kaistAI/Knowledge-Entropy                     flash_attn dependency, hardcoded nccl backend, undeclar
+  REQUIRES_REPO2ROCM   shengliu66/VTI                                bitsandbytes CUDA-only dependency, missing imports (req
+  OUT_OF_BOX           pouyahmdn/LCPO                                . But the `~=` operator allows patch version updates, s
+  REQUIRES_REPO2ROCM   xihongyang1999/AIRMVC                         missing source code implementation
+  OUT_OF_BOX           xinyuluo8561/Stacey                           none
+  REQUIRES_REPO2ROCM   apple/ml-tarflow                              hardcoded nccl backend, undeclared numpy dependency
+  REQUIRES_REPO2ROCM   Kambm/convolutional_diffusion                 syntax error in scales_calibration.py, missing requirem
+  OUT_OF_BOX           BruceGeLi/TOP_ERL_ICLR25                      none
+  REQUIRES_REPO2ROCM   mmoharami/Risk-Sensitive-CMDP                 missing requirements file - numpy and matplotlib are im
+  OUT_OF_BOX           liukidar/pcx                                  none
+  REQUIRES_REPO2ROCM   yjucho1/CoMRes                                missing requirements file, undeclared dependencies, dep
+  REQUIRES_REPO2ROCM   mint-vu/MCNC                                  : The code is otherwise device-agnostic PyTorch.
+  REQUIRES_REPO2ROCM   xlang-ai/BRIGHT                               undeclared dependencies
+  REQUIRES_REPO2ROCM   THUKElab/CLEME                                undeclared dependencies, missing requirements file
+  REQUIRES_REPO2ROCM   allenai/understanding_mcqa                    undeclared dependencies (transformers, numpy, pandas, t
+  REQUIRES_REPO2ROCM   Cohere-Labs-Community/m-rewardbench           undeclared dependencies (accelerate, matplotlib, seabor
+  REQUIRES_REPO2ROCM   sarahmart/HARDMath                            dependency version drift - openai library version misma
+  REQUIRES_REPO2ROCM   ryienh/jl-metric                              undeclared dependency 'click' in experiments
+  REQUIRES_REPO2ROCM   shimo-lab/modelmap                            undeclared dependencies (torch, bibtexparser, rich)

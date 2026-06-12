@@ -1,0 +1,125 @@
+[OUT_OF_BOX] microsoft/SeqSNN :: none
+[OUT_OF_BOX] qiuzh20/gated_attention :: by examining the requirements mentioned in the README:
+[REQUIRES_REPO2ROCM] showmeon/TimeEmb :: hardcoded .cuda() calls in AutoCorrelation.py, missing ptflo
+[REQUIRES_REPO2ROCM] facebookresearch/luckmatters :: CUDA-specific torch version pins, syntax error in Python cod
+[REQUIRES_REPO2ROCM] backprop07/Self-Certainty :: hardcoded CUDA autocast, missing eval_utils module, missing 
+[REQUIRES_REPO2ROCM] THU-MIG/PrefixKV :: bitsandbytes in requirements.txt (CUDA-only package)
+[REQUIRES_REPO2ROCM] nanomaoli/llm_reproducibility :: for AMD/ROCm compatibility:
+[REQUIRES_REPO2ROCM] zhoujiahuan1991/NeurIPS2025-KFF :: CUDA-pinned PyTorch installation, torch.backends.cudnn flags
+[OUT_OF_BOX] parameterlab/c-seo-bench :: none
+[REQUIRES_REPO2ROCM] alessiopittiglio/mm-argfallacy :: flash_attn==2.7.4.post1, nvidia-cublas-cu12, nvidia-cuda-cup
+[OUT_OF_BOX] llmsresearch/paperbanana :: none
+[OUT_OF_BOX] dayeonki/askqe :: none
+[REQUIRES_REPO2ROCM] flairNLP/VerbalizED :: hardcoded cuda:0 device, nvidia-smi calls, undeclared depend
+[OUT_OF_BOX] sapienzanlp/bookcoref :: none
+[OUT_OF_BOX] tanghme0w/ACL25-CoPE :: none
+[REQUIRES_REPO2ROCM] dxlong2000/NLPromptEval :: bitsandbytes (CUDA-only quantization), deepspeed (CUDA-only 
+[REQUIRES_REPO2ROCM] dmis-lab/TemporalHead :: hardcoded device='cuda' in source code, unguarded torch.back
+[REQUIRES_REPO2ROCM] batmanlab/Ladder :: CUDA-pinned PyTorch wheels, torch.backends.cudnn without HIP
+[REQUIRES_REPO2ROCM] XiaoAI1989/ORMind :: syntax errors in dataset files, undeclared gurobipy dependen
+[REQUIRES_REPO2ROCM] UAlberta-NLP/SemEval2025-EAMT :: nvidia
+[OUT_OF_BOX] SCUNLP/ELABORATION :: none
+[REQUIRES_REPO2ROCM] decisionintelligence/CATCH :: torch.backends.cudnn flags without ROCm guard in ts_benchmar
+[REQUIRES_REPO2ROCM] kaistAI/Knowledge-Entropy :: hardcoded nccl backend, flash_attn dependency, undeclared de
+[REQUIRES_REPO2ROCM] LehengTHU/AlphaRec :: torch.backends.cudnn usage without HIP guard, Python 3.12 in
+[REQUIRES_REPO2ROCM] Graph-COM/LayerDAG :: CUDA-pinned torch==1.12.0+cu116 and dgl==1.1.0+cu116 install
+[OUT_OF_BOX] OpenBMB/IoA :: none
+[OUT_OF_BOX] murtylab/topoloss :: none
+[REQUIRES_REPO2ROCM] xihongyang1999/AIRMVC :: no actual source code to run
+[OUT_OF_BOX] pouyahmdn/LCPO :: and can be resolved by updating to compatible versions.
+[REQUIRES_REPO2ROCM] neuro-galaxy/torch_brain :: xformers dependency, torch.backends.cudnn calls without HIP 
+[REQUIRES_REPO2ROCM] shengliu66/VTI :: bitsandbytes==0.41.0 (CUDA-only), missing imports (requests,
+[REQUIRES_REPO2ROCM] ModelTC/HarmoniCa :: are:
+[REQUIRES_REPO2ROCM] codezakh/DataEnvGym :: that would prevent it from running on AMD ROCm out of the bo
+[REQUIRES_REPO2ROCM] apple/ml-tarflow :: hardcoded NCCL backend in distributed training
+[REQUIRES_REPO2ROCM] DCDmllm/HealthGPT :: bitsandbytes==0.41.0, deepspeed==0.9.5/0.14.4/0.16.9, flash-
+[OUT_OF_BOX] xinyuluo8561/Stacey :: none
+[REQUIRES_REPO2ROCM] GuanchengWan/EARTH :: are:
+[REQUIRES_REPO2ROCM] Kambm/convolutional_diffusion :: syntax error in scales_calibration.py:95
+[OUT_OF_BOX] mmoharami/Risk-Sensitive-CMDP :: none
+[OUT_OF_BOX] BruceGeLi/TOP_ERL_ICLR25 :: none
+[REQUIRES_REPO2ROCM] YZY-stack/Effort-AIGI-Detection :: CUDA-pinned PyTorch in install.sh, torch.cuda.amp deprecated
+[OUT_OF_BOX] liukidar/pcx :: none
+[REQUIRES_REPO2ROCM] yjucho1/CoMRes :: missing __init__.py files in layers/, models/, utils/, exp/ 
+[OUT_OF_BOX] mint-vu/MCNC :: none
+[REQUIRES_REPO2ROCM] 1202kbs/GCTM :: are the CUDA-pinned PyTorch versions in the README environme
+[REQUIRES_REPO2ROCM] DeepakTatachar/CSL-Mem :: are the hardcoded CUDA assumptions that would cause errors o
+[REQUIRES_REPO2ROCM] FFY0/AdaKV :: flash_attn dependency, custom CUDA extension compilation
+[REQUIRES_REPO2ROCM] allenai/WildBench :: vllm dependency, nvidia-smi hardware detection, auto_gptq im
+{"tool": "Grep", "event": "tool call failed", "level": "error", "timestamp": "2026-06-12T02:37:23.677846Z", "trace_id": "d429567130de2b5223a434484662df49", "exception": "Traceback (most recent call last):\n  File \"/home/gsarkar/Repo2ROCm/repo2rocm/tools/base.py\", line 210, in invoke\n    result = await self.call(parsed, ctx)  # type: ignore[arg-type]\n  File \"/home/gsarkar/Repo2ROCm/repo2rocm/tools/repo/grep.py\", line 76, in call\n    return self._py_re(parsed, root, ctx)\n  File \"/home/gsarkar/Repo2ROCm/repo2rocm/tools/repo/grep.py\", line 138, in _py_re\n    for fp in self._walk(root, parsed.glob):\n  File \"/home/gsarkar/Repo2ROCm/repo2rocm/tools/repo/grep.py\", line 165, in _walk\n    if p.is_dir():\n  File \"/usr/lib/python3.10/pathlib.py\", line 1305, in is_dir\n    return S_ISDIR(self.stat().st_mode)\n  File \"/usr/lib/python3.10/pathlib.py\", line 1097, in stat\n    return self._accessor.stat(self, follow_symlinks=follow_symlinks)\nPermissionError: [Errno 13] Permission denied: '/home/gsarkar/Repo2ROCm/repos/Cohere-Labs-Community_m-rewardbench/venv/bin/python3'"}
+[OUT_OF_BOX] xlang-ai/BRIGHT :: none
+{"tool": "Grep", "event": "tool call failed", "level": "error", "timestamp": "2026-06-12T02:37:25.339413Z", "trace_id": "d429567130de2b5223a434484662df49", "exception": "Traceback (most recent call last):\n  File \"/home/gsarkar/Repo2ROCm/repo2rocm/tools/base.py\", line 210, in invoke\n    result = await self.call(parsed, ctx)  # type: ignore[arg-type]\n  File \"/home/gsarkar/Repo2ROCm/repo2rocm/tools/repo/grep.py\", line 76, in call\n    return self._py_re(parsed, root, ctx)\n  File \"/home/gsarkar/Repo2ROCm/repo2rocm/tools/repo/grep.py\", line 138, in _py_re\n    for fp in self._walk(root, parsed.glob):\n  File \"/home/gsarkar/Repo2ROCm/repo2rocm/tools/repo/grep.py\", line 165, in _walk\n    if p.is_dir():\n  File \"/usr/lib/python3.10/pathlib.py\", line 1305, in is_dir\n    return S_ISDIR(self.stat().st_mode)\n  File \"/usr/lib/python3.10/pathlib.py\", line 1097, in stat\n    return self._accessor.stat(self, follow_symlinks=follow_symlinks)\nPermissionError: [Errno 13] Permission denied: '/home/gsarkar/Repo2ROCm/repos/Cohere-Labs-Community_m-rewardbench/venv/bin/python3'"}
+[OUT_OF_BOX] THUKElab/CLEME :: none
+[REQUIRES_REPO2ROCM] FYYFU/HeadKV :: flash_attn dependency lacks ROCm wheel, requires AMD Triton 
+[OUT_OF_BOX] allenai/understanding_mcqa :: none
+[OUT_OF_BOX] Cohere-Labs-Community/m-rewardbench :: none
+[OUT_OF_BOX] sarahmart/HARDMath :: none
+[REQUIRES_REPO2ROCM] ZhiningLiu1998/SelfElicit :: hardcoded CUDA assertion in utils.py:28, torch.cuda.empty_ca
+[REQUIRES_REPO2ROCM] thunlp/FR-Spec :: custom CUDA extensions, flash_attn dependency, extensive CUD
+[OUT_OF_BOX] ryienh/jl-metric :: none
+[REQUIRES_REPO2ROCM] togethercomputer/moa :: flash_attn, bitsandbytes, vllm, xformers
+[REQUIRES_REPO2ROCM] SongW-SW/CEB :: vllm dependency (CUDA-only PyPI package)
+[OUT_OF_BOX] shimo-lab/modelmap :: none
+
+================ ANALYSIS SUMMARY ================
+REQUIRES_REPO2ROCM=37  OUT_OF_BOX=23  OTHER=0
+  OUT_OF_BOX           qiuzh20/gated_attention                       by examining the requirements mentioned in the README:
+  REQUIRES_REPO2ROCM   facebookresearch/luckmatters                  CUDA-specific torch version pins, syntax error in Pytho
+  REQUIRES_REPO2ROCM   backprop07/Self-Certainty                     hardcoded CUDA autocast, missing eval_utils module, mis
+  REQUIRES_REPO2ROCM   THU-MIG/PrefixKV                              bitsandbytes in requirements.txt (CUDA-only package)
+  OUT_OF_BOX           microsoft/SeqSNN                              none
+  REQUIRES_REPO2ROCM   showmeon/TimeEmb                              hardcoded .cuda() calls in AutoCorrelation.py, missing 
+  OUT_OF_BOX           llmsresearch/paperbanana                      none
+  REQUIRES_REPO2ROCM   zhoujiahuan1991/NeurIPS2025-KFF               CUDA-pinned PyTorch installation, torch.backends.cudnn 
+  REQUIRES_REPO2ROCM   nanomaoli/llm_reproducibility                 for AMD/ROCm compatibility:
+  OUT_OF_BOX           parameterlab/c-seo-bench                      none
+  REQUIRES_REPO2ROCM   alessiopittiglio/mm-argfallacy                flash_attn==2.7.4.post1, nvidia-cublas-cu12, nvidia-cud
+  OUT_OF_BOX           dayeonki/askqe                                none
+  OUT_OF_BOX           sapienzanlp/bookcoref                         none
+  REQUIRES_REPO2ROCM   flairNLP/VerbalizED                           hardcoded cuda:0 device, nvidia-smi calls, undeclared d
+  REQUIRES_REPO2ROCM   dxlong2000/NLPromptEval                       bitsandbytes (CUDA-only quantization), deepspeed (CUDA-
+  OUT_OF_BOX           tanghme0w/ACL25-CoPE                          none
+  REQUIRES_REPO2ROCM   batmanlab/Ladder                              CUDA-pinned PyTorch wheels, torch.backends.cudnn withou
+  REQUIRES_REPO2ROCM   dmis-lab/TemporalHead                         hardcoded device='cuda' in source code, unguarded torch
+  REQUIRES_REPO2ROCM   UAlberta-NLP/SemEval2025-EAMT                 nvidia
+  REQUIRES_REPO2ROCM   XiaoAI1989/ORMind                             syntax errors in dataset files, undeclared gurobipy dep
+  OUT_OF_BOX           SCUNLP/ELABORATION                            none
+  REQUIRES_REPO2ROCM   decisionintelligence/CATCH                    torch.backends.cudnn flags without ROCm guard in ts_ben
+  REQUIRES_REPO2ROCM   kaistAI/Knowledge-Entropy                     hardcoded nccl backend, flash_attn dependency, undeclar
+  REQUIRES_REPO2ROCM   LehengTHU/AlphaRec                            torch.backends.cudnn usage without HIP guard, Python 3.
+  OUT_OF_BOX           OpenBMB/IoA                                   none
+  REQUIRES_REPO2ROCM   Graph-COM/LayerDAG                            CUDA-pinned torch==1.12.0+cu116 and dgl==1.1.0+cu116 in
+  OUT_OF_BOX           murtylab/topoloss                             none
+  REQUIRES_REPO2ROCM   neuro-galaxy/torch_brain                      xformers dependency, torch.backends.cudnn calls without
+  REQUIRES_REPO2ROCM   shengliu66/VTI                                bitsandbytes==0.41.0 (CUDA-only), missing imports (requ
+  OUT_OF_BOX           pouyahmdn/LCPO                                and can be resolved by updating to compatible versions.
+  REQUIRES_REPO2ROCM   codezakh/DataEnvGym                           that would prevent it from running on AMD ROCm out of t
+  REQUIRES_REPO2ROCM   ModelTC/HarmoniCa                             are:
+  REQUIRES_REPO2ROCM   xihongyang1999/AIRMVC                         no actual source code to run
+  REQUIRES_REPO2ROCM   DCDmllm/HealthGPT                             bitsandbytes==0.41.0, deepspeed==0.9.5/0.14.4/0.16.9, f
+  REQUIRES_REPO2ROCM   apple/ml-tarflow                              hardcoded NCCL backend in distributed training
+  OUT_OF_BOX           xinyuluo8561/Stacey                           none
+  REQUIRES_REPO2ROCM   GuanchengWan/EARTH                            are:
+  REQUIRES_REPO2ROCM   Kambm/convolutional_diffusion                 syntax error in scales_calibration.py:95
+  OUT_OF_BOX           mmoharami/Risk-Sensitive-CMDP                 none
+  REQUIRES_REPO2ROCM   YZY-stack/Effort-AIGI-Detection               CUDA-pinned PyTorch in install.sh, torch.cuda.amp depre
+  OUT_OF_BOX           BruceGeLi/TOP_ERL_ICLR25                      none
+  OUT_OF_BOX           liukidar/pcx                                  none
+  REQUIRES_REPO2ROCM   yjucho1/CoMRes                                missing __init__.py files in layers/, models/, utils/, 
+  OUT_OF_BOX           mint-vu/MCNC                                  none
+  REQUIRES_REPO2ROCM   1202kbs/GCTM                                  are the CUDA-pinned PyTorch versions in the README envi
+  REQUIRES_REPO2ROCM   DeepakTatachar/CSL-Mem                        are the hardcoded CUDA assumptions that would cause err
+  REQUIRES_REPO2ROCM   allenai/WildBench                             vllm dependency, nvidia-smi hardware detection, auto_gp
+  OUT_OF_BOX           xlang-ai/BRIGHT                               none
+  OUT_OF_BOX           THUKElab/CLEME                                none
+  REQUIRES_REPO2ROCM   FFY0/AdaKV                                    flash_attn dependency, custom CUDA extension compilatio
+  REQUIRES_REPO2ROCM   FYYFU/HeadKV                                  flash_attn dependency lacks ROCm wheel, requires AMD Tr
+  OUT_OF_BOX           allenai/understanding_mcqa                    none
+  OUT_OF_BOX           Cohere-Labs-Community/m-rewardbench           none
+  OUT_OF_BOX           sarahmart/HARDMath                            none
+  REQUIRES_REPO2ROCM   ZhiningLiu1998/SelfElicit                     hardcoded CUDA assertion in utils.py:28, torch.cuda.emp
+  REQUIRES_REPO2ROCM   thunlp/FR-Spec                                custom CUDA extensions, flash_attn dependency, extensiv
+  OUT_OF_BOX           ryienh/jl-metric                              none
+  OUT_OF_BOX           shimo-lab/modelmap                            none
+  REQUIRES_REPO2ROCM   togethercomputer/moa                          flash_attn, bitsandbytes, vllm, xformers
+  REQUIRES_REPO2ROCM   SongW-SW/CEB                                  vllm dependency (CUDA-only PyPI package)

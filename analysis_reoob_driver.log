@@ -1,0 +1,70 @@
+[REQUIRES_REPO2ROCM] qiuzh20/gated_attention :: missing requirements file, undeclared dependencies (transfor
+[OUT_OF_BOX] microsoft/SeqSNN :: none
+[REQUIRES_REPO2ROCM] parameterlab/c-seo-bench :: undeclared dependencies (numpy, pandas, requests)
+[REQUIRES_REPO2ROCM] backprop07/Self-Certainty :: missing requirements file, undeclared dependencies (transfor
+[REQUIRES_REPO2ROCM] dayeonki/askqe :: missing requirements file, multiple undeclared dependencies
+[REQUIRES_REPO2ROCM] sapienzanlp/bookcoref :: undeclared dependency (numpy imported but not in requirement
+[REQUIRES_REPO2ROCM] tanghme0w/ACL25-CoPE :: undeclared dependency orjson, deprecated torch.cuda.amp usag
+[OUT_OF_BOX] llmsresearch/paperbanana :: none
+[REQUIRES_REPO2ROCM] XiaoAI1989/ORMind :: syntax errors in dataset files, undeclared dependency gurobi
+{"turn": 2, "error_class": "http_500", "msg": "", "event": "model error", "level": "error", "timestamp": "2026-06-12T02:16:46.820142Z", "trace_id": "c3a891cc0cee0c2f09e2796f2d270772"}
+[INCONCLUSIVE] pouyahmdn/LCPO :: 
+[OUT_OF_BOX] murtylab/topoloss :: none
+[REQUIRES_REPO2ROCM] shengliu66/VTI :: bitsandbytes CUDA-only dependency, undeclared dependencies (
+[REQUIRES_REPO2ROCM] OpenBMB/IoA :: undeclared dependencies in scripts/gaia/test_gaia.py, missin
+[REQUIRES_REPO2ROCM] xihongyang1999/AIRMVC :: missing implementation - repository contains only README, no
+[REQUIRES_REPO2ROCM] SCUNLP/ELABORATION :: undeclared dependency python-dateutil
+[REQUIRES_REPO2ROCM] kaistAI/Knowledge-Entropy :: flash_attn undeclared CUDA-only dependency, undeclared depen
+[REQUIRES_REPO2ROCM] xinyuluo8561/Stacey :: undeclared torch dependency, broken relative imports in stac
+[REQUIRES_REPO2ROCM] apple/ml-tarflow :: undeclared numpy dependency, hardcoded nccl backend
+[OUT_OF_BOX] BruceGeLi/TOP_ERL_ICLR25 :: none
+[REQUIRES_REPO2ROCM] Kambm/convolutional_diffusion :: are:
+[REQUIRES_REPO2ROCM] mmoharami/Risk-Sensitive-CMDP :: missing requirements file, undeclared dependencies (numpy, m
+[OUT_OF_BOX] liukidar/pcx :: none
+[REQUIRES_REPO2ROCM] yjucho1/CoMRes :: missing requirements file, undeclared dependencies (einops, 
+[REQUIRES_REPO2ROCM] mint-vu/MCNC :: undeclared dependencies, nccl backend usage
+{"tool": "Grep", "event": "tool call failed", "level": "error", "timestamp": "2026-06-12T02:18:45.845896Z", "trace_id": "5a815453941fed3cef099b99799b6210", "exception": "Traceback (most recent call last):\n  File \"/home/gsarkar/Repo2ROCm/repo2rocm/tools/base.py\", line 210, in invoke\n    result = await self.call(parsed, ctx)  # type: ignore[arg-type]\n  File \"/home/gsarkar/Repo2ROCm/repo2rocm/tools/repo/grep.py\", line 76, in call\n    return self._py_re(parsed, root, ctx)\n  File \"/home/gsarkar/Repo2ROCm/repo2rocm/tools/repo/grep.py\", line 138, in _py_re\n    for fp in self._walk(root, parsed.glob):\n  File \"/home/gsarkar/Repo2ROCm/repo2rocm/tools/repo/grep.py\", line 165, in _walk\n    if p.is_dir():\n  File \"/usr/lib/python3.10/pathlib.py\", line 1305, in is_dir\n    return S_ISDIR(self.stat().st_mode)\n  File \"/usr/lib/python3.10/pathlib.py\", line 1097, in stat\n    return self._accessor.stat(self, follow_symlinks=follow_symlinks)\nPermissionError: [Errno 13] Permission denied: '/home/gsarkar/Repo2ROCm/repos/Cohere-Labs-Community_m-rewardbench/venv/bin/python3'"}
+{"tool": "Grep", "event": "tool call failed", "level": "error", "timestamp": "2026-06-12T02:18:50.183191Z", "trace_id": "5a815453941fed3cef099b99799b6210", "exception": "Traceback (most recent call last):\n  File \"/home/gsarkar/Repo2ROCm/repo2rocm/tools/base.py\", line 210, in invoke\n    result = await self.call(parsed, ctx)  # type: ignore[arg-type]\n  File \"/home/gsarkar/Repo2ROCm/repo2rocm/tools/repo/grep.py\", line 76, in call\n    return self._py_re(parsed, root, ctx)\n  File \"/home/gsarkar/Repo2ROCm/repo2rocm/tools/repo/grep.py\", line 138, in _py_re\n    for fp in self._walk(root, parsed.glob):\n  File \"/home/gsarkar/Repo2ROCm/repo2rocm/tools/repo/grep.py\", line 165, in _walk\n    if p.is_dir():\n  File \"/usr/lib/python3.10/pathlib.py\", line 1305, in is_dir\n    return S_ISDIR(self.stat().st_mode)\n  File \"/usr/lib/python3.10/pathlib.py\", line 1097, in stat\n    return self._accessor.stat(self, follow_symlinks=follow_symlinks)\nPermissionError: [Errno 13] Permission denied: '/home/gsarkar/Repo2ROCm/repos/Cohere-Labs-Community_m-rewardbench/venv/bin/python3'"}
+[REQUIRES_REPO2ROCM] xlang-ai/BRIGHT :: undeclared dependencies, version pin hazard
+{"tool": "Grep", "event": "tool call failed", "level": "error", "timestamp": "2026-06-12T02:18:59.491663Z", "trace_id": "5a815453941fed3cef099b99799b6210", "exception": "Traceback (most recent call last):\n  File \"/home/gsarkar/Repo2ROCm/repo2rocm/tools/base.py\", line 210, in invoke\n    result = await self.call(parsed, ctx)  # type: ignore[arg-type]\n  File \"/home/gsarkar/Repo2ROCm/repo2rocm/tools/repo/grep.py\", line 76, in call\n    return self._py_re(parsed, root, ctx)\n  File \"/home/gsarkar/Repo2ROCm/repo2rocm/tools/repo/grep.py\", line 138, in _py_re\n    for fp in self._walk(root, parsed.glob):\n  File \"/home/gsarkar/Repo2ROCm/repo2rocm/tools/repo/grep.py\", line 165, in _walk\n    if p.is_dir():\n  File \"/usr/lib/python3.10/pathlib.py\", line 1305, in is_dir\n    return S_ISDIR(self.stat().st_mode)\n  File \"/usr/lib/python3.10/pathlib.py\", line 1097, in stat\n    return self._accessor.stat(self, follow_symlinks=follow_symlinks)\nPermissionError: [Errno 13] Permission denied: '/home/gsarkar/Repo2ROCm/repos/Cohere-Labs-Community_m-rewardbench/venv/bin/python3'"}
+[REQUIRES_REPO2ROCM] allenai/understanding_mcqa :: undeclared dependencies (numpy, pandas, transformers), missi
+{"tool": "Grep", "event": "tool call failed", "level": "error", "timestamp": "2026-06-12T02:19:24.389126Z", "trace_id": "5a815453941fed3cef099b99799b6210", "exception": "Traceback (most recent call last):\n  File \"/home/gsarkar/Repo2ROCm/repo2rocm/tools/base.py\", line 210, in invoke\n    result = await self.call(parsed, ctx)  # type: ignore[arg-type]\n  File \"/home/gsarkar/Repo2ROCm/repo2rocm/tools/repo/grep.py\", line 76, in call\n    return self._py_re(parsed, root, ctx)\n  File \"/home/gsarkar/Repo2ROCm/repo2rocm/tools/repo/grep.py\", line 138, in _py_re\n    for fp in self._walk(root, parsed.glob):\n  File \"/home/gsarkar/Repo2ROCm/repo2rocm/tools/repo/grep.py\", line 165, in _walk\n    if p.is_dir():\n  File \"/usr/lib/python3.10/pathlib.py\", line 1305, in is_dir\n    return S_ISDIR(self.stat().st_mode)\n  File \"/usr/lib/python3.10/pathlib.py\", line 1097, in stat\n    return self._accessor.stat(self, follow_symlinks=follow_symlinks)\nPermissionError: [Errno 13] Permission denied: '/home/gsarkar/Repo2ROCm/repos/Cohere-Labs-Community_m-rewardbench/venv/bin/python3'"}
+[OUT_OF_BOX] sarahmart/HARDMath :: none
+[REQUIRES_REPO2ROCM] ryienh/jl-metric :: undeclared dependency 'click' in experiments
+[REQUIRES_REPO2ROCM] Cohere-Labs-Community/m-rewardbench :: undeclared dependencies (matplotlib, seaborn, adjustText, ct
+[REQUIRES_REPO2ROCM] THUKElab/CLEME :: missing requirements file, undeclared dependencies
+[REQUIRES_REPO2ROCM] shimo-lab/modelmap :: undeclared dependencies (torch, bibtexparser, rich)
+
+================ ANALYSIS SUMMARY ================
+REQUIRES_REPO2ROCM=24  OUT_OF_BOX=6  OTHER=1
+  REQUIRES_REPO2ROCM   qiuzh20/gated_attention                       missing requirements file, undeclared dependencies (tra
+  OUT_OF_BOX           microsoft/SeqSNN                              none
+  REQUIRES_REPO2ROCM   backprop07/Self-Certainty                     missing requirements file, undeclared dependencies (tra
+  OUT_OF_BOX           llmsresearch/paperbanana                      none
+  REQUIRES_REPO2ROCM   parameterlab/c-seo-bench                      undeclared dependencies (numpy, pandas, requests)
+  REQUIRES_REPO2ROCM   dayeonki/askqe                                missing requirements file, multiple undeclared dependen
+  REQUIRES_REPO2ROCM   sapienzanlp/bookcoref                         undeclared dependency (numpy imported but not in requir
+  REQUIRES_REPO2ROCM   tanghme0w/ACL25-CoPE                          undeclared dependency orjson, deprecated torch.cuda.amp
+  REQUIRES_REPO2ROCM   XiaoAI1989/ORMind                             syntax errors in dataset files, undeclared dependency g
+  REQUIRES_REPO2ROCM   SCUNLP/ELABORATION                            undeclared dependency python-dateutil
+  REQUIRES_REPO2ROCM   OpenBMB/IoA                                   undeclared dependencies in scripts/gaia/test_gaia.py, m
+  OUT_OF_BOX           murtylab/topoloss                             none
+  REQUIRES_REPO2ROCM   kaistAI/Knowledge-Entropy                     flash_attn undeclared CUDA-only dependency, undeclared 
+  REQUIRES_REPO2ROCM   shengliu66/VTI                                bitsandbytes CUDA-only dependency, undeclared dependenc
+  INCONCLUSIVE         pouyahmdn/LCPO                                
+  REQUIRES_REPO2ROCM   xihongyang1999/AIRMVC                         missing implementation - repository contains only READM
+  REQUIRES_REPO2ROCM   xinyuluo8561/Stacey                           undeclared torch dependency, broken relative imports in
+  REQUIRES_REPO2ROCM   apple/ml-tarflow                              undeclared numpy dependency, hardcoded nccl backend
+  REQUIRES_REPO2ROCM   Kambm/convolutional_diffusion                 are:
+  OUT_OF_BOX           BruceGeLi/TOP_ERL_ICLR25                      none
+  REQUIRES_REPO2ROCM   mmoharami/Risk-Sensitive-CMDP                 missing requirements file, undeclared dependencies (num
+  OUT_OF_BOX           liukidar/pcx                                  none
+  REQUIRES_REPO2ROCM   yjucho1/CoMRes                                missing requirements file, undeclared dependencies (ein
+  REQUIRES_REPO2ROCM   mint-vu/MCNC                                  undeclared dependencies, nccl backend usage
+  REQUIRES_REPO2ROCM   xlang-ai/BRIGHT                               undeclared dependencies, version pin hazard
+  REQUIRES_REPO2ROCM   THUKElab/CLEME                                missing requirements file, undeclared dependencies
+  REQUIRES_REPO2ROCM   allenai/understanding_mcqa                    undeclared dependencies (numpy, pandas, transformers), 
+  REQUIRES_REPO2ROCM   Cohere-Labs-Community/m-rewardbench           undeclared dependencies (matplotlib, seaborn, adjustTex
+  OUT_OF_BOX           sarahmart/HARDMath                            none
+  REQUIRES_REPO2ROCM   ryienh/jl-metric                              undeclared dependency 'click' in experiments
+  REQUIRES_REPO2ROCM   shimo-lab/modelmap                            undeclared dependencies (torch, bibtexparser, rich)

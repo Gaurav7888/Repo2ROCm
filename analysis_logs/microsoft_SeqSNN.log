@@ -1,0 +1,73 @@
+─────────────────────────── analyze microsoft/SeqSNN ───────────────────────────
+repo_path=/home/gsarkar/Repo2ROCm/repos/microsoft_SeqSNN
+
+agent: rocm_portability_analyzer (a3ae9405d)  mode=bypassPermissions ───────────
+  T 0  I'll analyze the Microsoft/SeqSNN repository for AMD/ROCm portability. Let me start by examining the key files.
+        → Read({"file_path" "README.md"})
+        usage: in= 3189 out=  85 cache_read=    0 hit= 0%
+        ✓ Read              ok    4271b  1|# SeqSNN      2|      3|A public framework for time-series forecasting with spiking neural netw...
+        → Read({"file_path" "setup.py"})
+        usage: in= 4715 out=  55 cache_read=    0 hit= 0%
+        ✓ Read              ok    3020b  1|import re      2|from datetime import datetime      3|from distutils.cmd import Command      4|...
+  T 2  Now let me check for any CUDA-specific code or extensions:
+        → Glob({"pattern" "**/*.cu"})
+        usage: in= 5794 out=  69 cache_read=    0 hit= 0%
+        ✓ Glob              ok      12b  (no matches)
+        → Glob({"pattern" "**/*.cuh"})
+        usage: in= 5877 out=  55 cache_read=    0 hit= 0%
+        ✓ Glob              ok      12b  (no matches)
+        → Grep({"pattern" "CUDAExtension|cpp_extension|nvcc"})
+        usage: in= 5946 out=  63 cache_read=    0 hit= 0%
+        ✓ Grep              ok      12b  (no matches)
+        → Grep({"pattern" "flash_attn|bitsandbytes|xformers|apex|mamba-ssm|causal-conv1d|vllm|tensorrt|faiss-gpu|cupy|pycuda|deepspeed"})
+        usage: in= 6023 out= 103 cache_read=    0 hit= 0%
+        ✓ Grep              ok      12b  (no matches)
+        → Grep({"pattern" "\\+cu1|download\\.pytorch\\.org/whl/cu|pytorch-cuda"})
+        usage: in= 6140 out=  70 cache_read=    0 hit= 0%
+        ✓ Grep              ok      12b  (no matches)
+  T 7  Let me check the main source code structure and look for any CUDA-specific patterns:
+        → Glob({"pattern" "SeqSNN/**/*.py","head_limit" 20})
+        usage: in= 6224 out=  96 cache_read=    0 hit= 0%
+        ✓ Glob              ok     613b  SeqSNN/__init__.py SeqSNN/common/__init__.py SeqSNN/common/function.py SeqSNN/common/utils.py Seq...
+        → Grep({"pattern" "torch\\.cuda|\\.cuda\\(\\)|device.*cuda|cudnn"})
+        usage: in= 6591 out=  66 cache_read=    0 hit= 0%
+        ✓ Grep              ok    1246b  /repo/SeqSNN/network/snn/spikformer_xnor_log.py:146:        attn = (attn + tmp.cuda()) * torch.si...
+  T 9  Let me examine the specific files that use CUDA to understand the patterns:
+        → Read({"file_path" "SeqSNN/runner/base.py","offset" 60,"limit" 20})
+        usage: in= 7170 out= 112 cache_read=    0 hit= 0%
+        ✓ Read              ok     728b  61|        self._init_logger(output_dir)     62|        self.checkpoint_dir = checkpoint_dir     ...
+        → Read({"file_path" "SeqSNN/network/snn/spikformer_xnor_log.py","offset" 140,"limit" 10})
+        usage: in= 7510 out= 108 cache_read=    0 hit= 0%
+        ✓ Read              ok     513b  141|        sum_q = sum_q.unsqueeze(-1)  # [T, B, D, L, 1\]    142|        sum_k = sum_k.unsqueeze...
+  T11  Let me check if there are any requirements files or configuration files that might pin CUDA versions:
+        → Glob({"pattern" "*requirements*.txt"})
+        usage: in= 7847 out=  75 cache_read=    0 hit= 0%
+        ✓ Glob              ok      12b  (no matches)
+        → Glob({"pattern" "environment*.yml"})
+        usage: in= 7936 out=  54 cache_read=    0 hit= 0%
+        ✓ Glob              ok      12b  (no matches)
+        → Glob({"pattern" "pyproject.toml"})
+        usage: in= 8004 out=  56 cache_read=    0 hit= 0%
+        ✓ Glob              ok      12b  (no matches)
+  T14  Let me check the dependencies mentioned in the scan - specifically `spikingjelly` and `snntorch` to see if they have any CUDA-specific requirements:
+        → Grep({"pattern" "import.*sklearn"})
+        usage: in= 8074 out=  91 cache_read=    0 hit= 0%
+        ✓ Grep              ok      12b  (no matches)
+        → Grep({"pattern" "from.*sklearn"})
+        usage: in= 8179 out=  54 cache_read=    0 hit= 0%
+        ✓ Grep              ok     329b  /repo/SeqSNN/dataset/ts.py:12:from sklearn.model_selection import train_test_split /repo/SeqSNN/d...
+  T16  Let me check if there are any hardcoded CUDA-specific patterns that might cause issues:
+        → Read({"file_path" "SeqSNN/network/snn/spikformer_xnor_gray.py","offset" 20,"limit" 10})
+        usage: in= 8355 out= 129 cache_read=    0 hit= 0%
+        ✓ Read              ok     346b  21|    gray_code_matrix = gray_code_matrix.expand(T, B, H, L, num_bits)     22|     23|    result...
+  T17  Let me check the Python 3.12 compatibility issue mentioned in the scan:
+        → Read({"file_path" "setup.py","offset" 0,"limit" 10})
+        usage: in= 8633 out= 107 cache_read=    0 hit= 0%
+        ✓ Read              ok     228b  1|import re      2|from datetime import datetime      3|from distutils.cmd import Command      4|...
+  T18  Now let me check if there are any other potential blockers by examining the main entry point:
+        → Read({"file_path" "SeqSNN/entry/tsforecast.py","limit" 30})
+        usage: in= 8828 out= 101 cache_read=    0 hit= 0%
+        ✓ Read              ok    1136b  1|import warnings      2|      3|from utilsd import get_output_dir, get_checkpoint_dir, setup_exp...
+  T19  Based on my analysis, let me summarize the findings: **Key Observations:** 1. **No CUDA Extensions**: No `.cu`/`.cuh` files, no `CUDAExtension`, no custom CUDA compilation. 2. **Dependencies**: The setup.py shows standard PyTorch depende...
+        usage: in= 9313 out= 463 cache_read=    0 hit= 0%
+VERDICT=OUT_OF_BOX :: Standard PyTorch SNN framework with no CUDA extensions, no CUDA-only dependencies, and only standard `.cuda()` calls that work transparently on ROCm via HIP.

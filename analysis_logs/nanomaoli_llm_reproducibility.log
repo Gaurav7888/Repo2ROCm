@@ -1,0 +1,58 @@
+──────────────────── analyze nanomaoli/llm_reproducibility ─────────────────────
+repo_path=/home/gsarkar/Repo2ROCm/repos/nanomaoli_llm_reproducibility
+
+agent: rocm_portability_analyzer (a1a7909da)  mode=bypassPermissions ───────────
+  T 0  I'll analyze this repository for AMD/ROCm portability. Let me start by examining the key files.
+        → Read({"file_path" "README.md"})
+        usage: in= 3775 out=  79 cache_read=    0 hit= 0%
+        ✓ Read              ok   11527b  1|# ⚙️ Monkey Patching Solutions for Deterministic LLM Generation      2|      3|*TL;DR: A toolki...
+        → Read({"file_path" "pyproject.toml"})
+        usage: in= 7789 out=  57 cache_read=    0 hit= 0%
+        ✓ Read              ok    1663b  1|[project\]      2|name = "tbik"      3|version = "0.1.0"      4|description = "Tree-Based Invari...
+  T 2  Now let me check for CUDA extensions and custom kernels:
+        → Glob({"pattern" "**/*.cu"})
+        usage: in= 8584 out=  68 cache_read=    0 hit= 0%
+        ✓ Glob              ok     282b  mini_allreduce/tbik_kernel/csrc/allreduce/custom_all_reduce.cu mini_allreduce/tbik_kernel/csrc/al...
+        → Grep({"pattern" "CUDAExtension|cpp_extension"})
+        usage: in= 8791 out=  60 cache_read=    0 hit= 0%
+        ✓ Grep              ok     360b  /repo/README.md:80:pip install is needed** — it is JIT-compiled on first use (via `torch.utils.cp...
+        → Read({"file_path" "mini_allreduce/setup.py"})
+        usage: in= 8987 out=  61 cache_read=    0 hit= 0%
+        ✓ Read              ok    1395b  1|from pathlib import Path      2|      3|from setuptools import setup      4|from torch.utils.cp...
+        → Read({"file_path" "src/tbik/tree_based_matmul.py","limit" 50,"offset" 300})
+        usage: in= 9570 out= 100 cache_read=    0 hit= 0%
+        ✓ Read              ok    2185b  301|    302|    303|@_lru_cache(maxsize=1)    304|def _load_cuda_matmul():    305|    """JIT-comp...
+  T 6  Now let me check the specific CUDA hazards mentioned in the scan:
+        → Read({"file_path" "evaluation/eval_passk.py","limit" 10,"offset" 60})
+        usage: in=10501 out= 110 cache_read=    0 hit= 0%
+        ✓ Read              ok     543b  61|    torch.cuda.manual_seed_all(seed)     62|    torch.backends.cudnn.deterministic = True     ...
+        → Read({"file_path" "evaluation/eval_main.py","limit" 10,"offset" 48})
+        usage: in=10804 out=  93 cache_read=    0 hit= 0%
+        ✓ Read              ok     441b  49|    torch.cuda.manual_seed_all(seed)     50|    torch.backends.cudnn.deterministic = True     ...
+  T 8  Now let me check if there are any CUDA-specific torch version pins:
+        → Grep({"pattern" "\\+cu1|download\\.pytorch\\.org.*cu1"})
+        usage: in=11054 out=  81 cache_read=    0 hit= 0%
+        ✓ Grep              ok      12b  (no matches)
+  T 9  Let me check the vLLM dependency and flash-attn usage:
+        → Grep({"pattern" "flash.attn|flash_attn"})
+        usage: in=11149 out=  77 cache_read=    0 hit= 0%
+        ✓ Grep              ok     963b  /repo/README.md:98:uv pip install flash-attn --no-build-isolation /repo/pyproject.toml:19:    "fl...
+  T10  Let me check the specific vLLM version requirement:
+        → Read({"file_path" "verify_installation.py","limit" 20,"offset" 100})
+        usage: in=11585 out= 104 cache_read=    0 hit= 0%
+        ✓ Read              ok     913b  101|    tbik_ok &= check_mini_allreduce()    102|    print()    103|    104|    print("Optional D...
+  T11  Let me check if there are any other CUDA-specific dependencies or version pins:
+        → Grep({"pattern" "pynvml|nvidia|tensorrt|cupy|pycuda"})
+        usage: in=11996 out=  85 cache_read=    0 hit= 0%
+        ✓ Grep              ok    2162b  /repo/evaluation/evals/batch/utils.py:14:from pynvml import nvmlDeviceGetHandleByIndex, nvmlDevic...
+  T12  Now let me check if there are any specific CUDA version requirements or hardcoded CUDA assumptions:
+        → Grep({"pattern" "sm_90|compute_90|nvcc|CUDA|cuda\"","head_limit" 20})
+        usage: in=12887 out= 108 cache_read=    0 hit= 0%
+        ✓ Grep              ok    2521b  /repo/README.md:11:- [2026.05.29\]: ⚡ **Faster TP-invariant matmul.** Added a CUDA warp-specialize...
+  T13  Let me check the specific CUDA kernel code to understand the hardcoded requirements:
+        → Read({"file_path" "src/tbik/csrc/matmul_tp.cu","limit" 30})
+        usage: in=13933 out= 102 cache_read=    0 hit= 0%
+        ✓ Read              ok    1987b  1|// TP-invariant deterministic bf16 matmul for Hopper (sm_90a), via CUTLASS cute + wgmma.      2...
+  T14  Based on my analysis, this repository has several critical blockers for AMD/ROCm compatibility: **VERDICT: REQUIRES_REPO2ROCM** **CONFIDENCE: high** **BLOCKERS: custom CUDA extensions, vllm dependency, flash-attn dependency, hardcoded NV...
+        usage: in=14720 out= 561 cache_read=    0 hit= 0%
+VERDICT=REQUIRES_REPO2ROCM :: The repo contains custom CUDA extensions (mini_allreduce/setup.py:29 CUDAExtension, src/tbik/csrc/matmul_tp.cu hardcoded for sm_90a Hopper GPUs), requires vllm==0.11.0 and flash-attn>=2.5.0 (both need ROCm-specific builds), and has unguarded torch.backends.cudnn flags in evaluation files that will error on ROCm.

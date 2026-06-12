@@ -1,0 +1,93 @@
+──────────────────────────── analyze dayeonki/askqe ────────────────────────────
+repo_path=/home/gsarkar/Repo2ROCm/repos/dayeonki_askqe
+
+agent: rocm_portability_analyzer (ad6615ed9)  mode=bypassPermissions ───────────
+  T 0  I'll analyze the `dayeonki/askqe` repository for AMD/ROCm portability. Let me start by examining the README and then check for requirements and source code.
+        → Read({"file_path" "README.md"})
+        usage: in= 3310 out=  95 cache_read=    0 hit= 0%
+        ✓ Read              ok   12102b  1|<div align="center">      2|      3| # AskQE: Question Answering as Automatic Evaluation <br> f...
+  T 1  Now let me check for requirements files and setup configurations:
+        → Glob({"pattern" "*requirements*.txt"})
+        usage: in= 7199 out=  67 cache_read=    0 hit= 0%
+        ✓ Glob              ok      12b  (no matches)
+        → Glob({"pattern" "setup.py"})
+        usage: in= 7280 out=  54 cache_read=    0 hit= 0%
+        ✓ Glob              ok      12b  (no matches)
+        → Glob({"pattern" "pyproject.toml"})
+        usage: in= 7348 out=  56 cache_read=    0 hit= 0%
+        ✓ Glob              ok      12b  (no matches)
+        → Glob({"pattern" "environment.yml"})
+        usage: in= 7418 out=  54 cache_read=    0 hit= 0%
+        ✓ Glob              ok      12b  (no matches)
+        → Glob({"pattern" "Pipfile*"})
+        usage: in= 7486 out=  55 cache_read=    0 hit= 0%
+        ✓ Glob              ok      12b  (no matches)
+  T 6  Let me check for any configuration files or dependency specifications:
+        → Glob({"pattern" "*.txt"})
+        usage: in= 7555 out=  65 cache_read=    0 hit= 0%
+        ✓ Glob              ok      12b  (no matches)
+        → Glob({"pattern" "*.yml"})
+        usage: in= 7634 out=  53 cache_read=    0 hit= 0%
+        ✓ Glob              ok      12b  (no matches)
+        → Glob({"pattern" "*.yaml"})
+        usage: in= 7701 out=  53 cache_read=    0 hit= 0%
+        ✓ Glob              ok      12b  (no matches)
+  T 9  Now let me examine the source code structure to understand the main components:
+        → Glob({"pattern" "**/*.py","head_limit" 20})
+        usage: in= 7768 out=  88 cache_read=    0 hit= 0%
+        ✓ Glob              ok     478b  QA/code/gemma-27b.py QA/code/gemma-9b.py QA/code/llama-70b.py QA/code/llama-8b.py QA/code/prompt....
+  T10  Let me check for any CUDA-specific files or extensions:
+        → Glob({"pattern" "**/*.cu"})
+        usage: in= 8106 out=  68 cache_read=    0 hit= 0%
+        ✓ Glob              ok      12b  (no matches)
+        → Glob({"pattern" "**/*.cuh"})
+        usage: in= 8188 out=  55 cache_read=    0 hit= 0%
+        ✓ Glob              ok      12b  (no matches)
+  T12  Now let me examine some key source files to check for CUDA-specific dependencies or code:
+        → Read({"file_path" "QA/code/llama-8b.py"})
+        usage: in= 8257 out=  84 cache_read=    0 hit= 0%
+        ✓ Read              ok    3950b  1|import torch      2|import json      3|import os      4|import argparse      5|from prompt impo...
+        → Read({"file_path" "QG/code/llama-8b.py"})
+        usage: in= 9488 out=  64 cache_read=    0 hit= 0%
+        ✓ Read              ok    4563b  1|from transformers import AutoTokenizer, AutoModelForCausalLM      2|import torch      3|import ...
+  T14  Let me check some evaluation scripts to see if there are any CUDA-specific dependencies:
+        → Read({"file_path" "evaluation/string-comparison/string_comparison.py"})
+        usage: in=10843 out=  82 cache_read=    0 hit= 0%
+        ✓ Read              ok    4001b  1|import json      2|import nltk      3|from utils import compare_answers      4|      5|nltk.dow...
+  T15  Let me check for any imports that might indicate CUDA-specific dependencies:
+        → Grep({"pattern" "flash_attn|bitsandbytes|xformers|apex|mamba|vllm|tensorrt|faiss|cupy|pycuda|deepspeed","glob" "*.py"})
+        usage: in=11983 out= 125 cache_read=    0 hit= 0%
+        ✓ Grep              ok      12b  (no matches)
+        → Grep({"pattern" "CUDAExtension|cpp_extension|nvcc","glob" "*.py"})
+        usage: in=12122 out=  81 cache_read=    0 hit= 0%
+        ✓ Grep              ok      12b  (no matches)
+        → Grep({"pattern" "torch\\.backends\\.cudnn|compute_capability|nccl","glob" "*.py"})
+        usage: in=12217 out=  83 cache_read=    0 hit= 0%
+        ✓ Grep              ok      12b  (no matches)
+  T18  Let me check for any torch version pinning or CUDA-specific installations:
+        → Grep({"pattern" "\\+cu1|download\\.pytorch\\.org/whl/cu|pytorch-cuda"})
+        usage: in=12314 out=  87 cache_read=    0 hit= 0%
+        ✓ Grep              ok      12b  (no matches)
+  T19  Let me check a few more evaluation files to understand the dependencies better:
+        → Read({"file_path" "evaluation/sbert/sbert.py"})
+        usage: in=12415 out=  76 cache_read=    0 hit= 0%
+        ✓ Read              ok    6695b  1|import json      2|import nltk      3|import argparse      4|import csv      5|import torch    ...
+  T20  Let me check the backtranslation code to see if it has any specific dependencies:
+        → Read({"file_path" "backtranslation/backtranslate.py"})
+        usage: in=14320 out=  85 cache_read=    0 hit= 0%
+        ✓ Read              ok    1690b  1|import json      2|from deep_translator import GoogleTranslator      3|      4|      5|language...
+  T21  Let me check one more evaluation script to see if there are any additional dependencies:
+        → Read({"file_path" "evaluation/xcomet-qe/xcomet.py"})
+        usage: in=14943 out=  83 cache_read=    0 hit= 0%
+        ✓ Read              ok    4470b  1|from comet import download_model, load_from_checkpoint      2|import json      3|      4|      ...
+  T22  Now let me check if there are any specific imports that might be problematic:
+        → Grep({"pattern" "import.*bert_score|from.*bert_score","glob" "*.py"})
+        usage: in=16223 out=  97 cache_read=    0 hit= 0%
+        ✓ Grep              ok     202b  /repo/biomqm/baselines/bt-score/run_bt.py:3:from bert_score import score /repo/evaluation/desider...
+  T23  Let me check one of these bert_score usage files:
+        → Read({"file_path" "evaluation/bt-score/run_bt.py"})
+        usage: in=16405 out=  76 cache_read=    0 hit= 0%
+        ✓ Read              ok    2239b  1|import json      2|import os      3|import torch      4|from bert_score import score      5|   ...
+  T24  Based on my analysis of the `dayeonki/askqe` repository, I can now provide a verdict on its AMD/ROCm portability. VERDICT: OUT_OF_BOX CONFIDENCE: high BLOCKERS: none REQUIRED_CHANGES: none RATIONALE: The repository uses standard PyTorch ...
+        usage: in=17247 out= 153 cache_read=    0 hit= 0%
+VERDICT=OUT_OF_BOX :: The repository uses standard PyTorch with device-agnostic code (`.cuda()` calls work transparently on ROCm), standard transformers library, and common NLP packages like bert_score, sentence_transformers, and deep_translator that have ROCm-compatible wheels. No CUDA extensions, CUDA-pinned torch builds, or CUDA-only dependencies were found.

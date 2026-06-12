@@ -1,0 +1,5 @@
+[PASS] ryienh/jl-metric :: pip install jl-metric && python -c "from jl_metric import JLEvaluator; from torch_geometric.data import TemporalData; import torch; evaluator = JLEvaluator(); result = evaluator.eval({'reference': TemporalData(src=torch.tensor([0,1]), dst=torch.tensor([1,0]), t=torch.tensor([1.0,2.0]), msg=torch.randn(2,10)), 'generated': TemporalData(src=torch.tensor([0,1]), dst=torch.tensor([1,0]), t=torch.tensor([1.1,2.1]), msg=torch.randn(2,10))}); print(f'JL-Metric: {result[\"JL-Metric\"]}')"
+
+================ BASELINE SUMMARY ================
+PASS=1  FAIL=0  OTHER(inconclusive/error/timeout)=0
+  PASS         ryienh/jl-metric                              pip install jl-metric && python -c "from jl_metric import JLEvaluator;

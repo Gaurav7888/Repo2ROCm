@@ -1,0 +1,73 @@
+──────────────────────── analyze dmis-lab/TemporalHead ─────────────────────────
+repo_path=/home/gsarkar/Repo2ROCm/repos/dmis-lab_TemporalHead
+
+agent: rocm_portability_analyzer (a02deb1df)  mode=bypassPermissions ───────────
+  T 0  I'll analyze the `dmis-lab/TemporalHead` repository for AMD/ROCm portability. Let me start by examining the README and requirements files.
+        → Read({"file_path" "README.md"})
+        usage: in= 3316 out=  93 cache_read=    0 hit= 0%
+        ✓ Read              ok    4317b  1|# \[ACL 2025\\] Does Time Have Its Place? Temporal Heads: Where Language Models Recall Time-spec...
+        → Read({"file_path" "requirements.txt"})
+        usage: in= 4795 out=  55 cache_read=    0 hit= 0%
+        ✓ Read              ok     561b  1|tqdm      2|huggingface_hub      3|transformer-lens      4|pandas      5|datasets      6|jaxtyp...
+  T 2  Now let me check for any CUDA-specific code or extensions in the repository:
+        → Grep({"pattern" "\\.cu$|\\.cuh$|CUDAExtension|cpp_extension|nvcc","glob" "*"})
+        usage: in= 5105 out= 107 cache_read=    0 hit= 0%
+        ✓ Grep              ok      12b  (no matches)
+        → Grep({"pattern" "flash_attn|bitsandbytes|xformers|apex|mamba-ssm|causal-conv1d|vllm|tensorrt|faiss-gpu|cupy|pycuda|deepspeed","glob" "*"})
+        usage: in= 5226 out= 120 cache_read=    0 hit= 0%
+        ✓ Grep              ok     536b  /repo/6.visualize-logprobs.ipynb:59:      "image/png": "iVBORw0KGgoAAAANSUhEUgAAB6wAAA98CAYAAAArf...
+  T 4  That's just base64 image data. Let me check for CUDA-specific PyTorch usage:
+        → Grep({"pattern" "\\+cu1|download\\.pytorch\\.org/whl/cu|pytorch-cuda|torch\\.backends\\.cudnn","glob" "*"})
+        usage: in= 5718 out= 117 cache_read=    0 hit= 0%
+        ✓ Grep              ok     526b  /repo/4.ablation_example.ipynb:35:    "    torch.backends.cudnn.deterministic = True\n", /repo/4....
+  T 5  I found some `torch.backends.cudnn` usage. Let me examine these files to see if they have proper guards:
+        → Read({"file_path" "4.ablation_example.ipynb","offset" 30,"limit" 15})
+        usage: in= 6042 out= 122 cache_read=    0 hit= 0%
+        ✓ Read              ok     550b  31|    "def seed_everything(seed):\n",     32|    "    torch.manual_seed(seed)\n",     33|    "  ...
+        → Read({"file_path" "7.temporal_knowledge_edit.ipynb","offset" 35,"limit" 15})
+        usage: in= 6389 out=  96 cache_read=    0 hit= 0%
+        ✓ Read              ok     555b  36|    "def seed_everything(seed):\n",     37|    "    torch.manual_seed(seed)\n",     38|    "  ...
+        → Read({"file_path" "3.logit_lens.ipynb","offset" 63,"limit" 15})
+        usage: in= 6713 out=  95 cache_read=    0 hit= 0%
+        ✓ Read              ok     555b  64|    "def seed_everything(seed):\n",     65|    "    torch.manual_seed(seed)\n",     66|    "  ...
+  T 8  The `torch.backends.cudnn` usage is in seed functions without guards. This could be problematic on ROCm. Let me check if there are any Python source files with similar issues:
+        → Glob({"pattern" "**/*.py"})
+        usage: in= 7036 out=  96 cache_read=    0 hit= 0%
+        ✓ Glob              ok     109b  eap/attribute.py eap/dataset.py eap/evaluate.py eap/graph.py eap/metrics.py eap/utils.py eap/visu...
+        → Grep({"pattern" "torch\\.backends\\.cudnn|torch\\.cuda\\.|device.*cuda","glob" "**/*.py"})
+        usage: in= 7192 out=  85 cache_read=    0 hit= 0%
+        ✓ Grep              ok    1191b  /repo/eap/evaluate.py:38:    in_graph_matrix = torch.zeros((graph.n_forward, graph.n_backward), d...
+  T10  I see hardcoded `device='cuda'` usage in the Python source files. Let me check if there are any setup.py or pyproject.toml files:
+        → Glob({"pattern" "setup.py"})
+        usage: in= 7702 out=  91 cache_read=    0 hit= 0%
+        ✓ Glob              ok      12b  (no matches)
+        → Glob({"pattern" "pyproject.toml"})
+        usage: in= 7807 out=  56 cache_read=    0 hit= 0%
+        ✓ Glob              ok      12b  (no matches)
+  T12  Let me check if there are any imports of CUDA-only packages in the source code:
+        → Grep({"pattern" "import.*flash_attn|from.*flash_attn|import.*bitsandbytes|from.*bitsandbytes|import.*xformers|from.*xformers","glob" "**/*.py"})
+        usage: in= 7877 out= 131 cache_read=    0 hit= 0%
+        ✓ Grep              ok      12b  (no matches)
+  T13  Let me also check the notebook files for any CUDA-only imports:
+        → Grep({"pattern" "import.*flash_attn|from.*flash_attn|import.*bitsandbytes|from.*bitsandbytes|import.*xformers|from.*xformers","glob" "**/*.ipy...)
+        usage: in= 8022 out= 128 cache_read=    0 hit= 0%
+        ✓ Grep              ok      12b  (no matches)
+  T14  Let me check if numpy is actually used in the code (since it was flagged as an undeclared import):
+        → Grep({"pattern" "import numpy|from numpy|np\\.","glob" "**/*.py"})
+        usage: in= 8164 out= 103 cache_read=    0 hit= 0%
+        ✓ Grep              ok     738b  /repo/eap/graph.py:9:import numpy as np /repo/eap/graph.py:484:            if (edge.in_graph != o...
+  T15  Numpy is indeed used but not declared in requirements.txt. However, this is a common dependency that's typically available and not a blocker. Let me check if there are any other potential issues by looking at the main source files:
+        → Read({"file_path" "eap/attribute.py","limit" 50})
+        usage: in= 8579 out= 124 cache_read=    0 hit= 0%
+        ✓ Read              ok    2873b  1|from typing import Callable, List, Union, Optional, Literal      2|from functools import partia...
+  T16  Now let me check one of the notebook files to see the overall structure and any potential issues:
+        → Read({"file_path" "1.circuit_construction.ipynb","limit" 100})
+        usage: in= 9524 out=  97 cache_read=    0 hit= 0%
+        ✓ Read              ok    4273b  1|{      2| "cells": [      3|  {      4|   "cell_type": "code",      5|   "execution_count": nul...
+  T17  Based on my analysis, I can see several issues that would require porting work: 1. **Hardcoded CUDA device usage**: The code has multiple instances of `device='cuda'` hardcoded in the Python source files (eap/attribute.py, eap/evaluate.p...
+        → Grep({"pattern" "\\.cuda\\(\\)|cuda:|CUDA","glob" "**/*.ipynb"})
+        usage: in=11168 out= 215 cache_read=    0 hit= 0%
+        ✓ Grep              ok     389b  /repo/4.ablation_example.ipynb:61:    "    device=\"cuda:0\", \n", /repo/1.circuit_construction.i...
+  T18  VERDICT: REQUIRES_REPO2ROCM CONFIDENCE: high BLOCKERS: hardcoded device='cuda' in source code, unguarded torch.backends.cudnn usage REQUIRED_CHANGES: replace hardcoded device='cuda' with device-agnostic code, add guards around torch.back...
+        usage: in=11547 out= 171 cache_read=    0 hit= 0%
+VERDICT=REQUIRES_REPO2ROCM :: The repository has hardcoded `device='cuda'` in eap/attribute.py and eap/evaluate.py (lines 29, 38, 127, 118, 144, 189, 230, 293, 333), and unguarded `torch.backends.cudnn` usage in notebook files that will fail on ROCm systems.

@@ -1,0 +1,66 @@
+──────────────────────── analyze sapienzanlp/bookcoref ─────────────────────────
+repo_path=/home/gsarkar/Repo2ROCm/repos/sapienzanlp_bookcoref
+
+agent: rocm_portability_analyzer (a6827aae0)  mode=bypassPermissions ───────────
+  T 0  I'll analyze the `sapienzanlp/bookcoref` repository for AMD/ROCm portability. Let me start by examining the key files.
+        → Read({"file_path" "README.md"})
+        usage: in= 3305 out=  90 cache_read=    0 hit= 0%
+        ✓ Read              ok    7729b  1|<div align="center">      2|  <img src="assets/bookcoref.png" width="700">      3|      4|</div...
+        → Read({"file_path" "requirements.txt"})
+        usage: in= 6038 out=  55 cache_read=    0 hit= 0%
+        ✓ Read              ok     162b  1|datasets==3.6.0      2|deepdiff==8.5.0      3|nltk==3.9.1      4|rich==14.0.0      5|scipy==1.1...
+  T 2  Now let me check for any CUDA-specific code or dependencies by examining the source files:
+        → Glob({"pattern" "**/*.py"})
+        usage: in= 6189 out=  74 cache_read=    0 hit= 0%
+        ✓ Glob              ok      43b  download_data.py evaluate.py src/metrics.py
+        → Grep({"pattern" "cuda|gpu|torch|device","case_insensitive" true})
+        usage: in= 6290 out=  79 cache_read=    0 hit= 0%
+        ✓ Grep              ok    7815b  /repo/predictions/off_the_shelf/maverick_xl.jsonl:2:{"doc_key": "pride_and_prejudice_1342", "sent...
+  T 4  The grep results show only prediction files (JSONL data), not actual source code. Let me examine the actual Python source files:
+        → Read({"file_path" "download_data.py"})
+        usage: in=10541 out=  85 cache_read=    0 hit= 0%
+        ✓ Read              ok    2545b  1|from pathlib import Path      2|from typing import Literal      3|      4|from datasets import ...
+        → Read({"file_path" "evaluate.py"})
+        usage: in=11478 out=  55 cache_read=    0 hit= 0%
+        ✓ Read              ok    5826b  1|import json      2|from pathlib import Path      3|from typing import Literal      4|      5|fr...
+        → Read({"file_path" "src/metrics.py"})
+        usage: in=13497 out=  57 cache_read=    0 hit= 0%
+        ✓ Read              ok    8091b  1|from collections import Counter      2|      3|import numpy as np      4|from scipy.optimize im...
+  T 7  Now let me check for any CUDA-specific files or extensions:
+        → Glob({"pattern" "**/*.cu"})
+        usage: in=16594 out=  69 cache_read=    0 hit= 0%
+        ✓ Glob              ok      12b  (no matches)
+        → Glob({"pattern" "**/*.cuh"})
+        usage: in=16677 out=  55 cache_read=    0 hit= 0%
+        ✓ Glob              ok      12b  (no matches)
+        → Grep({"pattern" "CUDAExtension|cpp_extension|nvcc|setup\\.py"})
+        usage: in=16746 out=  67 cache_read=    0 hit= 0%
+        ✓ Grep              ok      12b  (no matches)
+        → Grep({"pattern" "flash_attn|bitsandbytes|xformers|apex|mamba|vllm|tensorrt|faiss|cupy|pycuda|deepspeed|triton","case_insensitive" true})
+        usage: in=16827 out= 115 cache_read=    0 hit= 0%
+        ✓ Grep              ok   27397b  /repo/predictions/off_the_shelf/maverick_xl.jsonl:1:{"doc_key": "siddhartha_2500", "sentences": [...
+  T11  The grep results are only showing prediction files (JSONL data), not actual source code. Let me check for any setup.py or pyproject.toml files:
+        → Glob({"pattern" "setup.py"})
+        usage: in=31317 out=  90 cache_read=    0 hit= 0%
+        ✓ Glob              ok      12b  (no matches)
+        → Glob({"pattern" "pyproject.toml"})
+        usage: in=31421 out=  56 cache_read=    0 hit= 0%
+        ✓ Glob              ok      12b  (no matches)
+  T13  Now let me check for any CUDA-specific imports or torch usage in the source code:
+        → Grep({"pattern" "import torch|from torch|\\.cuda\\(\\)|\\.to\\(.*cuda.*\\)|device.*cuda","glob" "*.py"})
+        usage: in=31491 out= 112 cache_read=    0 hit= 0%
+        ✓ Grep              ok      12b  (no matches)
+  T14  Let me verify the undeclared imports mentioned in the scan:
+        → Grep({"pattern" "import numpy|from numpy|import tap|from tap","glob" "*.py"})
+        usage: in=31617 out=  94 cache_read=    0 hit= 0%
+        ✓ Grep              ok     126b  /repo/download_data.py:6:from tap import Tap /repo/evaluate.py:7:from tap import Tap /repo/src/me...
+  T15  Let me check if there are any other configuration files or environment files:
+        → Glob({"pattern" "environment.yml"})
+        usage: in=31769 out=  69 cache_read=    0 hit= 0%
+        ✓ Glob              ok      12b  (no matches)
+        → Glob({"pattern" "conda.yml"})
+        usage: in=31852 out=  54 cache_read=    0 hit= 0%
+        ✓ Glob              ok      12b  (no matches)
+  T17  Based on my analysis of the `sapienzanlp/bookcoref` repository, here are my findings: ## Analysis Summary **Repository Type**: This is a pure evaluation/benchmarking repository for coreference resolution research. It contains: - Data dow...
+        usage: in=31920 out= 428 cache_read=    0 hit= 0%
+VERDICT=OUT_OF_BOX :: This is a pure CPU-based evaluation repository with no GPU dependencies, CUDA code, or PyTorch usage. Only requires installing the missing numpy dependency.

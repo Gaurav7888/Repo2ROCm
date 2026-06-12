@@ -1,0 +1,82 @@
+──────────────────────── analyze DeepakTatachar/CSL-Mem ────────────────────────
+repo_path=/home/gsarkar/Repo2ROCm/repos/DeepakTatachar_CSL-Mem
+
+agent: rocm_portability_analyzer (aa4227667)  mode=bypassPermissions ───────────
+  T 0  I'll analyze the CSL-Mem repository for AMD/ROCm portability. Let me start by examining the README and requirements files.
+        → Read({"file_path" "README.md"})
+        usage: in= 3349 out=  86 cache_read=    0 hit= 0%
+        ✗ Read           error      25b  File not found: README.md
+        → Glob({"pattern" "README*"})
+        usage: in= 3462 out=  53 cache_read=    0 hit= 0%
+        ✓ Glob              ok       9b  README.MD
+        → Read({"file_path" "README.MD"})
+        usage: in= 3530 out=  55 cache_read=    0 hit= 0%
+        ✓ Read              ok    8961b  1|# ICML 2025: Towards Memorization Estimation: Fast, Formal and Free      2|      3|This reposit...
+  T 3  Now let me check for requirements files and setup configurations:
+        → Glob({"pattern" "requirements*.txt"})
+        usage: in= 6228 out=  66 cache_read=    0 hit= 0%
+        ✓ Glob              ok      12b  (no matches)
+        → Glob({"pattern" "setup.py"})
+        usage: in= 6308 out=  54 cache_read=    0 hit= 0%
+        ✓ Glob              ok      12b  (no matches)
+        → Glob({"pattern" "pyproject.toml"})
+        usage: in= 6376 out=  56 cache_read=    0 hit= 0%
+        ✓ Glob              ok      12b  (no matches)
+        → Glob({"pattern" "environment.yml"})
+        usage: in= 6446 out=  54 cache_read=    0 hit= 0%
+        ✓ Glob              ok      12b  (no matches)
+  T 7  Let me check for any CUDA-specific files and examine the main training script:
+        → Glob({"pattern" "**/*.cu"})
+        usage: in= 6514 out=  72 cache_read=    0 hit= 0%
+        ✓ Glob              ok      12b  (no matches)
+        → Glob({"pattern" "**/*.cuh"})
+        usage: in= 6600 out=  55 cache_read=    0 hit= 0%
+        ✓ Glob              ok      12b  (no matches)
+        → Read({"file_path" "train.py"})
+        usage: in= 6669 out=  55 cache_read=    0 hit= 0%
+        ✓ Read              ok   16702b  1|import os      2|import multiprocessing      3|import argparse      4|import torch      5|impor...
+  T10  Now let me check the specific files mentioned in the hazards report:
+        → Read({"file_path" "score_learning_time_cifar100.py","limit" 70})
+        usage: in=12086 out=  95 cache_read=    0 hit= 0%
+        ✓ Read              ok    4896b  1|import os      2|import multiprocessing      3|      4|def main():      5|    import argparse  ...
+  T11  Let me search for any CUDA-specific imports or extensions:
+        → Grep({"pattern" "CUDAExtension|cpp_extension|nvcc"})
+        usage: in=13635 out=  77 cache_read=    0 hit= 0%
+        ✓ Grep              ok      12b  (no matches)
+        → Grep({"pattern" "flash_attn|bitsandbytes|xformers|apex|mamba|vllm|tensorrt|faiss-gpu|cupy|pycuda|deepspeed"})
+        usage: in=13726 out=  93 cache_read=    0 hit= 0%
+        ✓ Grep              ok      12b  (no matches)
+        → Grep({"pattern" "\\+cu1|download\\.pytorch\\.org/whl/cu"})
+        usage: in=13833 out=  66 cache_read=    0 hit= 0%
+        ✓ Grep              ok      12b  (no matches)
+  T14  Let me check for any distributed training setup that might use NCCL:
+        → Grep({"pattern" "nccl"})
+        usage: in=13913 out=  71 cache_read=    0 hit= 0%
+        ✓ Grep              ok     429b  /repo/train.py:77:        init_process_group(backend="nccl") /repo/mislabelled_exps/train_mislabe...
+  T15  Let me check the imports to see if there are any undeclared CUDA-specific dependencies:
+        → Grep({"pattern" "import.*tensorflow|from.*tensorflow"})
+        usage: in=14159 out=  79 cache_read=    0 hit= 0%
+        ✓ Grep              ok     916b  /repo/learning_time_tau_v_mem_csl_imagenet.ipynb:110:    "# Convert dataset order from tensorflow...
+  T16  Let me check if there are any specific TensorFlow version requirements or CUDA-specific TensorFlow usage:
+        → Read({"file_path" "models/tf_resnet50.py","limit" 30})
+        usage: in=14540 out= 102 cache_read=    0 hit= 0%
+        ✓ Read              ok    1413b  1|from typing import Mapping, Optional, Sequence, Text, Union      2|      3|import sonnet as snt...
+  T17  Let me check if there are any specific CUDA environment variables or hardcoded CUDA assumptions:
+        → Grep({"pattern" "CUBLAS_WORKSPACE_CONFIG|CUDA_VISIBLE_DEVICES"})
+        usage: in=15092 out=  89 cache_read=    0 hit= 0%
+        ✓ Grep              ok    1100b  /repo/score_learning_time_cifar100.py:55:    os.environ['CUBLAS_WORKSPACE_CONFIG'\] = ':4096:8' /r...
+  T18  Let me check if there are any specific PyTorch version pins or CUDA-specific installations:
+        → Grep({"pattern" "torch==.*\\+cu|pytorch.*cuda|conda.*pytorch"})
+        usage: in=15648 out=  86 cache_read=    0 hit= 0%
+        ✓ Grep              ok      12b  (no matches)
+  T19  Let me check the main directory structure to understand the overall codebase:
+        → Glob({"pattern" "*"})
+        usage: in=15748 out=  68 cache_read=    0 hit= 0%
+        ✓ Glob              ok     347b  .gitignore LICENSE README.MD analyze_duplicates.ipynb analyze_mislabeled.ipynb config.json creden...
+  T20  Let me check if there are any specific imports that might be problematic:
+        → Read({"file_path" "minio_obj_storage.py","limit" 30})
+        usage: in=15965 out=  93 cache_read=    0 hit= 0%
+        ✓ Read              ok    1157b  1|import os      2|from minio import Minio      3|import io      4|import torch      5|import num...
+  T21  Based on my analysis, I can now provide the verdict. Let me summarize the key findings: 1. **CUDA-specific code hazards**: The repo has `torch.backends.cudnn` flags without ROCm guards in multiple files (lines 93-94 in train.py, lines 62...
+        usage: in=16476 out= 441 cache_read=    0 hit= 0%
+VERDICT=REQUIRES_REPO2ROCM :: Multiple files contain torch.backends.cudnn.deterministic/benchmark flags (train.py:93-94, score_learning_time_cifar100.py:62-63) that will error on ROCm without proper guards, and distributed training uses NCCL backend which is CUDA-specific.
