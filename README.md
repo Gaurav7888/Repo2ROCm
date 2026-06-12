@@ -1,6 +1,6 @@
 # Repo2ROCm
 
-**Automated CUDA-to-ROCm environment migration for arbitrary GitHub repositories.**
+**Automated environment migration for GitHub repos belonging to AI research papers to make it run with ROCm on AMD GPUs**
 
 Repo2ROCm is an LLM-powered agent that takes any GitHub repository, analyzes its
 structure and dependencies, and produces a fully configured Docker environment
