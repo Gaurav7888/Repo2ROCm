@@ -259,7 +259,7 @@ paper_context)`. It reads config files (`requirements*.txt`, `setup.py`,
 README, and every Python file's imports. From this it:
 
 - detects the dominant framework/runtime stack and workload type;
-- reconstructs and **classifies dependencies** by ROCm compatibility, dropping banned
+- reconstructs and **classifies dependencies** by ROCm compatibility, dropping
   NVIDIA wheels and mapping CUDA-only packages to ROCm install recipes;
 - flags migration hazards (Python 3.12 stdlib removals, stale version pins, `cudnn`
   flags, hard-coded `device="cuda"`, wandb, large epochs, external asset downloads);
@@ -379,7 +379,7 @@ decision. A `SuccessReport` (`storage/success_report.py`) summarizes each run as
   `rocm/pytorch` (default).
 - **CUDA→ROCm mappings** — install recipes/notes for `flash-attn` (AMD Triton backend via
   `FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE`), `bitsandbytes`, `xformers`, `pynvml`, etc.
-- **Banned NVIDIA packages**, **per-image pre-installed package lists**, **code patterns**
+- **NVIDIA packages**, **per-image pre-installed package lists**, **code patterns**
   (`nvidia-smi`→`rocm-smi`), and **supported GPU archs** (gfx908/90a/942/950, RDNA).
 - **Live signals** (`rocm_dynamic.py`) — GPU-arch detection, Jaccard image selection, and a
   per-dependency degradation policy (`strict`/`moderate`/`permissive`) chosen by run mode.
