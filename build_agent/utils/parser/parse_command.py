@@ -14,6 +14,7 @@
 
 
 import re
+import shlex
 from .parse_dialogue import extract_dialogue_warnings
 
 BASH_FENCE = ['```bash', '```']
@@ -197,6 +198,348 @@ def match_clear_configuration(command):
     pattern = re.compile(r'^\s*clear_configuration\s*$', re.IGNORECASE | re.MULTILINE)
     match = pattern.match(command)
     return bool(match)
+
+# ── Stage 5b: in-loop retrieval tools ────────────────────────────────────────
+
+
+def _split_tool_command(command: str, tool_name: str):
+    """Tokenize a tool command using shell rules and verify the tool name."""
+    try:
+        tokens = shlex.split(command or "")
+    except ValueError:
+        return None
+    if not tokens or tokens[0].lower() != tool_name.lower():
+        return None
+    return tokens[1:]
+
+
+def _parse_known_flags(tokens, value_flags=(), boolean_flags=(), multi_value_flags=()):
+    """Parse a small shell-style flag set without regexes."""
+    value_flags = set(value_flags)
+    boolean_flags = set(boolean_flags)
+    multi_value_flags = set(multi_value_flags)
+
+    positionals = []
+    options = {flag: [] for flag in multi_value_flags}
+    i = 0
+    while i < len(tokens):
+        token = tokens[i]
+        if token in value_flags:
+            if i + 1 >= len(tokens):
+                return None
+            options[token] = tokens[i + 1]
+            i += 2
+        elif token in multi_value_flags:
+            if i + 1 >= len(tokens):
+                return None
+            options[token].append(tokens[i + 1])
+            i += 2
+        elif token in boolean_flags:
+            options[token] = True
+            i += 1
+        elif token.startswith("--"):
+            return None
+        else:
+            positionals.append(token)
+            i += 1
+    return positionals, options
+
+
+def _parse_int(value, default=None):
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_float(value, default=None):
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+def match_mem_recall(command: str):
+    """
+    Parse:  mem_recall "<question>" [--rooms r1,r2] [--budget N] [--global]
+    Returns dict with keys: question, rooms (list|None), budget (int), use_global (bool)
+    on success; -1 on no match.
+    """
+    tokens = _split_tool_command(command, "mem_recall")
+    if tokens is None:
+        return -1
+    parsed = _parse_known_flags(
+        tokens,
+        value_flags=("--rooms", "--budget"),
+        boolean_flags=("--global",),
+    )
+    if parsed is None:
+        return -1
+    positionals, options = parsed
+    if len(positionals) != 1:
+        return -1
+    rooms_raw = options.get("--rooms")
+    rooms = [r.strip() for r in rooms_raw.split(",") if r.strip()] if rooms_raw else None
+    budget = _parse_int(options.get("--budget"), default=1500)
+    if budget is None:
+        return -1
+    return {
+        "question": positionals[0],
+        "rooms": rooms,
+        "budget": budget,
+        "use_global": bool(options.get("--global")),
+    }
+
+
+def match_paper_recall(command: str):
+    """
+    Parse:  paper_recall "<question>" [--budget N] [--global]
+    Returns dict with keys: question, budget (int), use_global (bool)
+    on success; -1 on no match.
+    """
+    tokens = _split_tool_command(command, "paper_recall")
+    if tokens is None:
+        return -1
+    parsed = _parse_known_flags(
+        tokens,
+        value_flags=("--budget",),
+        boolean_flags=("--global",),
+    )
+    if parsed is None:
+        return -1
+    positionals, options = parsed
+    if len(positionals) != 1:
+        return -1
+    budget = _parse_int(options.get("--budget"), default=1500)
+    if budget is None:
+        return -1
+    return {
+        "question": positionals[0],
+        "budget": budget,
+        "use_global": bool(options.get("--global")),
+    }
+
+
+def match_graphify_query(command: str):
+    """
+    Parse:  graphify_query "<question>" [--scope paper|code|both] [--budget N]
+    Returns dict with keys: question, scope, budget on success; -1 on no match.
+    `scope` defaults to "code" to preserve the historical behaviour of this tool.
+    """
+    tokens = _split_tool_command(command, "graphify_query")
+    if tokens is None:
+        return -1
+    parsed = _parse_known_flags(tokens, value_flags=("--scope", "--budget"))
+    if parsed is None:
+        return -1
+    positionals, options = parsed
+    if len(positionals) != 1:
+        return -1
+    budget = _parse_int(options.get("--budget"), default=1500)
+    if budget is None:
+        return -1
+    scope = str(options.get("--scope") or "code").lower()
+    if scope not in ("paper", "code", "both"):
+        return -1
+    return {
+        "question": positionals[0],
+        "scope": scope,
+        "budget": budget,
+    }
+
+
+def match_verify_paper_result(command: str):
+    """
+    Parse:  verify_paper_result --log <path>
+                                [--metric NAME=VALUE]...
+                                [--tolerance RULE]
+                                [--direction higher_is_better|lower_is_better|equal]
+
+    Returns dict {log_path, metrics: [{name, expected_value}], tolerance, direction}
+    on success; -1 on no match.
+
+    `--metric` may be repeated. The expected value is parsed as a float when
+    possible and otherwise kept verbatim so qualitative claims still get a
+    deterministic record. If no `--metric` is supplied, the dispatcher will
+    fall back to the chosen experiment's `expected_metric_name` /
+    `expected_metric_value` (and any `primary_metrics` list).
+    """
+    tokens = _split_tool_command(command, "verify_paper_result")
+    if tokens is None:
+        return -1
+    parsed = _parse_known_flags(
+        tokens,
+        value_flags=("--log", "--tolerance", "--direction"),
+        multi_value_flags=("--metric",),
+    )
+    if parsed is None:
+        return -1
+    positionals, options = parsed
+    if positionals:
+        return -1
+    log_path = options.get("--log")
+    if not log_path:
+        return -1
+
+    metrics: list = []
+    for metric_spec in options.get("--metric", []):
+        if "=" not in metric_spec:
+            return -1
+        name, raw_val = metric_spec.split("=", 1)
+        name = name.strip()
+        raw_val = raw_val.strip()
+        if not name:
+            return -1
+        try:
+            val: object = float(raw_val)
+        except (TypeError, ValueError):
+            val = raw_val
+        metrics.append({"name": name, "expected_value": val})
+
+    tolerance = options.get("--tolerance") or ""
+    direction = str(options.get("--direction") or "").lower()
+    if direction and direction not in ("higher_is_better", "lower_is_better", "equal"):
+        return -1
+
+    return {
+        "log_path": log_path,
+        "metrics": metrics,
+        "tolerance": tolerance,
+        "direction": direction,
+    }
+
+
+# ── PR-A: external lookups (PyPI versions, Docker Hub tags) ──────────────────
+
+def match_pypi_versions(command: str):
+    """
+    Parse:  pypi_versions <package_name> [--limit N]
+    Package name allows letters, digits, dots, hyphens, underscores.
+    Returns dict with keys: package, limit on success; -1 on no match.
+    """
+    tokens = _split_tool_command(command, "pypi_versions")
+    if tokens is None:
+        return -1
+    parsed = _parse_known_flags(tokens, value_flags=("--limit",))
+    if parsed is None:
+        return -1
+    positionals, options = parsed
+    if len(positionals) != 1:
+        return -1
+    limit = _parse_int(options.get("--limit"), default=12)
+    if limit is None:
+        return -1
+    return {
+        "package": positionals[0],
+        "limit": limit,
+    }
+
+
+def match_dockerhub_tags(command: str):
+    """
+    Parse:  dockerhub_tags <image> [--limit N]
+    Image is `repo/name` or just `name`.
+    Returns dict with keys: image, limit on success; -1 on no match.
+    """
+    tokens = _split_tool_command(command, "dockerhub_tags")
+    if tokens is None:
+        return -1
+    parsed = _parse_known_flags(tokens, value_flags=("--limit",))
+    if parsed is None:
+        return -1
+    positionals, options = parsed
+    if len(positionals) != 1:
+        return -1
+    limit = _parse_int(options.get("--limit"), default=12)
+    if limit is None:
+        return -1
+    return {
+        "image": positionals[0],
+        "limit": limit,
+    }
+
+
+# ── PR-B: web search + URL fetcher ───────────────────────────────────────────
+
+def match_web_search(command: str):
+    """
+    Parse:  web_search "<query>" [--max-results N]
+    Returns dict {query, max_results} on success; -1 on no match.
+    """
+    tokens = _split_tool_command(command, "web_search")
+    if tokens is None:
+        return -1
+    parsed = _parse_known_flags(tokens, value_flags=("--max-results",))
+    if parsed is None:
+        return -1
+    positionals, options = parsed
+    if len(positionals) != 1:
+        return -1
+    max_results = _parse_int(options.get("--max-results"), default=5)
+    if max_results is None:
+        return -1
+    return {
+        "query": positionals[0],
+        "max_results": max_results,
+    }
+
+
+def match_visit_url(command: str):
+    """
+    Parse:  visit_url <url> [--max-chars N]
+    Returns dict {url, max_chars} on success; -1 on no match.
+    """
+    tokens = _split_tool_command(command, "visit_url")
+    if tokens is None:
+        return -1
+    parsed = _parse_known_flags(tokens, value_flags=("--max-chars",))
+    if parsed is None:
+        return -1
+    positionals, options = parsed
+    if len(positionals) != 1:
+        return -1
+    max_chars = _parse_int(options.get("--max-chars"), default=8000)
+    if max_chars is None:
+        return -1
+    return {
+        "url": positionals[0],
+        "max_chars": max_chars,
+    }
+
+
+# ── PR-C: deep_research sub-agent ────────────────────────────────────────────
+
+def match_deep_research(command: str):
+    """
+    Parse:  deep_research "<question>" [--max-turns N] [--budget-s S] [--no-cache]
+    Returns dict {question, max_turns, budget_s, use_cache} on success; -1 on no match.
+    """
+    tokens = _split_tool_command(command, "deep_research")
+    if tokens is None:
+        return -1
+    parsed = _parse_known_flags(
+        tokens,
+        value_flags=("--max-turns", "--budget-s"),
+        boolean_flags=("--no-cache",),
+    )
+    if parsed is None:
+        return -1
+    positionals, options = parsed
+    if len(positionals) != 1:
+        return -1
+    max_turns = _parse_int(options.get("--max-turns"), default=6)
+    budget_s = _parse_float(options.get("--budget-s"), default=90.0)
+    if max_turns is None or budget_s is None:
+        return -1
+    return {
+        "question": positionals[0],
+        "max_turns": max_turns,
+        "budget_s": budget_s,
+        "use_cache": not bool(options.get("--no-cache")),
+    }
 
 if __name__ == '__main__':
     print(extract_commands_warnings('''

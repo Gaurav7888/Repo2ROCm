@@ -128,10 +128,13 @@ def log_prompt_sent(messages, label="MESSAGES TO LLM"):
 
 def log_llm_response(response_text, llm_time, usage, multi_action_count=0):
     """Log the raw LLM response and metadata."""
+    token_label = str(usage.get("total_tokens", "?"))
+    if usage.get("estimated"):
+        token_label = f"~{token_label} (est.)"
     console.print(Panel(
         f"[bold green]LLM Response[/]  |  "
         f"Time: [cyan]{llm_time:.1f}s[/]  |  "
-        f"Tokens: [cyan]{usage.get('total_tokens', '?')}[/]  |  "
+        f"Tokens: [cyan]{token_label}[/]  |  "
         f"Bash blocks found: [{'red' if multi_action_count > 1 else 'green'}]{multi_action_count}[/]",
         style="green",
         box=box.ROUNDED,
@@ -256,6 +259,12 @@ def log_warning(message):
     """Log a warning message."""
     console.print(f"  [yellow]WARNING[/] {message}")
     _fwrite(f"  [WARNING] {message}")
+
+
+def log_observer_note(message):
+    """Log observer-side advisory guidance."""
+    console.print(Panel(f"[bold cyan]{message}[/]", style="cyan", box=box.ROUNDED))
+    _fwrite(f"  [OBSERVER] {message}")
 
 
 def log_context_summary(current_dir, image_name, turns_left, success_cmds):

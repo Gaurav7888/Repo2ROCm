@@ -750,7 +750,8 @@ def generate_rocm_prompt_section(no_scale_down=False):
     """
     image_list = ""
     for wtype, info in ROCM_IMAGE_CATALOG.items():
-        keywords_str = ", ".join(info["keywords"])
+        keywords = info.get("keywords") or [wtype, info.get("image", "")]
+        keywords_str = ", ".join(k for k in keywords if k)
         image_list += f"  - If the repo uses [{keywords_str}]: `change_base_image {info['image']}:{info['default_tag']}`\n"
 
     preinstalled_str = ""
@@ -774,6 +775,75 @@ You MUST follow the ROCm-specific workflow below. Do NOT skip steps.
 
 **CRITICAL RULE: Do NOT use `runtest` or `poetryruntest` in ROCm mode. They are DISABLED.**
 **CRITICAL RULE: Output EXACTLY ONE ```bash``` block per response. Wait for the real result before your next action.**
+
+### TOOL-CALLING DISCIPLINE (the rule that wraps every other step)
+
+You have a palette of cheap, deterministic tools. They cost ~0 LLM tokens and
+their answers are far more reliable than your training data, which is months
+out of date. **Use them BEFORE acting, not after a failure.** The agent runtime
+will hard-block several risky actions until you've consulted the right tool —
+those are listed below as guards.
+
+**Standard order of operations on every non-trivial decision:**
+
+1. `mem_recall "<question>"` — what did THIS run already learn?
+2. `graphify_query "<question>" --scope code` — what does the code actually do?
+   Use this instead of `find -name` / `grep -r` for "where is the entry point /
+   model factory / config loader / dataloader" questions.
+3. `graphify_query "<question>" --scope paper` *(only when reproducing a paper)*
+   — what does the paper actually say about this metric / experiment / hyper-
+   parameter? Use this BEFORE `cat /repo/paper.pdf`.
+4. `pypi_versions <pkg> --limit 8` — what versions of `<pkg>` are *currently*
+   installable from PyPI? **Required before `pip install <pkg>` of any
+   CUDA-leaning wheel** (`flash-attn`, `bitsandbytes`, `xformers`,
+   `deepspeed`, `apex`, `cupy`, `nvidia-*`).  The runtime will block the
+   `pip install` until you have called this.
+5. `dockerhub_tags <repo> --limit 8` — what tags does Docker Hub actually
+   serve? **Required before `change_base_image <repo>:<tag>`.** The runtime
+   will block the image switch until you have called this.
+6. Observer-side internet research — when the run hits a new error or an
+   unfamiliar compatibility issue, the asynchronous observer may attach a note
+   with web-grounded evidence and a suggested strategy. Treat that note as
+   advisory guidance before the next risky action.
+
+**Live-evidence rule:** for AMD/ROCm/HIP/gfx/miopen/rocBLAS/libamdhip64 issues,
+or for fast-moving packages/images (flash-attn, xformers, bitsandbytes,
+triton, deepspeed, rocm/* tags), trust live web/package/tag lookups over
+static prompt knowledge.
+
+**Hard guards the runtime enforces (these are not suggestions):**
+
+- `change_base_image <repo>:<tag>` is **blocked** unless you have called
+  `dockerhub_tags <repo>` in this run. Pick a tag from the live list, not
+  from memory.
+- `pip install <cuda_only_wheel>` is **blocked** unless you have called
+  `pypi_versions <pkg>` in this run, OR you follow the explicit
+  CUDA-to-ROCm mapping section below (e.g. flash-attn Triton-AMD install).
+- `echo ROCM_ENV_VERIFIED` is **blocked** until the run has actually
+  observed `rocm-smi` or `python -c "import torch; torch.cuda.is_available()"`
+  succeed in the sandbox. You cannot claim the environment works without
+  proof in the log.
+- `PAPER_RESULT_REPRODUCED` / `PAPER_RESULT_NOT_REPRODUCED` markers are
+  **blocked** until you have called `verify_paper_result --log <path>` and
+  the verifier has produced its STRUCTURED_VERDICT_JSON. The verifier is
+  the ONLY trusted source of numbers — do not invent metric values, do not
+  copy them from the paper text, copy them from the verifier output.
+
+**Anti-patterns the runtime will punish:**
+
+- "I think `rocm/pytorch:6.2` exists" → call `dockerhub_tags rocm/pytorch`
+  and copy the real tag.
+- "`flash-attn==2.6.3` should work" → call `pypi_versions flash-attn` first,
+  then follow the FlashAttention-for-ROCm section below.
+- Reading `/repo/paper.pdf` directly during paper reproduction without first
+  trying `graphify_query "..." --scope paper` or `paper_recall "..."`.
+- Echoing a `PAPER_RESULT_*` marker without a preceding `verify_paper_result`
+  call — the marker handler will down-grade the verdict to whatever the
+  verifier says, and your run will be scored on that, not on what you typed.
+
+**Treat every tool call as cheaper than one wrong sandbox command.** A wrong
+`pip install` triggers a multi-minute rollback; `pypi_versions` returns in a
+second.
 
 ### MANDATORY STEP 1: Read the README and understand the project FIRST
 Before doing ANYTHING else, your FIRST action MUST be:
@@ -1470,8 +1540,20 @@ def generate_rocm_prompt_section_with_plan(no_scale_down=False):
 **Do NOT use `runtest`. It is disabled in ROCm mode.**
 **Running `--help` alone is NOT SUFFICIENT. You MUST actually execute the script.**
 
-**MANDATORY PRE-RUN CHECK: Scale down epochs, iterations, and data BEFORE running ANY script.**
-Check the plan for specific training parameters that need scaling down.
+*** YOU MUST USE REAL MODELS, REAL DATA, AND REAL COMMANDS — NO MOCKS ***
+**Do NOT create mock models, mock data, or stub scripts.**
+**Do NOT substitute real models with dummy/fake/tiny alternatives unless the plan explicitly says to.**
+**Download and use the ACTUAL model specified in the README.**
+**Run the EXACT commands from the README with REAL arguments.**
+
+If the README specifies a HuggingFace model (e.g., `GSAI-ML/LLaDA-8B-Instruct`):
+- Download and load that EXACT model. Do NOT create a MockModel class.
+- If the model is gated and you have HF_TOKEN, authenticate first.
+- If the model is gated and no token is available, use an ungated alternative of SIMILAR SIZE
+  (not a tiny toy model — use the closest available real model).
+
+For training scripts: You MAY reduce epochs to 1-2 and steps to 5-10 to save time,
+but still use the REAL model and REAL data pipeline.
 
 1. Verify all core imports work:
    `python -c "from <main_package> import <main_class>; print('OK')"`
@@ -1480,14 +1562,20 @@ Check the plan for specific training parameters that need scaling down.
 
 2b. **Choose the right model.** If the script takes a `--model` argument:
    - Check the README (in the plan above) for the recommended model — USE THAT ONE.
+   - Download and use the REAL model. Do NOT create a mock/dummy model.
 
-3. **CRITICAL: Actually run the script** with mock data and minimal parameters.
-   - For training scripts: Use small dummy data, 1-2 epochs, 3-5 max_steps.
-   - For inference scripts: Create minimal mock data.
+3. **CRITICAL: Run the EXACT command from the README** with REAL model and REAL data.
    - **ALWAYS write multiline Python code to a .py file first, then run it.**
    - **Do NOT use multiline `python -c`.**
+   - If the script downloads a model, let it download. Do NOT mock the download.
+   - If OOM occurs, reduce batch_size or gen_length but keep the REAL model.
 
-4. Once the script runs and produces real output ON GPU (not CPU):
+3b. **VALIDATE OUTPUT against the "EXPECTED OUTCOMES FROM README" section in the plan above.**
+   - After each script finishes, compare its actual output to the expected results listed in the plan.
+   - If the output **contradicts** the documented expectations, **investigate and fix the issue**.
+   - **Do NOT declare ROCM_ENV_VERIFIED if output contradicts the README's documented results.**
+
+4. Once the script runs and produces real output ON GPU (not CPU) **with the real model**:
    ```bash
    echo ROCM_ENV_VERIFIED
    ```
@@ -1500,6 +1588,44 @@ You are configuring this repository to run on **AMD GPUs with ROCm** (not NVIDIA
 
 **CRITICAL RULE: Do NOT use `runtest` or `poetryruntest` in ROCm mode. They are DISABLED.**
 **CRITICAL RULE: Output EXACTLY ONE ```bash``` block per response.**
+
+### TOOL-CALLING DISCIPLINE (the rule that wraps every other step)
+
+A strategic plan has already been generated, but you still have a palette of
+deterministic tools that are far more reliable than your training data. Use
+them BEFORE acting, especially before any irreversible sandbox change. The
+runtime enforces several hard guards.
+
+**Standard order of operations:**
+
+1. `mem_recall "<question>"` — what did this run already learn?
+2. `graphify_query "<question>" --scope code` — instead of `find` / `grep`.
+3. `graphify_query "<question>" --scope paper` *(paper-reproduction only)* —
+   before reading `/repo/paper.pdf` directly.
+4. `pypi_versions <pkg>` — required before `pip install` of any CUDA-leaning
+   wheel (`flash-attn`, `bitsandbytes`, `xformers`, `deepspeed`, `apex`,
+   `cupy`, `nvidia-*`).
+5. `dockerhub_tags <repo>` — required before `change_base_image`.
+6. Observer-side internet research — for unfamiliar errors and version
+   matrices, prefer observer-provided external evidence over turning the main
+   execution loop into a browsing agent.
+
+For AMD/ROCm/HIP-specific failures, prefer live web/package/image evidence over
+static knowledge before making another risky change.
+
+**Hard guards the runtime enforces (these are not suggestions):**
+
+- `change_base_image <repo>:<tag>` is blocked unless `dockerhub_tags <repo>`
+  has been called in this run.
+- `pip install <cuda_only_wheel>` is blocked unless `pypi_versions <pkg>`
+  has been called.
+- `echo ROCM_ENV_VERIFIED` is blocked until `rocm-smi` or
+  `torch.cuda.is_available()` has succeeded in the sandbox in this run.
+- `PAPER_RESULT_REPRODUCED` / `PAPER_RESULT_NOT_REPRODUCED` is blocked
+  until `verify_paper_result --log <path>` has produced a
+  STRUCTURED_VERDICT_JSON. **Use the verifier's numbers — do not invent
+  metric values.** If you echo a verdict that disagrees with the verifier,
+  the runtime will overwrite your verdict with the verifier's.
 
 ### IMPORTANT: A STRATEGIC PLAN HAS BEEN GENERATED
 A comprehensive plan has already analyzed the repository's README, directory structure,

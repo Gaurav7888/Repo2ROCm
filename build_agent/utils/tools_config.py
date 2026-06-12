@@ -95,3 +95,112 @@ class Tools(Enum):
         "command": 'clear_configuration',
         "description": "Reset all the configuration to the initial setting of python:3.10."
     }
+    # ── Stage 5b: in-loop retrieval tools (graphify code + mempalace memory) ──
+    mem_recall = {
+        "command": 'mem_recall "<question>" [--rooms r1,r2,...] [--budget N]',
+        "description": (
+            "Query this run's memory (mempalace) for the slice most relevant to "
+            "<question> instead of guessing. Default rooms: "
+            "commands_success,commands_failed,fixes,decisions,patches,plan,"
+            "experiment_state,context_refs. --budget is a token budget (default 1500). Use "
+            "this BEFORE retrying a failed install or rerunning the same command."
+        ),
+    }
+    paper_recall = {
+        "command": 'paper_recall "<question>" [--budget N]',
+        "description": (
+            "Query paper-related context using graphify's static paper index PLUS "
+            "run-state references from memory (`paper_experiments`, "
+            "`experiment_state`, `context_refs`, `plan`, `decisions`). Use this "
+            "BEFORE reading `/repo/paper.pdf` directly. Best for: 'what metric "
+            "should I target?', 'what hyperparameters did the paper use?', "
+            "'which experiment did the planner choose?', 'what tolerance applies?'."
+        ),
+    }
+    graphify_query = {
+        "command": 'graphify_query "<question>" [--scope paper|code|both] [--budget N]',
+        "description": (
+            "Ask the per-repo static graphify corpus for snippets relevant to "
+            "<question>. `--scope code` (default) hits the tree-sitter code "
+            "graph and returns ranked nodes (files, classes, functions) with "
+            "absolute paths and line numbers — use it BEFORE broad `find -name`/"
+            "`grep -r` discovery to locate entry points, config loaders, model factories, "
+            "etc. `--scope paper` queries the indexed paper PDF (sections, "
+            "tables, hyperparameters); use it BEFORE reading `/repo/paper.pdf` "
+            "directly. `--scope both` returns code AND paper results in a "
+            "single call. --budget is a token budget (default 1500). "
+            "`paper_recall` is now an alias for `--scope paper` plus run-state."
+        ),
+    }
+    verify_paper_result = {
+        "command": 'verify_paper_result --log <path> [--metric NAME=VALUE]... [--tolerance RULE]',
+        "description": (
+            "DETERMINISTIC verifier you MUST run BEFORE echoing "
+            "PAPER_RESULT_REPRODUCED / PAPER_RESULT_NOT_REPRODUCED. Reads "
+            "`<path>` (typically `/repo/paper_experiment.log`), extracts the "
+            "named metrics by regex/JSON, compares each one to its expected "
+            "value using the provided tolerance rule (or the chosen "
+            "experiment's `tolerance_rule` from the plan), and prints a "
+            "structured JSON verdict per metric. If you omit `--metric`, the "
+            "verifier uses the chosen experiment's `expected_metric_name` and "
+            "any `primary_metrics` list from the planner. The JSON it returns "
+            "is the ONLY trusted source of truth for the marker line — do not "
+            "fabricate numbers."
+        ),
+    }
+    # ── PR-A: deterministic external lookups (no API key, no LLM) ──
+    pypi_versions = {
+        "command": 'pypi_versions <package_name> [--limit N]',
+        "description": (
+            "Look up recent PyPI versions of a package + release dates. Use "
+            "this BEFORE pinning a CUDA-only wheel (e.g. flash-attn, "
+            "bitsandbytes, xformers) to find a version that matches your ROCm "
+            "torch. Cached for 7 days in the global KB."
+        ),
+    }
+    dockerhub_tags = {
+        "command": 'dockerhub_tags <image> [--limit N]',
+        "description": (
+            "Look up the most recently published tags on a Docker Hub repo "
+            "(e.g. rocm/pytorch, rocm/vllm, rocm/sgl-dev). Use this BEFORE "
+            "calling `change_base_image` to pick an actual current tag (the "
+            "static catalog can go stale). Cached for 7 days in the global KB."
+        ),
+    }
+    # ── PR-B: web search + URL fetcher (cached, soft-fail) ──
+    web_search = {
+        "command": 'web_search "<query>" [--max-results N]',
+        "description": (
+            "DuckDuckGo web search (no API key). Use this when in-repo / paper "
+            "/ KB context can't answer, especially for fast-moving AMD/ROCm/HIP "
+            "issues (e.g. 'transformers SDPA tensor shape mismatch ROCm', "
+            "'flash-attn build error gfx942', 'undefined "
+            "symbol libamdhip64'). Returns title+URL+snippet for top N hits "
+            "(default 5). Cached 7 days. Pair with `visit_url` to read the "
+            "best hit. Cheap; prefer over guessing-and-retrying."
+        ),
+    }
+    visit_url = {
+        "command": 'visit_url <url> [--max-chars N]',
+        "description": (
+            "Fetch a URL and return readable text (HTML stripped to markdown). "
+            "Use this AFTER `web_search` to read a specific GitHub issue / "
+            "ROCm doc / AMD-specific issue thread / blog post that promises an answer. Default cap "
+            "8000 chars; raise if you need more context. Cached 7 days."
+        ),
+    }
+    # ── PR-C: deep research sub-agent (iterative web research loop) ──
+    deep_research = {
+        "command": 'deep_research "<question>" [--max-turns N] [--budget-s S]',
+        "description": (
+            "Run a BOUNDED AMD-aware research helper that combines ROCm/AMD web "
+            "search with deterministic PyPI/Docker lookups, then returns ONE "
+            "distilled answer with citations and (where applicable) verified "
+            "install commands. Use this for niche AMD-specific errors that "
+            "single-shot `web_search` can't crack in one round (e.g. undefined "
+            "HIP symbols, gfx-arch-specific failures, multi-version "
+            "transformers/torch/flash-attn/xformers dances). Defaults: "
+            "max-turns=6, budget-s=90. Cached 14 days. Costs a few small LLM "
+            "calls; saves the parent many turns of trial-error."
+        ),
+    }

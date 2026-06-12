@@ -291,13 +291,99 @@ def _get_pre_download(base_image_st):
         )
 
 
+def _normalize_run(line: str) -> str:
+    """Loose-normalize a `RUN ...` line for duplicate detection.
+
+    Strips `RUN`, an optional leading `cd <dir> &&`, runs of whitespace, and
+    trailing redirection/tee suffixes (`2>&1`, `| tee /tmp/..`, `| tail`).
+    Equality after normalization implies the two lines do equivalent work.
+    """
+    s = line.strip()
+    if s.startswith('RUN '):
+        s = s[4:].strip()
+    s = re.sub(r'^cd\s+\S+\s*&&\s*', '', s, count=1)
+    s = re.sub(r'\s+', ' ', s)
+    s = re.sub(r'\s*\|\s*tee\s+\S+\s*$', '', s)
+    s = re.sub(r'\s*\|\s*tail(\s+-\w+\s+\d+)?\s*$', '', s)
+    s = re.sub(r'\s*2>&1\s*$', '', s)
+    return s.strip()
+
+
+def _is_training_like(line: str) -> bool:
+    """Heuristic for "long python entry-script invocation" — the kind that
+    typically produces multiple near-duplicate retries differing in one flag."""
+    s = line.strip()
+    if not s.startswith('RUN '):
+        return False
+    if 'python ' not in s and 'python3 ' not in s and 'accelerate.commands.launch' not in s:
+        return False
+    if len(s) < 200:
+        return False
+    # crude entry-script signal
+    return bool(re.search(r'\.py\b', s)) and not s.endswith('--help')
+
+
+def _dedupe_runs(run_lines: list) -> list:
+    """De-duplicate Dockerfile RUN lines.
+
+    1) Exact normalized duplicates → keep last.
+    2) Training-like near-duplicates that share the entry script → keep last.
+    """
+    if not run_lines:
+        return run_lines
+
+    # Pass 1: drop earlier exact duplicates (by normalized form).
+    seen_norm: dict = {}
+    for i, ln in enumerate(run_lines):
+        seen_norm[_normalize_run(ln)] = i  # last index wins
+    pass1 = [ln for i, ln in enumerate(run_lines) if seen_norm[_normalize_run(ln)] == i]
+
+    # Pass 2: collapse training-like retries (same entry script .py + same dataset).
+    def _entry_signature(s: str):
+        m_script = re.search(r'(?:python3?\s+|accelerate\.commands\.launch[^\s]*\s+)([\S]+\.py)', s)
+        if not m_script:
+            return None
+        script = m_script.group(1)
+        m_ds = re.search(r'\+\+?dataset_name=(\S+)', s)
+        ds = m_ds.group(1) if m_ds else ''
+        return (script, ds)
+
+    keep_idx_for_sig: dict = {}
+    for i, ln in enumerate(pass1):
+        if _is_training_like(ln):
+            sig = _entry_signature(ln)
+            if sig is not None:
+                keep_idx_for_sig[sig] = i
+
+    pass2 = []
+    for i, ln in enumerate(pass1):
+        if _is_training_like(ln):
+            sig = _entry_signature(ln)
+            if sig is not None and keep_idx_for_sig.get(sig) != i:
+                continue
+        pass2.append(ln)
+
+    return pass2
+
+
 # root_path must be absolute path
-def integrate_dockerfile(root_path):
+def integrate_dockerfile(root_path, runtime_base_image: str = ""):
+    """
+    Build the final Dockerfile from inner_commands.json.
+
+    runtime_base_image (new): the base image the agent ACTUALLY ran in (passed
+    in by main.py from the Sandbox / planner / CLI). Honored as the initial
+    FROM line, so we don't fall back to `python:3.10` when neither
+    change_base_image nor change_python_version was explicitly invoked.
+    """
     dockerfile = list()
     root_path = os.path.normpath(root_path)
     author_name = root_path.split('/')[-2]
     repo_name = root_path.split('/')[-1]
-    base_image_st = 'FROM python:3.10'
+    if runtime_base_image and runtime_base_image.strip():
+        base_image_st = f'FROM {runtime_base_image.strip()}'
+    else:
+        base_image_st = 'FROM python:3.10'
     workdir_st = f'WORKDIR /'
 
     copy_st = f'COPY search_patch /search_patch'
@@ -353,6 +439,14 @@ def integrate_dockerfile(root_path):
     dockerfile.append(git_save_st)
     dockerfile.append(mv_st)
     dockerfile.append(rm_st)
-    dockerfile.extend(container_run_set)
+
+    deduped = _dedupe_runs(container_run_set)
+    if len(deduped) != len(container_run_set):
+        print(
+            f"[integrate_dockerfile] de-duplicated "
+            f"{len(container_run_set) - len(deduped)} redundant RUN line(s) "
+            f"({len(container_run_set)} → {len(deduped)})."
+        )
+    dockerfile.extend(deduped)
     with open(f'{root_path}/Dockerfile', 'w') as w1:
         w1.write('\n'.join(dockerfile))

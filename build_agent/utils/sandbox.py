@@ -92,6 +92,16 @@ def compare_versions(version1, version2):
     # 如果每个部分都相同，则版本号相等
     return 0
 
+
+def _gpu_env_for_container():
+    """Forward GPU isolation env vars from host to container."""
+    out = {}
+    for k in ("HIP_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES", "CUDA_VISIBLE_DEVICES"):
+        v = __import__("os").environ.get(k)
+        if v is not None and v != "":
+            out[k] = v
+    return out
+
 class Sandbox:
     def __init__(self, namespace, repo_full_name, root_path, rocm_mode=False):
         self.namespace = namespace
@@ -251,7 +261,8 @@ RUN mkdir -p /repo && git config --global --add safe.directory /repo
                 stdin_open=True,
                 volumes={host_path: {'bind': container_path, 'mode': 'rw'}},
                 privileged=True,
-                mem_limit='30g',
+                mem_limit='120g',
+                memswap_limit='120g',
                 network_mode='bridge',
             )
             if self.rocm_mode:
@@ -260,8 +271,11 @@ RUN mkdir -p /repo && git config --global --add safe.directory /repo
                     "/dev/dri:/dev/dri",
                 ]
                 run_kwargs["group_add"] = ["video"]
-                run_kwargs["shm_size"] = "8g"
+                run_kwargs["shm_size"] = "32g"
                 run_kwargs["network_mode"] = "host"
+                gpu_env = _gpu_env_for_container()
+                if gpu_env:
+                    run_kwargs.setdefault("environment", {}).update(gpu_env)
 
             self.container = self.client.containers.run(**run_kwargs)
 
@@ -299,6 +313,8 @@ RUN mkdir -p /repo && git config --global --add safe.directory /repo
                 tty=True,
                 stdin_open=True,
                 privileged=True,
+                mem_limit='120g',
+                memswap_limit='120g',
                 volumes={host_path: {'bind': container_path, 'mode': 'rw'}},
             )
             if self.rocm_mode:
@@ -307,8 +323,11 @@ RUN mkdir -p /repo && git config --global --add safe.directory /repo
                     "/dev/dri:/dev/dri",
                 ]
                 run_kwargs["group_add"] = ["video"]
-                run_kwargs["shm_size"] = "8g"
+                run_kwargs["shm_size"] = "32g"
                 run_kwargs["network_mode"] = "host"
+                gpu_env = _gpu_env_for_container()
+                if gpu_env:
+                    run_kwargs.setdefault("environment", {}).update(gpu_env)
 
             self.container = self.client.containers.run(**run_kwargs)
 
@@ -344,7 +363,7 @@ RUN mkdir -p /repo && git config --global --add safe.directory /repo
                 self.shell.close(force=True)  # 确保关闭之前的shell
             command = f'docker exec -it {self.container.id} /bin/bash'
             self.shell = pexpect.spawn(command)
-            self.shell.expect([r'\$ ', r'# '], timeout=600)  # 等待bash提示符
+            self.shell.expect([r'\$ ', r'# '], timeout=86400)  # 等待bash提示符
         else:
             raise Exception("Container not started. Call start_container() first.")
 
@@ -361,7 +380,7 @@ RUN mkdir -p /repo && git config --global --add safe.directory /repo
             def get_returncode(self):
                 echo_returncode = '''echo $?'''
                 self.sandbox.shell.sendline(echo_returncode)
-                self.sandbox.shell.expect([r'root@.*:.*# '], timeout=600)
+                self.sandbox.shell.expect([r'root@.*:.*# '], timeout=86400)
                 # 获取 shell.before 中匹配到的模式之前的输出
                 output = self.sandbox.shell.before.decode('utf-8').strip()
                 output = output.replace('\x1b[?2004l\r', '')
@@ -380,7 +399,7 @@ RUN mkdir -p /repo && git config --global --add safe.directory /repo
 
 
             # 给download用的一个特殊函数
-            def execute_simple(self, command, timeout=600):
+            def execute_simple(self, command, timeout=86400):
                 self.sandbox.commit_container()
                 has_heredoc = bool(re.search(r'<<-?\s*[\'"]?\w+[\'"]?', command))
                 if command[-1] != '&' and not has_heredoc:
@@ -394,7 +413,7 @@ RUN mkdir -p /repo && git config --global --add safe.directory /repo
                     self.sandbox.shell.sendline(command)
                     self.sandbox.commands[-1]["returncode"] = -1
 
-                self.sandbox.shell.expect([r'root@.*:.*# '], timeout=600)  # 等待bash提示符，带超时
+                self.sandbox.shell.expect([r'root@.*:.*# '], timeout=86400)  # 等待bash提示符，带超时
                 end_time = time.time()
                 elasped_time = end_time - start_time
                 self.sandbox.commands[-1]["time"] = elasped_time
@@ -424,7 +443,7 @@ RUN mkdir -p /repo && git config --global --add safe.directory /repo
                     self.sandbox.switch_to_pre_image()
                     return False, res
 
-            def execute(self, command, waiting_list, conflict_list, timeout=600):
+            def execute(self, command, waiting_list, conflict_list, timeout=86400):
                 try:
                     if 'hatch shell' == command.lower().strip():
                         return 'You are not allowed to use commands like `hatch shell` that would open a new shell!!!', -1
@@ -432,7 +451,7 @@ RUN mkdir -p /repo && git config --global --add safe.directory /repo
                     if '$pwd$' == command.lower().strip():
                         command = 'pwd'
                         self.sandbox.shell.sendline(command)
-                        self.sandbox.shell.expect([r'root@.*:.*# '], timeout=600)  # 等待bash提示符，带超时
+                        self.sandbox.shell.expect([r'root@.*:.*# '], timeout=86400)  # 等待bash提示符，带超时
                         # 获取 shell.before 中匹配到的模式之前的输出
                         output = self.sandbox.shell.before.decode('utf-8').strip()
                         output = output.replace('\x1b[?2004l\r', '')
@@ -451,7 +470,7 @@ RUN mkdir -p /repo && git config --global --add safe.directory /repo
                     if '$pip list --format json$' == command.lower().strip():
                         command = 'pip list --format json'
                         self.sandbox.shell.sendline(command)
-                        self.sandbox.shell.expect([r'root@.*:.*# '], timeout=600)  # 等待bash提示符，带超时
+                        self.sandbox.shell.expect([r'root@.*:.*# '], timeout=86400)  # 等待bash提示符，带超时
                         # 获取 shell.before 中匹配到的模式之前的输出
                         output = self.sandbox.shell.before.decode('utf-8').strip()
                         output = output.replace('\x1b[?2004l\r', '')
@@ -560,7 +579,7 @@ RUN mkdir -p /repo && git config --global --add safe.directory /repo
                             self.sandbox.shell.sendline(command)
                             self.sandbox.commands[-1]["returncode"] = -1
 
-                        self.sandbox.shell.expect([r'root@.*:.*# '], timeout=600*2)  # 等待bash提示符，带超时
+                        self.sandbox.shell.expect([r'root@.*:.*# '], timeout=86400)  # 等待bash提示符，带超时
                         end_time = time.time()
                         elasped_time = end_time - start_time
                         self.sandbox.commands[-1]["time"] = elasped_time
@@ -676,7 +695,7 @@ Explanation: Clear all the items in the waiting list.'''
                     partial_output = '\n'.join(partial_output_lines)
                     return f"Error: Command '{command}' timed out after {timeout} seconds. Partial output:\n + {partial_output}", 1
 
-            def edit(self, edit_tmp_file:str, project_path:str, file_path = None, start_line = 0, end_line = 0, timeout=600):
+            def edit(self, edit_tmp_file:str, project_path:str, file_path = None, start_line = 0, end_line = 0, timeout=86400):
                 if file_path:
                     if file_path.split('/')[-1].startswith('test_') or file_path('/')[-1].endswith('_test.py'):
                         msg = f'Running Edit...\n' + f'You are trying to modify file {file_path}, but we require that you should not modify the testing files. Please consider alternative solutions.' + '\n'

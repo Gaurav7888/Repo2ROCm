@@ -21,10 +21,47 @@ from tenacity import retry, stop_after_attempt, wait_random_exponential
 # Global API key, set from main.py via set_api_key()
 _amd_api_key = None
 
+
+def _estimate_tokens_from_text(text: str) -> int:
+    """Best-effort token estimate when provider usage is unavailable.
+
+    We prefer actual API usage numbers, but some providers / SDKs omit them.
+    A chars/4 heuristic is crude yet directionally useful for monitoring.
+    """
+    if not text:
+        return 0
+    return max(1, len(text) // 4)
+
+
+def estimate_usage(messages, content: str = "", system_prompt: str = None):
+    """Fallback usage estimate for logging when provider usage is missing."""
+    prompt_chars = 0
+    if system_prompt:
+        prompt_chars += len(system_prompt)
+    for msg in messages or []:
+        prompt_chars += len(str(msg.get("content", "")))
+    prompt_tokens = _estimate_tokens_from_text("x" * prompt_chars)
+    completion_tokens = _estimate_tokens_from_text(content or "")
+    return {
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": prompt_tokens + completion_tokens,
+        "estimated": True,
+    }
+
 def set_api_key(api_key):
     """Set the AMD LLM API Gateway key globally."""
     global _amd_api_key
     _amd_api_key = api_key
+
+
+def _is_claude_code_active() -> bool:
+    """Check if Claude Code mode is enabled (lazy import to avoid circular deps)."""
+    try:
+        from utils.claude_code_client import is_claude_code_mode
+        return is_claude_code_mode()
+    except ImportError:
+        return False
 
 
 def _get_api_key():
@@ -110,12 +147,18 @@ def _call_amd_claude(model, messages, temperature, max_tokens):
                                   + u.get("completion_tokens", u.get("output_tokens", 0))),
         }
     else:
-        usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        usage = estimate_usage(messages, content)
 
     return content, usage
 
 
 def get_llm_response(model: str, messages, temperature=0.0, n=1, max_tokens=4096, system_prompt=None):
+    if _is_claude_code_active():
+        from utils.claude_code_client import get_claude_code_response
+        return get_claude_code_response(
+            model, list(messages), temperature, n, max_tokens, system_prompt
+        )
+
     if system_prompt:
         messages = [{"role": "system", "content": system_prompt}] + list(messages)
 

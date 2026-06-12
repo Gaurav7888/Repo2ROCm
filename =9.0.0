@@ -1,0 +1,5 @@
+Defaulting to user installation because normal site-packages is not writeable
+Requirement already satisfied: ddgs in /home/gsarkar/.local/lib/python3.10/site-packages (9.14.1)
+Requirement already satisfied: click>=8.1.8 in /home/gsarkar/.local/lib/python3.10/site-packages (from ddgs) (8.3.3)
+Requirement already satisfied: primp>=1.2.3 in /home/gsarkar/.local/lib/python3.10/site-packages (from ddgs) (1.2.3)
+Requirement already satisfied: lxml>=4.9.4 in /home/gsarkar/.local/lib/python3.10/site-packages (from ddgs) (6.1.0)

@@ -1,0 +1,140 @@
+[
+  {
+    "arxiv_id": "2410.01779",
+    "conference": "NeurIPS 2025",
+    "notes": [],
+    "paper_id": "7-composing-global-solutions-to-reasoning-tasks-via-algebraic-",
+    "paper_title": "Composing Global Solutions to Reasoning Tasks Via Algebraic Objects",
+    "paper_url": "https://arxiv.org/pdf/2410.01779v4",
+    "repo_full_name": "facebookresearch/luckmatters",
+    "repo_sha": "625b5f7de69dc321f24376f5c6fe3446af3a364b",
+    "repo_url": "https://github.com/facebookresearch/luckmatters",
+    "tags": "General/Other"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "NeurIPS 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "30-llm-reproducibility",
+    "paper_title": "LLM Reproducibility",
+    "paper_url": null,
+    "repo_full_name": "nanomaoli/llm_reproducibility",
+    "repo_sha": "d7b87039068dd2a8af1145e0191fba9547b2bbb3",
+    "repo_url": "https://github.com/nanomaoli/llm_reproducibility",
+    "tags": "NLP/LLM"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ICLR 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "104-multi-session-multi-task-neural-decoding-from-distinct-cell-",
+    "paper_title": "Multi-session, multi-task neural decoding from distinct cell-types",
+    "paper_url": null,
+    "repo_full_name": "neuro-galaxy/torch_brain",
+    "repo_sha": "5de0dbebf7be01c0e4d7673e8f49d7fa80a7e0ff",
+    "repo_url": "https://github.com/neuro-galaxy/torch_brain/tree/main/examples/poyo_plus",
+    "tags": "General/Other"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ICML 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "114-harmonica-harmonizing-training-and-inference-for-better-feat",
+    "paper_title": "HarmoniCa: Harmonizing Training and Inference for Better Feature Caching",
+    "paper_url": null,
+    "repo_full_name": "ModelTC/HarmoniCa",
+    "repo_sha": "5d7f78d8019122b3d2c53620543ea79d24fa81f6",
+    "repo_url": "https://github.com/ModelTC/HarmoniCa",
+    "tags": "Inference, Training"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ACL 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "55-ladder-language-driven-slice-discovery-and-error-rectificati",
+    "paper_title": "LADDER: Language-Driven Slice Discovery and Error Rectification",
+    "paper_url": null,
+    "repo_full_name": "batmanlab/Ladder",
+    "repo_sha": "47ff4fcb209bf542593dc6aa0f20f538fa33c9bf",
+    "repo_url": "https://github.com/batmanlab/Ladder",
+    "tags": "General/Other"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "NeurIPS 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "20-timeemb-lightweight-static-dynamic-disentanglement",
+    "paper_title": "TimeEmb: Lightweight Static-Dynamic Disentanglement",
+    "paper_url": null,
+    "repo_full_name": "showmeon/TimeEmb",
+    "repo_sha": "9adf3fba801b34642e7191b45e08aff224b26e67",
+    "repo_url": "https://github.com/showmeon/TimeEmb",
+    "tags": "Physics"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ACL 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "44-askqe-question-answering-as-automatic-evaluation-for-machine",
+    "paper_title": "AskQE: Question Answering as Automatic Evaluation for Machine Translation",
+    "paper_url": null,
+    "repo_full_name": "dayeonki/askqe",
+    "repo_sha": "7e4c22612018a005f257064d46433f65d776cc6b",
+    "repo_url": "https://github.com/dayeonki/askqe",
+    "tags": "Inference"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ICLR 2028",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "183-generalized-consistency-trajectory-models-for-image-manipula",
+    "paper_title": "Generalized Consistency Trajectory Models for Image Manipulation",
+    "paper_url": null,
+    "repo_full_name": "1202kbs/GCTM",
+    "repo_sha": "b716f36c754855e3b31489aa09738d9bd05d9bba",
+    "repo_url": "https://github.com/1202kbs/GCTM",
+    "tags": "Computer Vision"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ICML 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "126-stacey-promoting-stochastic-steepest-descent",
+    "paper_title": "Stacey: Promoting Stochastic Steepest Descent",
+    "paper_url": null,
+    "repo_full_name": "xinyuluo8561/Stacey",
+    "repo_sha": "dd5b295c5fa6893d1ca5a769c3d97fbe9060a71d",
+    "repo_url": "https://github.com/xinyuluo8561/Stacey",
+    "tags": "General/Other"
+  },
+  {
+    "arxiv_id": null,
+    "conference": "ICLR 2025",
+    "notes": [
+      "no_arxiv_match (best=0.0)"
+    ],
+    "paper_id": "138-top-erl-transformer-based-off-policy-episodic-reinforcement-",
+    "paper_title": "TOP-ERL: Transformer-based Off-Policy Episodic Reinforcement Learning",
+    "paper_url": null,
+    "repo_full_name": "BruceGeLi/TOP_ERL_ICLR25",
+    "repo_sha": "d3a049bc9bd50ff4ff2283486716a6fbff62e9e9",
+    "repo_url": "https://github.com/BruceGeLi/TOP_ERL_ICLR25",
+    "tags": "General/Other"
+  }
+]

@@ -1,0 +1,408 @@
+{
+  "4KAgent: Agentic Any Image to 4K Super-Resolution": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "An analytic theory of creativity in convolutional diffusion models": {
+    "arxiv_id": "2412.20292",
+    "match_score": 1.0,
+    "matched_title": "An analytic theory of creativity in convolutional diffusion models",
+    "paper_url": "https://arxiv.org/pdf/2412.20292v2"
+  },
+  "AnalogGenie: Automatic Discovery of Analog Circuit Topologies": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "AskQE: Question Answering as Automatic Evaluation for Machine Translation": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "Automatically Identify and Rectify: Robust Deep Contrastive Multi-view Clustering": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "Benchmarking Predictive Coding Networks -- Made Simple": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "BookCoref: Coreference Resolution at Book Scale": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "C-SEO Bench: Does Conversational SEO Work?": {
+    "arxiv_id": "2506.11097",
+    "match_score": 1.0,
+    "matched_title": "C-SEO Bench: Does Conversational SEO Work?",
+    "paper_url": "https://arxiv.org/pdf/2506.11097v3"
+  },
+  "CATCH: Channel-Aware Multivariate Time Series Anomaly Detection": {
+    "arxiv_id": "2410.12261",
+    "match_score": 0.727,
+    "matched_title": "CATCH: Channel-Aware multivariate Time Series Anomaly Detection via Frequency Patching",
+    "paper_url": "https://arxiv.org/pdf/2410.12261v4"
+  },
+  "CSL-Mem: Towards Memorization Estimation: Fast, Formal and Free": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "Class-aware Domain Knowledge Fusion for Continual Test-Time Adaptation": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "CoMRes: Semi-Supervised Time Series Forecasting": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "Composing Global Solutions to Reasoning Tasks Via Algebraic Objects": {
+    "arxiv_id": "2410.01779",
+    "match_score": 0.75,
+    "matched_title": "Composing Global Solutions to Reasoning Tasks via Algebraic Objects in Neural Nets",
+    "paper_url": "https://arxiv.org/pdf/2410.01779v4"
+  },
+  "DataEnvGym: Data Generation Agents in Teacher Environments": {
+    "arxiv_id": "2410.06215",
+    "match_score": 0.7,
+    "matched_title": "DataEnvGym: Data Generation Agents in Teacher Environments with Student Feedback",
+    "paper_url": "https://arxiv.org/pdf/2410.06215v3"
+  },
+  "Does Time Have Its Place? Temporal Heads in Language Models": {
+    "arxiv_id": "2502.14258",
+    "match_score": 0.643,
+    "matched_title": "Does Time Have Its Place? Temporal Heads: Where Language Models Recall Time-specific Information",
+    "paper_url": "https://arxiv.org/pdf/2502.14258v2"
+  },
+  "EARTH: Epidemiology-Aware Neural ODE": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "ELABORATION: Benchmark on Human-LLM Competitive Programming": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "Evaluating Design Decisions for Dual Encoder-based Entity Disambiguation": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "Exact Certification of (Graph) Neural Networks Against Label Poisoning": {
+    "arxiv_id": "2412.00537",
+    "match_score": 1.0,
+    "matched_title": "Exact Certification of (Graph) Neural Networks Against Label Poisoning",
+    "paper_url": "https://arxiv.org/pdf/2412.00537v2"
+  },
+  "Gated Attention for Large Language Models": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "Generalized Consistency Trajectory Models for Image Manipulation": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "Generating Freeform Endoskeletal Robots": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "HarmoniCa: Harmonizing Training and Inference for Better Feature Caching": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "HealthGPT: Medical Large Vision-Language Model via H-LoRA": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "Internet of Agents: Weaving a Web of Heterogeneous Agents": {
+    "arxiv_id": "2407.07061",
+    "match_score": 0.7,
+    "matched_title": "Internet of Agents: Weaving a Web of Heterogeneous Agents for Collaborative Intelligence",
+    "paper_url": "https://arxiv.org/pdf/2407.07061v2"
+  },
+  "Knowledge Entropy Decay Hinders New Knowledge Acquisition": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "LADDER: Language-Driven Slice Discovery and Error Rectification": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "LLM Reproducibility": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "Language Representations Can be What Recommenders Need": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "Large Language Diffusion Models": {
+    "arxiv_id": "2502.09992",
+    "match_score": 1.0,
+    "matched_title": "Large Language Diffusion Models",
+    "paper_url": "https://arxiv.org/pdf/2502.09992v3"
+  },
+  "LayerDAG: Diffusion Model for Directed Acyclic Graph Generation": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "Leveraging Context for Multimodal Fallacy Classification": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "LoRA-One: Subspace Alignment for Low-Rank Adaptation": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "MCNC: Manifold-Constrained Reparameterization for Neural Compression": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "Modeling Uncertainty in Composed Image Retrieval via Probabilistic Embeddings": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "Multi-session, multi-task neural decoding from distinct cell-types": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "Neural Incompatibility: The Gap of Cross-Scale Parametric Knowledge Transfer": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "ORMind: A Cognitive-Inspired End-to-End Reasoning Framework for OR": {
+    "arxiv_id": "2506.01326",
+    "match_score": 0.75,
+    "matched_title": "ORMind: A Cognitive-Inspired End-to-End Reasoning Framework for Operations Research",
+    "paper_url": "https://arxiv.org/pdf/2506.01326v2"
+  },
+  "Online Learning in Risk Sensitive constrained MDP": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "Online Reinforcement Learning in Non-Stationary Environments": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "Orthogonal Subspace Decomposition for Generalizable AI-Generated Image Detection": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "Physics of Language Models: Knowledge Capacity Scaling Laws": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "PrefixKV: Adaptive Prefix KV Cache Is What Vision Instruction Models Need": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "Reducing Hallucinations via Latent Space Steering": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "ReferSplat: 3D Gaussian Splatting for Referring Expressions": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "Robustness Reprogramming for Representation Learning": {
+    "arxiv_id": "2410.04577",
+    "match_score": 1.0,
+    "matched_title": "Robustness Reprogramming for Representation Learning",
+    "paper_url": "https://arxiv.org/pdf/2410.04577v1"
+  },
+  "Scalable Best-of-N Selection for Large Language Models Via Self-Certainty": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "Scaling Collapse Reveals Universal Dynamics": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "SelfElicit: Your Language Model Secretly Knows Where is the Relevant Evidence!": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "Show-o2: Improved Native Unified Multimodal Models": {
+    "arxiv_id": "2506.15564",
+    "match_score": 1.0,
+    "matched_title": "Show-o2: Improved Native Unified Multimodal Models",
+    "paper_url": "https://arxiv.org/pdf/2506.15564v3"
+  },
+  "Stacey: Promoting Stochastic Steepest Descent": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "Structural Deep Encoding for Table Question Answering": {
+    "arxiv_id": "2503.01457",
+    "match_score": 1.0,
+    "matched_title": "Structural Deep Encoding for Table Question Answering",
+    "paper_url": "https://arxiv.org/pdf/2503.01457v1"
+  },
+  "TOP-ERL: Transformer-based Off-Policy Episodic Reinforcement Learning": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "TarFlow: Normalizing Flows are Capable Generative Models": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "TimeEmb: Lightweight Static-Dynamic Disentanglement": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "TopoNets: Vision and language models with brain-like topography": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "Toward Relative Positional Encoding in Spiking Transformers": {
+    "arxiv_id": "2501.16745",
+    "match_score": 1.0,
+    "matched_title": "Toward Relative Positional Encoding in Spiking Transformers",
+    "paper_url": "https://arxiv.org/pdf/2501.16745v3"
+  },
+  "UAlberta at SemEval-2025 Task 2: Prompting for Entity-Aware Translation": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "UltraHR-100K: Enhancing UHR Image Synthesis": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  },
+  "What Makes a Good Natural Language Prompt?": {
+    "arxiv_id": null,
+    "error": "arxiv_query_failed: HTTP Error 429: Unknown Error",
+    "match_score": 0.0,
+    "matched_title": null,
+    "paper_url": null
+  }
+}
