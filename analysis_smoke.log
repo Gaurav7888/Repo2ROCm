@@ -1,7 +1,0 @@
-[OUT_OF_BOX] ryienh/jl-metric :: none
-[REQUIRES_REPO2ROCM] thunlp/FR-Spec :: custom CUDA extensions, flash-attention CUDA kernels, CUDA-s
-
-================ ANALYSIS SUMMARY ================
-REQUIRES_REPO2ROCM=1  OUT_OF_BOX=1  OTHER=0
-  REQUIRES_REPO2ROCM   thunlp/FR-Spec                                custom CUDA extensions, flash-attention CUDA kernels, C
-  OUT_OF_BOX           ryienh/jl-metric                              none

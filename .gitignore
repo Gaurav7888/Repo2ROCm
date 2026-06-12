@@ -33,3 +33,12 @@ temp/
 utils/repo/
 repos/
 analysis_output/
+
+# Run logs & analysis/baseline outputs (runtime artifacts)
+*.log
+analysis_logs/
+baseline_logs/
+benchmark_logs/
+baseline_output/
+analysis_results.jsonl
+analysis_report.md
