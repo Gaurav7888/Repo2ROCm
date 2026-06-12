@@ -1,6 +1,6 @@
 # Repo2ROCm
 
-**An agentic system for reproducing research code on AMD ROCm GPUs — with zero manual intervention.**
+**Automated environment migration for GitHub repos belonging to AI research papers to make it run with ROCm on AMD GPUs**
 
 Reproducing a published ML result from its GitHub repository is rarely a clone-and-run
 exercise, and it gets dramatically harder when the target hardware differs from the
